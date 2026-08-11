@@ -35,6 +35,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = runtime_result.ok();
     let (tray, tray_rx) = TrayManager::setup()?;
     let _tray = tray;
+    // Test hook: measure shutdown latency without driving the tray menu.
+    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_QUIT_SECS") {
+        if let Ok(secs) = delay.trim().parse::<u64>() {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+                tray_service::request_quit_for_test();
+            });
+        }
+    }
     let window_icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../assets/delegator-logo.png"))?;
 
@@ -64,5 +73,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .map_err(|e| format!("Eframe runtime error: {}", e))?;
 
-    Ok(())
+    // The UI is gone and RuntimeService::drop has killed the core, but dropping
+    // the tokio runtime here would wait for in-flight background work (an
+    // `opencode upgrade` child can run for minutes, DNS lookups block in the
+    // blocking pool). That delay is invisible to the user and looks like
+    // «Выйти» did nothing, so end the process now.
+    kill_leftover_core();
+    std::process::exit(0);
+}
+
+/// Best-effort safety net: the core must never outlive the GUI, even if the
+/// child handle was lost (e.g. the core restarted itself via /api/restart).
+fn kill_leftover_core() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = std::process::Command::new("taskkill")
+        .args(["/IM", "delegator-core.exe", "/T", "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
 }

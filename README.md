@@ -1,10 +1,10 @@
-# Delegator 0.4.0
+# Delegator 0.4.1
 
 Delegator — приложение для Windows 10/11, работающее в системном трее. Оно предоставляет единый переносимый runtime делегирования для Codex, Antigravity, OpenCode, Cursor, Claude и VS Code.
 
 ## Установка
 
-Запустите `dist\DelegatorSetup-0.4.0.exe`. Права администратора не требуются. Программа устанавливается в:
+Запустите `dist\DelegatorSetup-0.4.1.exe`. Права администратора не требуются. Программа устанавливается в:
 
 ```text
 %LOCALAPPDATA%\Programs\Delegator\
@@ -89,7 +89,7 @@ Hooks обновляются без перезапуска IDE. Деинстал
 http://127.0.0.1:1380/health
 ```
 
-Ответ содержит версию `0.4.0` и путь к установленному runtime, поэтому старый Core на порту 1380 не принимается за текущий.
+Ответ содержит версию `0.4.1` и путь к установленному runtime, поэтому старый Core на порту 1380 не принимается за текущий.
 
 ## Сборка
 
@@ -99,13 +99,13 @@ http://127.0.0.1:1380/health
 .\build-installer.ps1
 ```
 
-Скрипт создаёт build-only Python-окружение, устанавливает закреплённые версии из `requirements-build.txt`, запускает Rust-тесты, собирает GUI и автономный Core, затем создаёт Inno Setup установщик `dist\DelegatorSetup-0.4.0.exe`.
+Скрипт создаёт build-only Python-окружение, устанавливает закреплённые версии из `requirements-build.txt`, запускает Rust-тесты, собирает GUI и автономный Core, затем создаёт Inno Setup установщик `dist\DelegatorSetup-0.4.1.exe`.
 
 Полезные проверки:
 
 ```powershell
 cargo test --locked
-.\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.4.0.exe
+.\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.4.1.exe
 & "$env:LOCALAPPDATA\Programs\Delegator\runtime\ai-delegate.cmd" models
 Invoke-RestMethod http://127.0.0.1:1380/health
 ```

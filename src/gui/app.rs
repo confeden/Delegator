@@ -18,7 +18,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
 use crate::theme::ThemeConfig;
-use crate::tray_service::TrayAction;
+use crate::tray_service::{attach_ui_context, mark_quit_handled, TrayAction};
 
 /// Header title, derived from the crate version at compile time so it can
 /// never drift from Cargo.toml («Delegator v0.4» for 0.4.x).
@@ -196,6 +196,10 @@ impl DelegatorApp {
             theme,
             runtime,
         };
+
+        // Let tray callbacks wake this context; otherwise their messages sit
+        // unread while the window is hidden in the tray.
+        attach_ui_context(cc.egui_ctx.clone());
 
         // Sync initial IDE hooks on startup
         app.sync_all_ide_hooks();
@@ -423,6 +427,7 @@ impl eframe::App for DelegatorApp {
                     self.sync_all_ide_hooks();
                 }
                 TrayAction::Quit => {
+                    mark_quit_handled();
                     self.quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -437,7 +442,8 @@ impl eframe::App for DelegatorApp {
 
         // Supervise the core: respawn it if it exited (e.g. POST /api/restart
         // under DELEGATOR_SUPERVISED=1) or stopped answering health checks.
-        if let Some(runtime) = self.runtime.as_mut() {
+        // Skipped while quitting so shutdown cannot resurrect the core.
+        if let Some(runtime) = self.runtime.as_mut().filter(|_| !self.quitting) {
             if let Some(status) = runtime.ensure_running() {
                 self.status_message = status;
             }
