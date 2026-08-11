@@ -6,6 +6,7 @@ use crate::gui::opencode_setup::{
     NO_INSTALLER_FOUND, OPENCODE_SITE_URL,
 };
 use crate::gui::proxy::{run_proxy_test, GoogleProbe, ProxyTestResult};
+use crate::gui::updater::{progress_label, run_update, update_button_label};
 use crate::gui::usage::{fetch_usage, format_count, UsageReport};
 use crate::ide_detector::IdeDetector;
 use crate::models_service::{
@@ -26,6 +27,12 @@ use crate::tray_service::{attach_ui_context, mark_quit_handled, TrayAction};
 /// `CARGO_PKG_VERSION`, and a shortened header read as a second, older version.
 const APP_TITLE: &str = concat!("Delegator v", env!("CARGO_PKG_VERSION"));
 
+/// Test hook: with `DELEGATOR_SELFTEST_UPDATE=1` the app presses its own
+/// «Обновить до …» button as soon as a newer release is known, so the whole
+/// download → install → restart chain can be exercised end to end (usually
+/// together with `DELEGATOR_UPDATE_API_URL`, see `crate::update_check`).
+const SELFTEST_UPDATE_ENV: &str = "DELEGATOR_SELFTEST_UPDATE";
+
 pub enum AppMessage {
     GeminiModelsFetched(Result<Vec<ModelInfo>, String>),
     OpenCodeModelsFetched(Result<OpenCodeCatalog, String>),
@@ -37,6 +44,19 @@ pub enum AppMessage {
     OpenCodeInstallStep(InstallStep),
     /// The 8-hourly GitHub release check finished.
     UpdateChecked(UpdateStatus),
+    /// Whole percent of the installer download.
+    UpdateProgress(u8),
+    /// The updater script is running (Ok) or nothing was started (Err).
+    UpdateFinished(Result<(), String>),
+}
+
+/// State of the «Обновить до …» button in the header.
+enum UpdateJobState {
+    Downloading(u8),
+    /// The detached updater is armed; the app quits on the next frames.
+    Handoff,
+    /// Short Russian label plus the full reason for the tooltip.
+    Failed(String),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -113,9 +133,13 @@ pub struct DelegatorApp {
     // «Прокси» tab: per-proxy connectivity test state, keyed by proxy id.
     proxy_tests: HashMap<String, ProxyTestState>,
 
-    /// Newest GitHub release seen by the 8-hourly check (banner source).
+    /// Newest GitHub release seen by the 8-hourly check (button source).
     update_status: Option<UpdateStatus>,
     update_check_running: bool,
+    /// Progress / outcome of the one-click update, `None` before the first click.
+    update_job: Option<UpdateJobState>,
+    /// `DELEGATOR_SELFTEST_UPDATE=1`, read once at startup.
+    selftest_update: bool,
 
     // Async Channel
     tx: Sender<AppMessage>,
@@ -195,6 +219,10 @@ impl DelegatorApp {
             proxy_tests: HashMap::new(),
             update_status: update_check::cached_status(),
             update_check_running: false,
+            update_job: None,
+            selftest_update: std::env::var(SELFTEST_UPDATE_ENV)
+                .map(|value| value.trim() == "1")
+                .unwrap_or(false),
             tx,
             rx,
             egui_ctx: cc.egui_ctx.clone(),
@@ -268,6 +296,76 @@ impl DelegatorApp {
             let _ = tx.send(AppMessage::UpdateChecked(status));
             ctx.request_repaint();
         });
+    }
+
+    /// «Обновить до vX.Y»: download the release installer, arm the detached
+    /// updater script, then quit exactly like «Выйти» does so the script finds
+    /// the process gone. Everything runs in the background; a failure only
+    /// changes the button text.
+    fn start_update(&mut self) {
+        if matches!(
+            self.update_job,
+            Some(UpdateJobState::Downloading(_)) | Some(UpdateJobState::Handoff)
+        ) {
+            return;
+        }
+        let Some(UpdateStatus::Available { tag, url, asset }) = self.update_status.clone() else {
+            return;
+        };
+        println!("Update requested: {tag} ({url})");
+        self.update_job = Some(UpdateJobState::Downloading(0));
+        let tx = self.tx.clone();
+        let ctx = self.egui_ctx.clone();
+        let progress_tx = tx.clone();
+        let progress_ctx = ctx.clone();
+        tokio::spawn(async move {
+            let result = run_update(tag, asset, move |percent| {
+                let _ = progress_tx.send(AppMessage::UpdateProgress(percent));
+                progress_ctx.request_repaint();
+            })
+            .await;
+            let _ = tx.send(AppMessage::UpdateFinished(result));
+            ctx.request_repaint();
+        });
+    }
+
+    /// The update control in the header, drawn immediately to the left of the
+    /// «АКТИВЕН/ПАУЗА» toggle. One widget, four states, one short line each.
+    /// Returns true when the user asked to update (or to retry).
+    fn update_button(&self, ui: &mut egui::Ui, tag: &str) -> bool {
+        match &self.update_job {
+            None => ui
+                .add(egui::Button::new(
+                    egui::RichText::new(update_button_label(tag)).color(self.theme.accent_color()),
+                ))
+                .on_hover_text("Скачает установщик, обновит и запустит Delegator заново")
+                .clicked(),
+            Some(UpdateJobState::Downloading(percent)) => {
+                ui.add_enabled(false, egui::Button::new(progress_label(*percent)));
+                false
+            }
+            Some(UpdateJobState::Handoff) => {
+                ui.add_enabled(false, egui::Button::new("Установка…"));
+                false
+            }
+            Some(UpdateJobState::Failed(reason)) => ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Не удалось обновить").color(self.theme.warning_color()),
+                ))
+                .on_hover_text(format!("{reason}\nНажмите, чтобы повторить"))
+                .clicked(),
+        }
+    }
+
+    /// The one shutdown path: the tray «Выйти» item and the updater handoff
+    /// both go through here, so the core is killed and the tray icon removed
+    /// in the same orderly way (see the 0.4.1 notes).
+    fn begin_shutdown(&mut self) {
+        // The watchdog in tray_service must be disarmed at once; the actual
+        // close happens one frame later (see the shutdown block in `update`).
+        mark_quit_handled();
+        self.quitting = true;
+        self.shutting_down = true;
     }
 
     /// «Установить»: the whole dependency chain (winget → npm, with a Node.js
@@ -456,13 +554,7 @@ impl eframe::App for DelegatorApp {
                     self.config.save();
                     self.sync_all_ide_hooks();
                 }
-                TrayAction::Quit => {
-                    // The watchdog in tray_service must be disarmed at once;
-                    // the actual close happens one frame later (below).
-                    mark_quit_handled();
-                    self.quitting = true;
-                    self.shutting_down = true;
-                }
+                TrayAction::Quit => self.begin_shutdown(),
             }
         }
 
@@ -584,20 +676,48 @@ impl eframe::App for DelegatorApp {
                 }
                 AppMessage::UpdateChecked(status) => {
                     self.update_check_running = false;
-                    // A failed check keeps the previous banner (if any) instead
+                    // A failed check keeps the previous button (if any) instead
                     // of replacing it with an error the user cannot act on.
                     if !matches!(status, UpdateStatus::Failed(_)) {
                         self.update_status = Some(status);
                     }
                 }
+                AppMessage::UpdateProgress(percent) => {
+                    if matches!(self.update_job, Some(UpdateJobState::Downloading(_))) {
+                        self.update_job = Some(UpdateJobState::Downloading(percent));
+                    }
+                }
+                AppMessage::UpdateFinished(result) => match result {
+                    Ok(()) => {
+                        // The updater waits for this process to disappear, so
+                        // quit through the normal path right away.
+                        println!("Updater armed; shutting down for the install");
+                        self.update_job = Some(UpdateJobState::Handoff);
+                        self.begin_shutdown();
+                    }
+                    Err(reason) => {
+                        eprintln!("Update failed: {reason}");
+                        self.update_job = Some(UpdateJobState::Failed(reason));
+                    }
+                },
             }
         }
 
         // The 8-hour window can elapse while the app stays open.
         self.maybe_check_for_updates();
 
+        // Test hook: press the update button as soon as a release is known.
+        if self.selftest_update
+            && self.update_job.is_none()
+            && matches!(self.update_status, Some(UpdateStatus::Available { .. }))
+        {
+            println!("{SELFTEST_UPDATE_ENV}=1: starting the update automatically");
+            self.start_update();
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // Header Bar
+            let mut update_request = false;
             ui.horizontal(|ui| {
                 ui.heading(APP_TITLE);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -608,30 +728,15 @@ impl eframe::App for DelegatorApp {
                         self.config.save();
                         self.sync_all_ide_hooks();
                     }
+                    // Right-to-left layout: added after the toggle, so it sits
+                    // immediately to its LEFT. Only visible with a newer release.
+                    if let Some(UpdateStatus::Available { tag, .. }) = &self.update_status {
+                        update_request = self.update_button(ui, tag);
+                    }
                 });
             });
-
-            if let Some(UpdateStatus::Available { tag, url }) = self.update_status.clone() {
-                let accent = self.theme.accent_color();
-                let fill =
-                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 35);
-                egui::Frame::none()
-                    .fill(fill)
-                    .stroke(egui::Stroke::new(1.0, accent))
-                    .inner_margin(egui::Margin::symmetric(8.0, 5.0))
-                    .rounding(4.0)
-                    .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Доступна новая версия {tag} (у вас v{})",
-                                    env!("CARGO_PKG_VERSION")
-                                ))
-                                .color(accent),
-                            );
-                            ui.hyperlink_to("Открыть страницу релиза", url);
-                        });
-                    });
+            if update_request {
+                self.start_update();
             }
 
             ui.separator();
