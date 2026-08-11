@@ -128,7 +128,7 @@ HOW TO INVOKE:\n\
 - Short single-line prompt: `\"{entry}\" delegate \"<prompt>\"`\n\
 - Multiline prompts, or prompts containing `%`, quotes, or shell metacharacters, MUST go through a file: save the prompt to a temp file and run `\"{entry}\" delegate -PromptFile \"<absolute path>\"` (never inline them as an argument — cmd.exe corrupts them).\n\
 - Commands: `delegate` (auto-routed answer), `micro` (fast small model), `verify \"<answer to check>\"` (independent verification), `parallel \"<p1>\" \"<p2>\"` (fan-out), `boost` (multi-advisor synthesis), `usage` (token-savings report).\n\
-Do not use legacy copies from `.codex` or a developer project directory.\n\
+Do not use copies from `%USERPROFILE%\\.codex\\bin` or from a developer project directory — only the path above.\n\
 {footer}\n",
         header = DELEGATOR_HOOK_HEADER,
         entry = entrypoint.display(),
@@ -292,11 +292,14 @@ impl IdeEnv {
                 self.local_appdata.join("Programs\\Antigravity"),
                 self.local_appdata.join("Programs\\Antigravity IDE"),
             ],
+            // The app ships as the MSIX package OpenAI.Codex and now presents
+            // itself as ChatGPT, but it still keeps its profile in ~/.codex.
             "Codex" => vec![
                 self.home.join(".codex\\config.toml"),
                 self.home.join(".codex\\auth.json"),
                 self.home.join(".codex\\sessions"),
                 self.home.join(".codex\\history.jsonl"),
+                self.local_appdata.join("OpenAI\\Codex"),
             ],
             "OpenCode" => vec![
                 self.home.join(".local\\share\\opencode"),
@@ -410,6 +413,15 @@ impl IdeDetector {
         "Claude",
         "VS Code",
     ];
+
+    /// Label for the UI. The internal name stays the config key forever, so a
+    /// vendor renaming its app (Codex → ChatGPT) never rewrites user settings.
+    pub fn display_name(name: &str) -> &str {
+        match name {
+            "Codex" => "Codex (ChatGPT)",
+            other => other,
+        }
+    }
 
     pub fn get_user_home() -> PathBuf {
         UserDirs::new()

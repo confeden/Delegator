@@ -820,6 +820,15 @@ impl eframe::App for DelegatorApp {
             match self.active_tab {
                 SelectedTab::Ides => {
                     ui.label("Отметьте IDE, которые будут делегировать задачи Delegator.");
+                    // On pause the hooks are removed, so an agent legitimately
+                    // reports that it knows nothing about Delegator. Say so here
+                    // instead of leaving the user to guess.
+                    if !self.config.delegator_enabled {
+                        ui.colored_label(
+                            self.theme.warning_color(),
+                            "Delegator на паузе — инструкции из IDE убраны. Включите «АКТИВЕН».",
+                        );
+                    }
                     ui.add_space(5.0);
 
                     let detected = IdeDetector::detect_all(&self.config.ide_states);
@@ -838,7 +847,10 @@ impl eframe::App for DelegatorApp {
                                 // checkbox for an undetected one would do nothing.
                                 let checkbox = ui.add_enabled(
                                     ide.is_detected,
-                                    egui::Checkbox::new(&mut is_enabled, &ide.name),
+                                    egui::Checkbox::new(
+                                        &mut is_enabled,
+                                        IdeDetector::display_name(&ide.name),
+                                    ),
                                 );
                                 if !ide.is_detected {
                                     checkbox.on_hover_text("IDE не найдена на этом компьютере");
