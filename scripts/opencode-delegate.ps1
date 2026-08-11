@@ -631,11 +631,12 @@ $OpenCodeNormalModels = @($OpenCodeNormalModels + (Get-ExtraOpenCodeModels "norm
 $OpenCodeDeepModels = @($OpenCodeDeepModels + (Get-ExtraOpenCodeModels "deep")) | Select-Object -Unique
 $OpenCodeAllModels = @($OpenCodeFastModels + $OpenCodeNormalModels + $OpenCodeDeepModels) | Select-Object -Unique
 
-# The GUI selection is authoritative. Legacy ranking/extra files may tune selected
-# models, but cannot silently re-enable a model removed from the Delegator pool.
-# Additionally, opencode/* ids the live catalog no longer lists are dropped
-# (eligible zen set = enabled_opencode_models INTERSECT catalog) unless that
-# would empty the allowlist entirely.
+# The GUI selection is authoritative: it is re-synced from `opencode models` on
+# every GUI start, so it already reflects the live Zen lineup. The catalog file
+# is only a strength/tier source and may be up to 24h stale - never use it to
+# drop an enabled model, or a brand-new free model would sit unused until the
+# next catalog refresh. Legacy ranking/extra files may tune selected models but
+# cannot silently re-enable a model removed from the Delegator pool.
 try {
     $appConfig = Get-Content -LiteralPath $DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
     $selectedModels = @($appConfig.enabled_opencode_models | ForEach-Object { ([string]$_).Trim() } |
@@ -645,12 +646,6 @@ try {
 }
 if ($selectedModels.Count -gt 0) {
     $eligibleModels = @($selectedModels)
-    if ($script:ZenStrengthMap.Count -gt 0) {
-        $liveSelected = @($selectedModels | Where-Object {
-            $_ -notlike "opencode/*" -or $script:ZenStrengthMap.ContainsKey($_)
-        })
-        if ($liveSelected.Count -gt 0) { $eligibleModels = @($liveSelected) }
-    }
     $OpenCodeFastModels = @($OpenCodeFastModels | Where-Object { $eligibleModels -contains $_ })
     $OpenCodeNormalModels = @($OpenCodeNormalModels | Where-Object { $eligibleModels -contains $_ })
     $OpenCodeDeepModels = @($OpenCodeDeepModels | Where-Object { $eligibleModels -contains $_ })
