@@ -1,0 +1,39 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install ripgrep (artifact audit requirement)
+        run: choco install ripgrep -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: .\build-installer.ps1
+
+      - name: Audit installer inputs
+        shell: pwsh
+        run: .\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.4.0.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DelegatorSetup-0.4.0
+          path: dist/DelegatorSetup-0.4.0.exe
+          if-no-files-found: error

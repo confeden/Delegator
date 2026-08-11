@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Уязвимость безопасности
+    url: ../../security/advisories/new
+    about: Сообщайте об уязвимостях приватно; не публикуйте issue с секретами.

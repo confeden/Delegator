@@ -1,0 +1,155 @@
+Delegator Non-Commercial, No-AI-Training License (DNC-NAT), version 1.0
+Copyright (c) 2026 confeden. All rights reserved.
+
+Canonical, always-current text of this license:
+https://github.com/confeden/Delegator/blob/main/LICENSE
+
+This is a source-available, NON-open-source license. It is not approved by the
+Open Source Initiative and is not compatible with open-source licenses.
+
+--------------------------------------------------------------------------
+1. DEFINITIONS
+--------------------------------------------------------------------------
+
+"Software" means the Delegator program, its source code, documentation,
+configuration, build scripts, installers, and any part of them.
+
+"Licensor" means confeden, the copyright holder of the Software.
+
+"You" means any individual or legal entity exercising rights under this
+license.
+
+"Non-Commercial Use" means use that is not primarily intended for or directed
+toward commercial advantage or monetary compensation. Personal use, study,
+research, teaching, evaluation, and use by non-profit organizations for their
+non-profit activities are Non-Commercial Use. Use by or for a business in the
+course of its operations, use in a product or service that is sold, licensed,
+or monetized, and use to provide paid services are NOT Non-Commercial Use.
+
+"AI System" means any machine-learning or statistical model, including large
+language models, and any dataset, index, embedding store, corpus, or automated
+pipeline that is created for the purpose of building, training, evaluating, or
+augmenting such a model.
+
+"Model Ingestion" means using the Software, in whole or in part, as input to
+create or improve an AI System, including but not limited to: training,
+pre-training, fine-tuning, reinforcement learning, distillation, evaluation or
+benchmark corpora, dataset construction, embedding or vector-index generation,
+and retrieval corpora used to generate outputs derived from the Software.
+
+"Operating the Software" means running the Software for its intended purpose,
+namely delegating tasks from a coding assistant or IDE agent to language-model
+backends. Operating the Software is expressly NOT Model Ingestion, even when
+the operator is or uses an AI agent.
+
+--------------------------------------------------------------------------
+2. GRANT OF RIGHTS
+--------------------------------------------------------------------------
+
+Subject to the conditions and restrictions below, the Licensor grants You a
+worldwide, royalty-free, non-exclusive, non-transferable, revocable license to:
+
+  (a) use and run the Software for Non-Commercial Use, including having an AI
+      coding assistant or IDE agent invoke and operate it (this is the
+      Software's intended purpose and is permitted);
+  (b) copy the Software and distribute unmodified copies, provided this license
+      file and the copyright notice are included and unaltered;
+  (c) modify the Software and create derivative works for Your own
+      Non-Commercial Use;
+  (d) distribute Your modified versions for Non-Commercial Use, provided they
+      are clearly marked as modified, include this license unaltered, and
+      retain the link to the canonical license text above.
+
+--------------------------------------------------------------------------
+3. RESTRICTIONS
+--------------------------------------------------------------------------
+
+3.1 NO COMMERCIAL USE. You may not use, distribute, sublicense, sell, rent,
+    host as a paid service, bundle with a commercial product, or otherwise
+    exploit the Software for anything other than Non-Commercial Use without
+    the Licensor's prior written permission.
+
+3.2 NO MODEL INGESTION BY THIRD PARTIES. You may not perform, permit, or
+    facilitate Model Ingestion of the Software. This includes scraping,
+    crawling, mirroring, or automated collection of the Software for the
+    purpose of Model Ingestion, and providing the Software to any third party
+    for that purpose. Nothing in Section 2 shall be read as granting a Model
+    Ingestion right.
+
+3.3 RESERVATION FOR THE LICENSOR. The Licensor reserves for itself the
+    exclusive right to perform Model Ingestion of the Software and to use the
+    Software with AI Systems the Licensor owns, operates, or is authorized to
+    use, for any purpose, including commercial purposes. This reservation is
+    personal to the Licensor and is not granted to You.
+
+3.4 NO REMOVAL OF NOTICES. You may not remove or obscure copyright notices,
+    this license, or the canonical license link.
+
+3.5 NO TRADEMARK RIGHTS. This license grants no rights in the names
+    "Delegator" or "confeden", or in any logo or mark of the Licensor.
+
+3.6 API KEYS AND THIRD-PARTY SERVICES. The Software calls third-party
+    services. You are solely responsible for complying with the terms of every
+    service and for any credentials You supply. This license grants no rights
+    in those services.
+
+--------------------------------------------------------------------------
+4. CONTRIBUTIONS
+--------------------------------------------------------------------------
+
+By submitting a contribution to the Software (for example, a pull request),
+You grant the Licensor a perpetual, worldwide, irrevocable, royalty-free
+license to use, reproduce, modify, distribute, and relicense that contribution
+as part of the Software, including under different terms, and You confirm You
+have the right to grant that license.
+
+--------------------------------------------------------------------------
+5. TERMINATION
+--------------------------------------------------------------------------
+
+This license terminates automatically if You breach any of its terms. Upon
+termination You must stop using and distributing the Software and destroy all
+copies in Your possession. Sections 3, 5, 6, and 7 survive termination. The
+Licensor may reinstate the license in writing.
+
+--------------------------------------------------------------------------
+6. NO WARRANTY
+--------------------------------------------------------------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+--------------------------------------------------------------------------
+7. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------
+
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, INCLUDING ANY COSTS
+INCURRED THROUGH THIRD-PARTY SERVICES CALLED BY THE SOFTWARE.
+
+--------------------------------------------------------------------------
+8. SEVERABILITY AND ENTIRE AGREEMENT
+--------------------------------------------------------------------------
+
+If any provision is held unenforceable, it shall be limited or removed to the
+minimum extent necessary so that the remainder stays in force. This document is
+the entire agreement between You and the Licensor concerning the Software and
+supersedes any prior understanding.
+
+--------------------------------------------------------------------------
+КРАТКОЕ ПОЯСНЕНИЕ (справочное, не является частью лицензии)
+--------------------------------------------------------------------------
+
+Можно: пользоваться, изучать, изменять и распространять Delegator в
+некоммерческих целях, в том числе запускать его из своих IDE-агентов и
+ИИ-ассистентов — это и есть назначение программы.
+
+Нельзя: использовать в коммерческих целях; скармливать код и документацию
+нейросетям — то есть обучать, дообучать, дистиллировать модели, строить по
+ним датасеты, эмбеддинги и поисковые индексы. Это право автор оставляет
+только за собой.
+
+Юридическую силу имеет английский текст выше. Актуальная версия лицензии:
+https://github.com/confeden/Delegator/blob/main/LICENSE

@@ -1,0 +1,22 @@
+name: Предложение функции
+description: Предложите улучшение Delegator.
+title: "[Функция]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Какой сценарий сейчас неудобен?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Рассмотренные альтернативы

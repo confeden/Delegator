@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delegator Core</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <div class="brand-title">Delegator</div>
+          <div id="configSummary" class="brand-subtitle">loading...</div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button id="navNew" class="nav-button" type="button">Новый чат</button>
+          <button id="navSearch" class="nav-button" type="button">Поиск</button>
+          <button id="navProjects" class="nav-button" type="button">Проекты</button>
+        </nav>
+
+        <section id="searchPopover" class="search-popover" hidden>
+          <label class="field-label" for="searchInput">Поиск</label>
+          <input id="searchInput" type="text" placeholder="Поиск по чатам">
+          <div class="field-hint">Фильтр по названию, проекту и клиенту.</div>
+        </section>
+
+        <section id="panelNew" class="sidebar-panel">
+          <form id="newSessionForm" class="stack-form">
+            <label class="field-label" for="sessionTitle">Новый чат</label>
+            <input id="sessionTitle" name="title" type="text" maxlength="200" placeholder="Название чата" required>
+            <button class="primary-button" type="submit">Создать</button>
+          </form>
+        </section>
+
+        <section id="panelProjects" class="sidebar-panel" hidden>
+          <div class="project-card">
+            <div class="field-label">Текущий проект</div>
+            <div id="workspaceHint" class="project-path">Поиск основной сессии для текущего проекта.</div>
+            <div class="stack-actions">
+              <button id="resumeWorkspaceButton" class="primary-button" type="button">Продолжить основной чат проекта</button>
+              <button id="importCodexButton" class="ghost-button" type="button">Импортировать чаты IDE</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="session-pane">
+        <div class="session-pane-header">
+          <span>Чаты</span>
+          <div class="session-pane-actions">
+            <button id="quickNewChatButton" class="ghost-button compact-button" type="button">Новый чат</button>
+            <button id="refreshSessionsButton" class="ghost-button compact-button" type="button">Обновить</button>
+          </div>
+        </div>
+        <div id="sessionList" class="session-list"></div>
+      </div>
+
+      <div class="sidebar-bottom" style="display: flex; gap: 8px; width: 100%;">
+        <button id="settingsButton" class="settings-button" type="button" style="flex: 1;">Настройки</button>
+        <button id="restartServerButton" class="ghost-button compact-button" type="button" title="Перезапустить сервер" style="flex: 0 0 auto; padding: 10px; border-radius: 8px; font-size: 14px;">⟳</button>
+      </div>
+    </aside>
+
+    <div id="sidebarResizer" class="sidebar-resizer" aria-hidden="true"></div>
+
+    <main class="main-column">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="modelsToggle" class="topbar-models-btn" type="button" aria-expanded="false">
+            <span class="model-dot" id="modelDot"></span>
+            <span id="topbarModelLabel">auto</span>
+            <span class="topbar-chevron">▾</span>
+          </button>
+          <div id="activeModelsChips" class="active-models-chips"></div>
+        </div>
+        <div class="topbar-right">
+          <span id="topbarStatus" class="topbar-status-text"></span>
+          <button id="usageToggle" class="ghost-button compact-button" type="button" aria-expanded="false" title="Статистика использования токенов">Статистика</button>
+        </div>
+      </header>
+
+      <div id="modelsPanel" class="models-panel" hidden>
+        <div class="models-panel-header">
+          <span class="models-panel-title">Модели</span>
+          <button id="modelsPanelClose" class="ghost-button compact-button" type="button">✕</button>
+        </div>
+        <div id="modelsPanelBody" class="models-panel-body"></div>
+      </div>
+
+      <div id="usagePanel" class="models-panel usage-panel" hidden>
+        <div class="models-panel-header">
+          <span class="models-panel-title">Статистика использования</span>
+          <div class="usage-panel-actions">
+            <button id="usagePanelRefresh" class="ghost-button compact-button" type="button">Обновить</button>
+            <button id="usagePanelClose" class="ghost-button compact-button" type="button">✕</button>
+          </div>
+        </div>
+        <div id="usagePanelBody" class="models-panel-body usage-panel-body"></div>
+      </div>
+
+      <section id="messageList" class="message-list"></section>
+
+      <form id="chatForm" class="composer">
+        <div id="editBanner" class="edit-banner" hidden>
+          <span id="editBannerText">Редактирование сообщения</span>
+          <button id="cancelEditButton" class="cancel-button" type="button">Отменить</button>
+        </div>
+        <div id="footerStatus" class="footer-status" hidden></div>
+        <div id="attachmentTray" class="attachment-tray" hidden></div>
+        <div class="composer-input-row">
+          <label for="attachmentInput" id="attachButton" class="ghost-button attach-button" title="Прикрепить файл">＋</label>
+          <input id="attachmentInput" type="file" multiple hidden>
+          <textarea id="messageInput" name="text" rows="1" placeholder="Написать в чат" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" required></textarea>
+        </div>
+        <div class="composer-bottom">
+          <select id="modeSelect" class="bottom-select" name="mode">
+            <option value="delegate">delegate</option>
+            <option value="micro">micro</option>
+            <option value="boost">boost</option>
+            <option value="verify">verify</option>
+          </select>
+          <select id="modelSelect" class="bottom-select bottom-model" name="model"></select>
+          <select id="reasoningSelect" class="bottom-select bottom-reasoning" name="reasoning"></select>
+          <button id="sendButton" class="primary-button send-button" type="submit">Отправить</button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <div id="settingsOverlay" class="settings-overlay" hidden>
+    <div class="settings-dialog">
+      <div class="settings-header">
+        <div class="settings-title">Настройки</div>
+        <button id="closeSettingsButton" class="ghost-button compact-button" type="button">Закрыть</button>
+      </div>
+      <div class="settings-group">
+        <label class="field-label" for="themeSelect">Оформление</label>
+        <select id="themeSelect">
+          <option value="codex-green">Codex Green</option>
+          <option value="midnight-indigo">Midnight Indigo</option>
+          <option value="graphite">Graphite</option>
+        </select>
+      </div>
+      <div class="settings-group">
+        <label class="field-label" for="fontSelect">Шрифт</label>
+        <select id="fontSelect">
+          <option value="segoe">Segoe UI</option>
+          <option value="inter">Inter</option>
+          <option value="consolas">Consolas</option>
+        </select>
+      </div>
+      <div class="field-hint">Изменения применяются сразу и сохраняются для следующих запусков.</div>
+    </div>
+  </div>
+
+  <template id="messageTemplate">
+    <article class="message-card">
+      <div class="message-header">
+        <div class="message-role"></div>
+        <div class="message-actions"></div>
+      </div>
+      <details class="reasoning-block" hidden>
+        <summary>Показать рассуждения</summary>
+        <pre class="reasoning-content"></pre>
+      </details>
+      <div class="message-content"></div>
+      <div class="message-usage" hidden></div>
+      <div class="message-meta"></div>
+    </article>
+  </template>
+
+  <template id="pendingTemplate">
+    <article class="message-card pending-card" data-role="assistant">
+      <div class="message-header">
+        <div class="message-role">assistant</div>
+      </div>
+      <div class="pending-body">
+        <div class="typing-dots" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="pending-copy">
+          <div class="pending-text"></div>
+          <pre class="pending-stream" hidden></pre>
+        </div>
+      </div>
+      <div class="message-meta"></div>
+    </article>
+  </template>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

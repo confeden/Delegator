@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Python package
+        run: python -m pip install --disable-pip-version-check -e .
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Rust tests
+        run: cargo test --locked
+
+      - name: Validate Python modules
+        run: |
+          python -m compileall -q delegator_core run_server.py
+          python -c "from delegator_core.main import app; assert app.title == 'Delegator Core'"
+
+      - name: Run Python tests
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest tests -q
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+            [void][scriptblock]::Create((Get-Content $_.FullName -Raw -Encoding UTF8))
+          }
+
+      - name: Check .ps1 files have UTF-8 BOM
+        shell: pwsh
+        run: |
+          $bad = Get-ChildItem scripts -Filter *.ps1 | Where-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            -not ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+          }
+          if ($bad) {
+            $bad | ForEach-Object { Write-Output "Missing UTF-8 BOM (PS 5.1 reads no-BOM as ANSI): $($_.Name)" }
+            exit 1
+          }
+
+      - name: Audit source package
+        shell: pwsh
+        run: .\scripts\audit-release.ps1

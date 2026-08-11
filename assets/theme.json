@@ -1,0 +1,23 @@
+{
+  "name": "Delegator Dark",
+  "font_family": "Segoe UI Semibold",
+  "font_size": 16.0,
+  "item_spacing_x": 9.0,
+  "item_spacing_y": 8.0,
+  "button_padding_x": 12.0,
+  "button_padding_y": 7.0,
+  "background": "#101218",
+  "panel": "#151922",
+  "window": "#181D27",
+  "control": "#222936",
+  "control_hovered": "#2A3444",
+  "control_active": "#334155",
+  "text": "#EEF2F7",
+  "weak_text": "#AAB4C3",
+  "accent": "#44C7F4",
+  "selection": "#24566A",
+  "hyperlink": "#67D4FA",
+  "success": "#59D18C",
+  "warning": "#FFD166",
+  "error": "#FF6B7A"
+}

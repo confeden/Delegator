@@ -1,0 +1,50 @@
+name: Сообщение об ошибке
+description: Опишите воспроизводимую проблему Delegator без передачи секретов.
+title: "[Ошибка]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Не прикладывайте config.json, API-ключи, данные аккаунтов, базы и неочищенные журналы."
+  - type: input
+    id: version
+    attributes:
+      label: Версия Delegator
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Версия Windows
+      options:
+        - Windows 11
+        - Windows 10
+        - Другая
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Проверка конфиденциальности
+      options:
+        - label: Я удалил API-ключи, данные аккаунтов, персональные пути и приватное содержимое запросов.
+          required: true
