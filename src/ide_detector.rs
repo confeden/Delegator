@@ -24,6 +24,17 @@ const DELEGATOR_HOOK_FILE_NAMES: [&str; 5] = [
     "DELEGATOR.md",
 ];
 
+/// Entry points Delegator shipped from the retired `~/.codex\bin` location.
+const LEGACY_ENTRY_POINTS: [&str; 7] = [
+    "ai-delegate",
+    "ai-delegate-micro",
+    "ai-delegate-parallel",
+    "ai-delegate-plan",
+    "ai-delegate-semantic-router",
+    "gemini-delegate",
+    "opencode-delegate",
+];
+
 /// Files from Delegator's legacy `~/.codex\bin` layout. Always Delegator's own.
 const DELEGATOR_LEGACY_FILE_NAMES: [&str; 6] = [
     "ai-delegate.cmd",
@@ -41,27 +52,72 @@ const MAX_SCAN_DEPTH: usize = 2;
 /// bigger directory is real IDE state and stops the scan early.
 const MAX_SCAN_ENTRIES: usize = 64;
 
-fn get_runtime_entrypoint() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| {
-            path.parent()
-                .map(|parent| parent.join(r"runtime\ai-delegate.cmd"))
-        })
-        .unwrap_or_else(|| PathBuf::from("ai-delegate.cmd"))
+const RUNTIME_ENTRY_RELATIVE: &str = r"runtime\ai-delegate.cmd";
+
+/// Entry point to advertise, plus whether it actually exists. Preference: the
+/// runtime shipped next to this executable, then the standard install location.
+/// A developer build has neither — and must not rewrite the user's instruction
+/// files with a path that points into a build tree.
+fn resolve_runtime_entrypoint(local_appdata: &Path) -> (PathBuf, bool) {
+    let beside_exe = std::env::current_exe().ok().and_then(|path| {
+        path.parent()
+            .map(|parent| parent.join(RUNTIME_ENTRY_RELATIVE))
+    });
+    let installed = local_appdata
+        .join(r"Programs\Delegator")
+        .join(RUNTIME_ENTRY_RELATIVE);
+    for candidate in beside_exe
+        .iter()
+        .cloned()
+        .chain(std::iter::once(installed.clone()))
+    {
+        if candidate.exists() {
+            return (candidate, true);
+        }
+    }
+    (beside_exe.unwrap_or(installed), false)
 }
 
+/// Rewrites every reference to the retired `~/.codex\bin` entry points so
+/// instruction files always name the installed runtime. Delegator used to live
+/// inside the Codex profile, and agents kept quoting that path long after the
+/// runtime moved to `%LOCALAPPDATA%\Programs\Delegator\runtime`.
 fn migrate_legacy_text(env: &IdeEnv, content: String) -> String {
-    let legacy_entry = env.home.join(r".codex\bin\ai-delegate.cmd");
-    let installed_entry = get_runtime_entrypoint();
-    content.replace(
-        &legacy_entry.to_string_lossy().to_string(),
-        &installed_entry.to_string_lossy(),
-    )
+    if !env.runtime_ready {
+        // The runtime location is unknown, so any rewrite would point at a
+        // path that does not exist. Leave the file exactly as it is.
+        return content;
+    }
+    let runtime_dir = env
+        .runtime_entry
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let legacy_bin = env.home.join(r".codex\bin");
+    let mut result = content;
+    // The policy file moved out of the Codex profile too.
+    result = result.replace(
+        &env.home
+            .join(r".codex\DELEGATOR.md")
+            .to_string_lossy()
+            .to_string(),
+        &runtime_dir.join("DELEGATOR.md").to_string_lossy(),
+    );
+    for name in LEGACY_ENTRY_POINTS {
+        let installed = runtime_dir.join(format!("{name}.cmd"));
+        for extension in ["cmd", "ps1"] {
+            let legacy = legacy_bin.join(format!("{name}.{extension}"));
+            result = result.replace(
+                &legacy.to_string_lossy().to_string(),
+                &installed.to_string_lossy(),
+            );
+        }
+    }
+    result
 }
 
-fn get_hook_text() -> String {
-    let entrypoint = get_runtime_entrypoint();
+fn get_hook_text(env: &IdeEnv) -> String {
+    let entrypoint = env.runtime_entry.clone();
     format!(
         "{header}\n# Delegator Integration\n\
 Delegate suitable work to free AI backends via the installed Delegator entry point `{entry}` — it saves your own tokens and adds independent perspectives.\n\
@@ -157,6 +213,11 @@ struct IdeEnv {
     appdata: PathBuf,
     local_appdata: PathBuf,
     path_dirs: Vec<PathBuf>,
+    /// Entry point instruction files must name.
+    runtime_entry: PathBuf,
+    /// False when no runtime exists next to the executable nor in the install
+    /// directory (a developer build): hook files are then left untouched.
+    runtime_ready: bool,
 }
 
 impl IdeEnv {
@@ -167,17 +228,26 @@ impl IdeEnv {
         let path_dirs = std::env::var_os("PATH")
             .map(|value| std::env::split_paths(&value).collect())
             .unwrap_or_default();
+        let (runtime_entry, runtime_ready) = resolve_runtime_entrypoint(&local_appdata);
         Self {
             home,
             appdata,
             local_appdata,
             path_dirs,
+            runtime_entry,
+            runtime_ready,
         }
     }
 
     fn target_files(&self, name: &str) -> Vec<PathBuf> {
         match name {
-            "Antigravity" => vec![self.home.join(".gemini\\config\\AGENTS.md")],
+            // Antigravity reads the global rules from ~/.gemini\GEMINI.md; the
+            // config\AGENTS.md path alone left the IDE quoting a stale entry
+            // point from an older install (reported 2026-08-11).
+            "Antigravity" => vec![
+                self.home.join(".gemini\\GEMINI.md"),
+                self.home.join(".gemini\\config\\AGENTS.md"),
+            ],
             "Codex" => vec![self.home.join(".codex\\AGENTS.md")],
             "OpenCode" => vec![self.home.join(".config\\opencode\\AGENTS.md")],
             "Cursor" => vec![self.home.join(".cursor\\rules\\delegator.md")],
@@ -433,54 +503,51 @@ impl IdeDetector {
         }
     }
 
-    pub fn migrate_legacy_installation(enable: bool) {
-        let env = IdeEnv::current();
-        let legacy_policy = env.home.join(r".codex\DELEGATOR.md");
-        if legacy_policy.exists() {
-            let _ = Self::apply_hook_to_path(&env, "Legacy Codex policy", &legacy_policy, enable);
-        }
-
-        let bin_dir = env.home.join(r".codex\bin");
-        let installed_runtime = get_runtime_entrypoint()
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        for name in ["ai-delegate", "gemini-delegate", "opencode-delegate"] {
-            let wrapper = bin_dir.join(format!("{name}.cmd"));
-            if !wrapper.exists() {
-                continue;
-            }
-            let old = fs::read_to_string(&wrapper).unwrap_or_default();
-            let legacy_script = format!(r".codex\bin\{name}.ps1");
-            if !old.contains(&legacy_script) {
-                continue;
-            }
-            let target = installed_runtime.join(format!("{name}.cmd"));
-            if !target.exists() {
-                continue;
-            }
-            let shim = format!(
-                "@echo off\r\ncall \"{}\" %*\r\nexit /b %errorlevel%\r\n",
-                target.display()
-            );
-            let _ = fs::write(wrapper, shim);
-        }
+    /// Retires the old `~/.codex` installation: the runtime lives in
+    /// `%LOCALAPPDATA%\Programs\Delegator\runtime` now, and leaving shims behind
+    /// makes agents quote the Codex path as the entry point (reported 2026-08-11).
+    pub fn migrate_legacy_installation(_enable: bool) {
+        Self::cleanup_legacy_installation_in(&IdeEnv::current());
     }
 
     pub fn remove_legacy_shims() {
-        let env = IdeEnv::current();
-        let bin_dir = env.home.join(r".codex\bin");
-        let installed_runtime = get_runtime_entrypoint()
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        for name in ["ai-delegate", "gemini-delegate", "opencode-delegate"] {
-            let wrapper = bin_dir.join(format!("{name}.cmd"));
-            let target = installed_runtime.join(format!("{name}.cmd"));
-            let content = fs::read_to_string(&wrapper).unwrap_or_default();
-            if !content.is_empty() && content.contains(&target.to_string_lossy().to_string()) {
-                let _ = fs::remove_file(wrapper);
+        Self::cleanup_legacy_installation_in(&IdeEnv::current());
+    }
+
+    fn cleanup_legacy_installation_in(env: &IdeEnv) {
+        // Strip our block from the legacy policy file; whatever the user wrote
+        // there stays untouched.
+        let legacy_policy = env.home.join(r".codex\DELEGATOR.md");
+        if legacy_policy.exists() {
+            let _ = Self::apply_hook_to_path(env, "Legacy Codex policy", &legacy_policy, false);
+            if fs::read_to_string(&legacy_policy)
+                .map(|content| content.trim().is_empty())
+                .unwrap_or(false)
+            {
+                let _ = fs::remove_file(&legacy_policy);
             }
+        }
+
+        // Delete the entry points Delegator itself put in ~/.codex\bin. Files
+        // the user placed there are left alone, and the directory is removed
+        // only once it is empty.
+        let bin_dir = env.home.join(r".codex\bin");
+        if !bin_dir.exists() {
+            return;
+        }
+        for name in LEGACY_ENTRY_POINTS {
+            for extension in ["cmd", "ps1"] {
+                let path = bin_dir.join(format!("{name}.{extension}"));
+                if path.exists() {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+        let empty = fs::read_dir(&bin_dir)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+        if empty {
+            let _ = fs::remove_dir(&bin_dir);
         }
     }
 
@@ -529,7 +596,7 @@ impl IdeDetector {
         }
 
         let final_content = if enable {
-            format!("{}{}", get_hook_text(), cleaned_content.trim_start())
+            format!("{}{}", get_hook_text(env), cleaned_content.trim_start())
         } else {
             cleaned_content
         };
@@ -544,6 +611,45 @@ impl IdeDetector {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn developer_build_does_not_rewrite_instruction_files() {
+        // Running the binary from a build tree must never point an IDE at a
+        // runtime path that does not exist (reported 2026-08-11).
+        let profile = TempProfile::new("dev-build");
+        let mut env = profile.env();
+        env.runtime_ready = false;
+        let legacy = env
+            .home
+            .join(r".codex\bin\ai-delegate.cmd")
+            .to_string_lossy()
+            .to_string();
+        let content = format!("Entry point: `{legacy}`\n");
+        assert_eq!(migrate_legacy_text(&env, content.clone()), content);
+
+        let ready = profile.env();
+        assert!(ready.runtime_ready);
+        let rewritten = migrate_legacy_text(&ready, content);
+        assert!(!rewritten.contains(".codex"));
+        assert!(rewritten.contains("ai-delegate.cmd"));
+    }
+
+    #[test]
+    fn legacy_codex_entry_points_are_removed() {
+        let profile = TempProfile::new("legacy-cleanup");
+        let env = profile.env();
+        profile.write("home/.codex/bin/ai-delegate.cmd", "@echo off\r\n");
+        profile.write("home/.codex/bin/gemini-delegate.ps1", "# old\r\n");
+        profile.write("home/.codex/bin/user-script.cmd", "@echo off\r\n");
+
+        IdeDetector::cleanup_legacy_installation_in(&env);
+
+        let bin = env.home.join(r".codex\bin");
+        assert!(!bin.join("ai-delegate.cmd").exists());
+        assert!(!bin.join("gemini-delegate.ps1").exists());
+        // Files Delegator never wrote stay, and so does the directory holding them.
+        assert!(bin.join("user-script.cmd").exists());
+    }
+
     use super::*;
     use std::collections::HashMap;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -579,11 +685,25 @@ mod tests {
         }
 
         fn env(&self) -> IdeEnv {
+            let runtime_entry = self.root.join("runtime").join("ai-delegate.cmd");
+            if !runtime_entry.exists() {
+                fs::create_dir_all(runtime_entry.parent().expect("runtime dir"))
+                    .expect("create runtime dir");
+                fs::write(
+                    &runtime_entry,
+                    "@echo off
+
+",
+                )
+                .expect("write runtime entry");
+            }
             IdeEnv {
                 home: self.home(),
                 appdata: self.appdata(),
                 local_appdata: self.root.join("localappdata"),
                 path_dirs: Vec::new(),
+                runtime_entry,
+                runtime_ready: true,
             }
         }
 
@@ -615,13 +735,13 @@ mod tests {
         let profile = TempProfile::new("hook-only");
         let env = profile.env();
 
-        profile.write("home/.codex/AGENTS.md", &get_hook_text());
-        profile.write("home/.config/opencode/AGENTS.md", &get_hook_text());
+        profile.write("home/.codex/AGENTS.md", &get_hook_text(&env));
+        profile.write("home/.config/opencode/AGENTS.md", &get_hook_text(&env));
         // Nested case: `.cursor` only holds `rules\delegator.md`.
-        profile.write("home/.cursor/rules/delegator.md", &get_hook_text());
-        profile.write("home/.claude/CLAUDE.md", &get_hook_text());
-        profile.write("appdata/Claude/CLAUDE.md", &get_hook_text());
-        profile.write("home/.gemini/config/AGENTS.md", &get_hook_text());
+        profile.write("home/.cursor/rules/delegator.md", &get_hook_text(&env));
+        profile.write("home/.claude/CLAUDE.md", &get_hook_text(&env));
+        profile.write("appdata/Claude/CLAUDE.md", &get_hook_text(&env));
+        profile.write("home/.gemini/config/AGENTS.md", &get_hook_text(&env));
         // "Disable" leaves an emptied hook file behind — also not evidence.
         profile.write("home/.copilot/instructions/delegator.instructions.md", "");
         profile.write("home/.vscode/argv.json", "{}"); // sanity: this one IS evidence

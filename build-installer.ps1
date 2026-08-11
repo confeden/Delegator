@@ -81,4 +81,4 @@ try {
     }
 }
 
-Get-Item (Join-Path $projectRoot "dist\DelegatorSetup-0.4.2.exe")
+Get-Item (Join-Path $projectRoot "dist\DelegatorSetup-0.4.3.exe")
