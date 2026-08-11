@@ -74,7 +74,9 @@ pub enum TrayAction {
 }
 
 pub struct TrayManager {
-    _tray_icon: TrayIcon,
+    tray_icon: TrayIcon,
+    base_pixels: Vec<u8>,
+    icon_size: (u32, u32),
     _open_item: MenuItem,
     _toggle_item: MenuItem,
     _quit_item: MenuItem,
@@ -95,7 +97,8 @@ impl TrayManager {
             .resize_exact(64, 64, image::imageops::FilterType::Lanczos3)
             .into_rgba8();
         let (width, height) = logo.dimensions();
-        let icon = Icon::from_rgba(logo.into_raw(), width, height)?;
+        let base_pixels = logo.into_raw();
+        let icon = Icon::from_rgba(base_pixels.clone(), width, height)?;
 
         let tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
@@ -134,12 +137,41 @@ impl TrayManager {
 
         Ok((
             Self {
-                _tray_icon: tray_icon,
+                tray_icon,
+                base_pixels,
+                icon_size: (width, height),
                 _open_item: open_item,
                 _toggle_item: toggle_item,
                 _quit_item: quit_item,
             },
             rx,
         ))
+    }
+
+    /// Pulses the tray icon and switches the tooltip to «Завершение работы…»
+    /// while shutdown work runs, so a quit that takes a few seconds does not
+    /// look like a hang. Must be called on the thread that owns the tray icon.
+    pub fn run_shutdown_animation(&self, done: &dyn Fn() -> bool, max: Duration) {
+        let _ = self
+            .tray_icon
+            .set_tooltip(Some("Delegator: завершение работы..."));
+        let (width, height) = self.icon_size;
+        let started = std::time::Instant::now();
+        let mut step: usize = 0;
+        while !done() && started.elapsed() < max {
+            // Fade the icon in and out: 100% -> 40% alpha and back.
+            let phase = step % 8;
+            let level = if phase < 4 { 4 - phase } else { phase - 3 };
+            let alpha_scale = 0.4 + 0.15 * level as f32;
+            let mut pixels = self.base_pixels.clone();
+            for chunk in pixels.chunks_exact_mut(4) {
+                chunk[3] = (chunk[3] as f32 * alpha_scale).round().clamp(0.0, 255.0) as u8;
+            }
+            if let Ok(frame) = Icon::from_rgba(pixels, width, height) {
+                let _ = self.tray_icon.set_icon(Some(frame));
+            }
+            step += 1;
+            std::thread::sleep(Duration::from_millis(120));
+        }
     }
 }

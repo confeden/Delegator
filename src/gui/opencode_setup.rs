@@ -1,7 +1,8 @@
 //! OpenCode CLI support for the «Модели OpenCode» tab:
 //! * strength ordering of the Zen (`opencode/*`) block,
-//! * background install (`npm install -g opencode-ai`),
-//! * background update (`opencode upgrade`).
+//! * background install of the missing dependencies (winget/npm chain),
+//! * background update (`opencode upgrade`),
+//! * the manual-download fallback links.
 //!
 //! Everything here is fire-and-forget: the GUI thread never blocks, results
 //! come back through `AppMessage`, and every failure is logged in English and
@@ -166,19 +167,153 @@ pub enum CliJob {
 /// stdout/stderr always goes to the log in English.
 pub type CliJobResult = Result<(), String>;
 
-/// `npm install -g opencode-ai` in the background. Fails fast (without
-/// spawning anything) when npm is not on PATH.
-pub async fn install_opencode_cli() -> CliJobResult {
-    let Some(npm) = crate::dependency_service::find_npm() else {
-        eprintln!("npm not found on PATH; cannot install opencode-ai");
-        return Err("не найден npm".to_string());
+/// Manual fallback when nothing can be installed automatically.
+pub const NODEJS_DOWNLOAD_URL: &str = "https://nodejs.org/en/download";
+pub const OPENCODE_SITE_URL: &str = "https://opencode.ai";
+
+/// Shown when neither winget nor npm exists, so no chain can even start.
+pub const NO_INSTALLER_FOUND: &str = "не найдены winget и npm";
+
+/// One command of the dependency install chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallStep {
+    /// The preferred route: installs the CLI without Node.js at all.
+    WingetOpenCode,
+    /// Prerequisite of `NpmOpenCode` when npm is missing.
+    WingetNodeJs,
+    /// The classic route, also the fallback when winget refuses the package.
+    NpmOpenCode,
+}
+
+impl InstallStep {
+    /// The single short Russian line the user sees while the step runs.
+    pub fn status_line(self) -> &'static str {
+        match self {
+            InstallStep::WingetNodeJs => "Устанавливаю Node.js…",
+            InstallStep::WingetOpenCode | InstallStep::NpmOpenCode => "Устанавливаю OpenCode CLI…",
+        }
+    }
+
+    /// Arguments exactly as spawned; the program is located at run time
+    /// because PATH may have changed since the previous step.
+    pub fn args(self) -> &'static [&'static str] {
+        match self {
+            InstallStep::WingetOpenCode => &[
+                "install",
+                "--id",
+                "SST.opencode",
+                "-e",
+                "--silent",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+            ],
+            InstallStep::WingetNodeJs => &[
+                "install",
+                "--id",
+                "OpenJS.NodeJS.LTS",
+                "-e",
+                "--silent",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+            ],
+            InstallStep::NpmOpenCode => &["install", "-g", "opencode-ai"],
+        }
+    }
+
+    fn program_name(self) -> &'static str {
+        match self {
+            InstallStep::WingetOpenCode | InstallStep::WingetNodeJs => "winget",
+            InstallStep::NpmOpenCode => "npm",
+        }
+    }
+
+    /// Node.js is only a prerequisite — succeeding at it does not end the
+    /// chain, succeeding at anything else does.
+    fn installs_cli(self) -> bool {
+        !matches!(self, InstallStep::WingetNodeJs)
+    }
+}
+
+/// The command line as logged and as spawned (English, for the log only).
+pub fn command_line(step: InstallStep) -> String {
+    format!("{} {}", step.program_name(), step.args().join(" "))
+}
+
+/// Ordered install chain for the tooling found on this machine:
+/// * winget → try `SST.opencode` first (no Node.js needed at all);
+/// * npm present → `npm install -g opencode-ai` as the fallback;
+/// * npm missing but winget present → install Node.js LTS, then npm;
+/// * neither → empty, the GUI shows the manual download links instead.
+pub fn install_plan(has_winget: bool, has_npm: bool) -> Vec<InstallStep> {
+    let mut plan = Vec::new();
+    if has_winget {
+        plan.push(InstallStep::WingetOpenCode);
+    }
+    if has_npm {
+        plan.push(InstallStep::NpmOpenCode);
+    } else if has_winget {
+        plan.push(InstallStep::WingetNodeJs);
+        plan.push(InstallStep::NpmOpenCode);
+    }
+    plan
+}
+
+/// Runs the chain in the background, reporting the step it is about to start
+/// so the tab can keep exactly one status line up to date. Stops at the first
+/// step that actually installs the CLI.
+pub async fn install_dependencies(
+    plan: Vec<InstallStep>,
+    report: impl Fn(InstallStep) + Send + 'static,
+) -> CliJobResult {
+    if plan.is_empty() {
+        eprintln!("Neither winget nor npm is available; cannot install the OpenCode CLI");
+        return Err(NO_INSTALLER_FOUND.to_string());
+    }
+    let chain: Vec<String> = plan.iter().map(|step| command_line(*step)).collect();
+    println!("Dependency install chain: {}", chain.join(" -> "));
+
+    let mut last_error: Option<String> = None;
+    for step in plan {
+        report(step);
+        match run_install_step(step).await {
+            Ok(()) if step.installs_cli() => return Ok(()),
+            Ok(()) => {}
+            Err(reason) => last_error = Some(reason),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| NO_INSTALLER_FOUND.to_string()))
+}
+
+async fn run_install_step(step: InstallStep) -> CliJobResult {
+    let program = match step {
+        InstallStep::WingetOpenCode | InstallStep::WingetNodeJs => {
+            crate::dependency_service::find_winget()
+        }
+        // Re-resolved on every attempt: a Node.js installed one step ago is
+        // not on the running process's PATH, only in %ProgramFiles%\nodejs.
+        InstallStep::NpmOpenCode => crate::dependency_service::find_npm(),
     };
-    run_cli_job(
-        "npm install -g opencode-ai",
-        &npm,
-        &["install", "-g", "opencode-ai"],
-    )
-    .await
+    let Some(program) = program else {
+        eprintln!("`{}` not found; skipping this step", step.program_name());
+        return Err(format!("не найден {}", step.program_name()));
+    };
+    run_cli_job(&command_line(step), &program, step.args()).await
+}
+
+/// Opens a page in the user's browser without flashing a console window.
+/// Used only for the two hardcoded fallback links above.
+pub fn open_url(url: &str) {
+    println!("Opening {url} in the default browser");
+    let mut command = std::process::Command::new("cmd");
+    command.args(["/c", "start", "", url]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    if let Err(error) = command.spawn() {
+        eprintln!("Failed to open {url}: {error}");
+    }
 }
 
 /// `opencode upgrade` in the background: keeps the Zen alias list current, so
@@ -392,6 +527,67 @@ mod tests {
         assert!(load_zen_strengths_from(&dir).is_empty());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_chain_covers_every_combination_of_winget_and_npm() {
+        use InstallStep::*;
+        // winget alone already installs the CLI without Node.js; npm stays as
+        // the fallback for the case winget refuses the package.
+        assert_eq!(install_plan(true, true), vec![WingetOpenCode, NpmOpenCode]);
+        // No npm: winget must first bring Node.js LTS in, then npm can run.
+        assert_eq!(
+            install_plan(true, false),
+            vec![WingetOpenCode, WingetNodeJs, NpmOpenCode]
+        );
+        // No winget: only the classic npm route is left.
+        assert_eq!(install_plan(false, true), vec![NpmOpenCode]);
+        // Nothing to run — the GUI shows the manual download links instead.
+        assert_eq!(install_plan(false, false), Vec::new());
+    }
+
+    #[test]
+    fn install_commands_are_spelled_exactly_as_verified_by_hand() {
+        assert_eq!(
+            command_line(InstallStep::WingetOpenCode),
+            "winget install --id SST.opencode -e --silent \
+             --accept-package-agreements --accept-source-agreements"
+        );
+        assert_eq!(
+            command_line(InstallStep::WingetNodeJs),
+            "winget install --id OpenJS.NodeJS.LTS -e --silent \
+             --accept-package-agreements --accept-source-agreements"
+        );
+        assert_eq!(
+            command_line(InstallStep::NpmOpenCode),
+            "npm install -g opencode-ai"
+        );
+        // Only Node.js is a prerequisite; the other two end the chain.
+        assert!(InstallStep::WingetOpenCode.installs_cli());
+        assert!(InstallStep::NpmOpenCode.installs_cli());
+        assert!(!InstallStep::WingetNodeJs.installs_cli());
+        // One short Russian line per step, and only two distinct ones.
+        assert_eq!(
+            InstallStep::WingetOpenCode.status_line(),
+            InstallStep::NpmOpenCode.status_line()
+        );
+        assert_eq!(
+            InstallStep::WingetNodeJs.status_line(),
+            "Устанавливаю Node.js…"
+        );
+    }
+
+    #[test]
+    fn manual_fallback_links_point_at_the_official_pages() {
+        assert_eq!(NODEJS_DOWNLOAD_URL, "https://nodejs.org/en/download");
+        assert_eq!(OPENCODE_SITE_URL, "https://opencode.ai");
+    }
+
+    /// An empty plan must fail immediately instead of spawning anything.
+    #[tokio::test]
+    async fn an_empty_plan_fails_without_spawning_a_process() {
+        let result = install_dependencies(Vec::new(), |_| unreachable!("no step may run")).await;
+        assert_eq!(result, Err(NO_INSTALLER_FOUND.to_string()));
     }
 
     #[test]

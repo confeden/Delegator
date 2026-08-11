@@ -1,8 +1,9 @@
 use crate::config::{is_supported_proxy_url, unix_now, AppConfig};
 use crate::dependency_service::DependencyStatus;
 use crate::gui::opencode_setup::{
-    install_opencode_cli, load_zen_strengths, order_opencode_models, upgrade_opencode_cli, CliJob,
-    CliJobResult,
+    install_dependencies, install_plan, load_zen_strengths, open_url, order_opencode_models,
+    upgrade_opencode_cli, CliJob, CliJobResult, InstallStep, NODEJS_DOWNLOAD_URL,
+    NO_INSTALLER_FOUND, OPENCODE_SITE_URL,
 };
 use crate::gui::proxy::{run_proxy_test, GoogleProbe, ProxyTestResult};
 use crate::gui::usage::{fetch_usage, format_count, UsageReport};
@@ -20,22 +21,20 @@ use std::time::Duration;
 use crate::theme::ThemeConfig;
 use crate::tray_service::{attach_ui_context, mark_quit_handled, TrayAction};
 
-/// Header title, derived from the crate version at compile time so it can
-/// never drift from Cargo.toml («Delegator v0.4» for 0.4.x).
-const APP_TITLE: &str = concat!(
-    "Delegator v",
-    env!("CARGO_PKG_VERSION_MAJOR"),
-    ".",
-    env!("CARGO_PKG_VERSION_MINOR")
-);
+/// Header title, derived from the crate version at compile time. It must be
+/// the FULL version: the window title and the tray tooltip use the same
+/// `CARGO_PKG_VERSION`, and a shortened header read as a second, older version.
+const APP_TITLE: &str = concat!("Delegator v", env!("CARGO_PKG_VERSION"));
 
 pub enum AppMessage {
     GeminiModelsFetched(Result<Vec<ModelInfo>, String>),
     OpenCodeModelsFetched(Result<OpenCodeCatalog, String>),
     UsageFetched(Result<UsageReport, String>),
     ProxyTested(ProxyTestResult),
-    /// A background `npm install -g opencode-ai` / `opencode upgrade` finished.
+    /// A background dependency install / `opencode upgrade` finished.
     OpenCodeCliJob(CliJob, CliJobResult),
+    /// The install chain moved on to the next command (one status line).
+    OpenCodeInstallStep(InstallStep),
     /// The 8-hourly GitHub release check finished.
     UpdateChecked(UpdateStatus),
 }
@@ -64,9 +63,16 @@ enum ProxyTestState {
     Done(ProxyTestResult),
 }
 
-/// State of one background OpenCode CLI job (install or upgrade).
+/// State of the background `opencode upgrade` job.
 enum CliJobState {
     Running,
+    Done(CliJobResult),
+}
+
+/// State of the «Установить» chain: which command runs right now, or how it
+/// ended. Exactly one short Russian line is derived from this.
+enum InstallState {
+    Running(InstallStep),
     Done(CliJobResult),
 }
 
@@ -94,8 +100,8 @@ pub struct DelegatorApp {
     /// "strongest first" order of the `opencode/*` block in the tab.
     zen_strengths: HashMap<String, i32>,
 
-    // Background OpenCode CLI jobs («Скачать OpenCode CLI» / «Обновить CLI»).
-    opencode_install: Option<CliJobState>,
+    // Background OpenCode CLI jobs («Установить» / «Обновить CLI»).
+    opencode_install: Option<InstallState>,
     opencode_upgrade: Option<CliJobState>,
 
     // Usage statistics («Статистика» tab)
@@ -121,6 +127,11 @@ pub struct DelegatorApp {
     is_loading_opencode: bool,
     tray_rx: Receiver<TrayAction>,
     quitting: bool,
+    /// «Выйти» was accepted: paint the farewell screen instead of the tabs.
+    shutting_down: bool,
+    /// The farewell screen reached the screen at least once, so the close
+    /// command may go out now (see the shutdown block in `update`).
+    shutdown_frame_painted: bool,
     window_theme_applied: bool,
     dependencies: DependencyStatus,
     theme: ThemeConfig,
@@ -191,6 +202,8 @@ impl DelegatorApp {
             is_loading_opencode: false,
             tray_rx,
             quitting: false,
+            shutting_down: false,
+            shutdown_frame_painted: false,
             window_theme_applied: false,
             dependencies: DependencyStatus::detect(),
             theme,
@@ -257,16 +270,33 @@ impl DelegatorApp {
         });
     }
 
-    /// «Скачать OpenCode CLI»: `npm install -g opencode-ai` in the background.
+    /// «Установить»: the whole dependency chain (winget → npm, with a Node.js
+    /// install in between when npm is missing) in the background. The plan is
+    /// built here so the first status line is correct from the very first
+    /// frame; every command is then re-resolved inside the job.
     fn start_opencode_install(&mut self) {
-        if matches!(self.opencode_install, Some(CliJobState::Running)) {
+        if matches!(self.opencode_install, Some(InstallState::Running(_))) {
             return;
         }
-        self.opencode_install = Some(CliJobState::Running);
+        let plan = install_plan(
+            self.dependencies.winget_available(),
+            self.dependencies.npm_available(),
+        );
+        let Some(first) = plan.first().copied() else {
+            self.opencode_install = Some(InstallState::Done(Err(NO_INSTALLER_FOUND.to_string())));
+            return;
+        };
+        self.opencode_install = Some(InstallState::Running(first));
         let tx = self.tx.clone();
         let ctx = self.egui_ctx.clone();
+        let step_tx = tx.clone();
+        let step_ctx = ctx.clone();
         tokio::spawn(async move {
-            let result = install_opencode_cli().await;
+            let result = install_dependencies(plan, move |step| {
+                let _ = step_tx.send(AppMessage::OpenCodeInstallStep(step));
+                step_ctx.request_repaint();
+            })
+            .await;
             let _ = tx.send(AppMessage::OpenCodeCliJob(CliJob::Install, result));
             ctx.request_repaint();
         });
@@ -427,11 +457,33 @@ impl eframe::App for DelegatorApp {
                     self.sync_all_ide_hooks();
                 }
                 TrayAction::Quit => {
+                    // The watchdog in tray_service must be disarmed at once;
+                    // the actual close happens one frame later (below).
                     mark_quit_handled();
                     self.quitting = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    self.shutting_down = true;
                 }
             }
+        }
+
+        // Shutdown takes a few seconds (core teardown), so say so on screen.
+        // The close command must wait for the NEXT frame: a viewport command
+        // sent in the same frame closes the window before this text is ever
+        // presented. Exactly one extra frame, no sleeping.
+        if self.shutting_down {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space((ui.available_height() * 0.4).max(0.0));
+                    ui.spinner();
+                    ui.add_space(10.0);
+                    ui.heading("Завершение работы Delegator…");
+                });
+            });
+            if std::mem::replace(&mut self.shutdown_frame_painted, true) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            ctx.request_repaint();
+            return;
         }
 
         if ctx.input(|input| input.viewport().close_requested()) && !self.quitting {
@@ -502,10 +554,15 @@ impl eframe::App for DelegatorApp {
                         Err(err) => self.usage_error = Some(err),
                     }
                 }
+                AppMessage::OpenCodeInstallStep(step) => {
+                    if matches!(self.opencode_install, Some(InstallState::Running(_))) {
+                        self.opencode_install = Some(InstallState::Running(step));
+                    }
+                }
                 AppMessage::OpenCodeCliJob(job, result) => {
                     let succeeded = result.is_ok();
                     match job {
-                        CliJob::Install => self.opencode_install = Some(CliJobState::Done(result)),
+                        CliJob::Install => self.opencode_install = Some(InstallState::Done(result)),
                         CliJob::Upgrade => self.opencode_upgrade = Some(CliJobState::Done(result)),
                     }
                     if succeeded {
@@ -657,7 +714,7 @@ impl eframe::App for DelegatorApp {
             // Tab Content
             match self.active_tab {
                 SelectedTab::Ides => {
-                    ui.label("Детектирование и настройка подключения IDE в режиме \"на лету\":");
+                    ui.label("Отметьте IDE, которые будут делегировать задачи Delegator.");
                     ui.add_space(5.0);
 
                     let detected = IdeDetector::detect_all(&self.config.ide_states);
@@ -679,9 +736,7 @@ impl eframe::App for DelegatorApp {
                                     egui::Checkbox::new(&mut is_enabled, &ide.name),
                                 );
                                 if !ide.is_detected {
-                                    checkbox.on_hover_text(
-                                        "IDE не найдена на этом компьютере — подключать нечего",
-                                    );
+                                    checkbox.on_hover_text("IDE не найдена на этом компьютере");
                                 } else if checkbox.changed() {
                                     self.config.ide_states.insert(ide.name.clone(), is_enabled);
                                     self.config.save();
@@ -711,16 +766,18 @@ impl eframe::App for DelegatorApp {
                     egui::ScrollArea::vertical()
                         .show(ui, |ui| {
                             ui.heading("API-ключи Delegator");
-                            ui.label("Все ключи хранятся только в Delegator и шифруются Windows DPAPI для текущего пользователя.");
-                            ui.label("Системные GEMINI_API_KEY и GOOGLE_API_KEY не читаются.");
+                            ui.label("Ключи хранятся только здесь и шифруются Windows DPAPI.")
+                                .on_hover_text(
+                                    "Системные GEMINI_API_KEY и GOOGLE_API_KEY не читаются.",
+                                );
                             ui.add_space(12.0);
 
                             ui.heading("Google AI Studio");
-                            ui.label("Можно добавить ключи разных Google-аккаунтов. Delegator автоматически распределяет запросы и переключается при исчерпании квоты.");
+                            ui.label("Ключи нескольких аккаунтов переключаются автоматически при исчерпании квоты.");
                             if !self.config.google_accounts.iter().any(|account| account.enabled) {
                                 ui.colored_label(
                                     self.theme.warning_color(),
-                                    "Внимание: нет ни одного включённого Google-ключа.",
+                                    "Нет включённого Google-ключа.",
                                 );
                             }
 
@@ -737,7 +794,7 @@ impl eframe::App for DelegatorApp {
                                         egui::TextEdit::singleline(&mut draft.label)
                                             .desired_width(ui.available_width()),
                                     );
-                                    ui.label("Новый API-ключ (оставьте пустым, чтобы сохранить текущий):");
+                                    ui.label("Новый ключ (пусто — оставить текущий):");
                                     ui.add(
                                         egui::TextEdit::singleline(&mut draft.new_key)
                                             .password(true)
@@ -837,8 +894,7 @@ impl eframe::App for DelegatorApp {
                             ui.separator();
                             ui.add_space(8.0);
                             ui.heading("OpenCode / OpenRouter");
-                            ui.label("Эти ключи используются для прямых запросов к моделям openrouter/*. Можно хранить несколько ключей и удалить любой из них.");
-                            ui.label("Модели opencode/* используют OpenCode CLI и отдельную авторизацию самого CLI.");
+                            ui.label("Ключи нужны для моделей openrouter/*; модели opencode/* авторизует сам OpenCode CLI.");
 
                             let mut save_opencode: Option<(String, String, String, bool)> = None;
                             let mut remove_opencode: Option<String> = None;
@@ -853,7 +909,7 @@ impl eframe::App for DelegatorApp {
                                         egui::TextEdit::singleline(&mut draft.label)
                                             .desired_width(ui.available_width()),
                                     );
-                                    ui.label("Новый API-ключ (оставьте пустым, чтобы сохранить текущий):");
+                                    ui.label("Новый ключ (пусто — оставить текущий):");
                                     ui.add(
                                         egui::TextEdit::singleline(&mut draft.new_key)
                                             .password(true)
@@ -956,16 +1012,16 @@ impl eframe::App for DelegatorApp {
                             if ui.button("Обновить списки моделей").clicked() {
                                 self.refresh_models();
                             }
-                            ui.label(format!(
-                                "DPAPI: ключи защищены | {}",
-                                self.status_message
-                            ));
+                            ui.colored_label(
+                                self.theme.weak_text_color(),
+                                self.status_message.as_str(),
+                            );
                         });
                 }
                 SelectedTab::GeminiModels => {
-                    ui.label("Delegator использует только выбранные latest-alias Google: Pro, Flash и Flash-Lite.");
+                    ui.label("Delegator использует только отмеченные модели Google.");
                     ui.horizontal(|ui| {
-                        ui.label("Поиск моделей Gemini:");
+                        ui.label("Поиск:");
                         ui.text_edit_singleline(&mut self.gemini_search);
                         if self.is_loading_gemini {
                             ui.spinner();
@@ -1006,9 +1062,10 @@ impl eframe::App for DelegatorApp {
                     });
                 }
                 SelectedTab::OpenCodeModels => {
-                    ui.label("Список моделей обновляется из OpenCode CLI; новые бесплатные модели включаются автоматически. Модели opencode/* отсортированы по силе — самые сильные сверху.");
+                    ui.label("Список берётся из OpenCode CLI: новые бесплатные модели включаются сами, сильные — сверху.");
                     let warning = self.theme.warning_color();
                     let success = self.theme.success_color();
+                    let weak = self.theme.weak_text_color();
                     let cli_required = self
                         .config
                         .enabled_opencode_models
@@ -1019,6 +1076,7 @@ impl eframe::App for DelegatorApp {
                     let mut install_request = false;
                     let mut upgrade_request = false;
                     let mut redetect_request = false;
+                    let mut open_link: Option<&'static str> = None;
                     if cli_required && !self.dependencies.opencode_cli_available() {
                         let fill = egui::Color32::from_rgba_unmultiplied(
                             warning.r(),
@@ -1027,66 +1085,75 @@ impl eframe::App for DelegatorApp {
                             28,
                         );
                         let installing =
-                            matches!(self.opencode_install, Some(CliJobState::Running));
-                        let npm_available = self.dependencies.npm_available();
+                            matches!(self.opencode_install, Some(InstallState::Running(_)));
+                        // Without either installer nothing can be automated —
+                        // the manual links are then the only way forward.
+                        let can_install = self.dependencies.winget_available()
+                            || self.dependencies.npm_available();
+                        let failed =
+                            matches!(self.opencode_install, Some(InstallState::Done(Err(_))));
                         egui::Frame::none()
                             .fill(fill)
                             .stroke(egui::Stroke::new(1.5, warning))
                             .rounding(6.0)
                             .inner_margin(10.0)
                             .show(ui, |ui| {
-                                ui.colored_label(warning, "Требуется OpenCode CLI");
-                                ui.label("Выбраны модели opencode/*, но команда opencode не найдена. Нажмите «Скачать OpenCode CLI» или установите вручную:");
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new("npm install -g opencode-ai")
-                                            .monospace(),
-                                    )
-                                    .selectable(true),
-                                );
-                                if !npm_available {
-                                    ui.colored_label(
-                                        warning,
-                                        "Не найден npm — установите Node.js, затем нажмите «Скачать»",
-                                    );
-                                }
+                                ui.colored_label(warning, "Нужен OpenCode CLI для моделей opencode/*.");
                                 ui.horizontal(|ui| {
+                                    let install = ui
+                                        .add_enabled(
+                                            can_install && !installing,
+                                            egui::Button::new("Установить"),
+                                        )
+                                        .on_hover_text(
+                                            "winget install --id SST.opencode\nnpm install -g opencode-ai",
+                                        )
+                                        .on_disabled_hover_text(
+                                            "Не найдены ни winget, ни npm — установите вручную",
+                                        );
+                                    if install.clicked() {
+                                        install_request = true;
+                                    }
                                     if ui
                                         .add_enabled(
-                                            npm_available && !installing,
-                                            egui::Button::new("Скачать OpenCode CLI"),
+                                            !installing,
+                                            egui::Button::new("Проверить снова"),
                                         )
                                         .clicked()
                                     {
-                                        install_request = true;
-                                    }
-                                    if ui.button("Проверить снова").clicked() {
                                         redetect_request = true;
                                     }
-                                    if installing {
-                                        ui.spinner();
-                                        ui.label("Устанавливаем OpenCode CLI… это может занять несколько минут.");
+                                    match &self.opencode_install {
+                                        Some(InstallState::Running(step)) => {
+                                            ui.spinner();
+                                            ui.label(step.status_line());
+                                        }
+                                        Some(InstallState::Done(Ok(()))) => {
+                                            ui.colored_label(success, "Готово");
+                                        }
+                                        Some(InstallState::Done(Err(reason))) => {
+                                            ui.colored_label(warning, "Не удалось установить")
+                                                .on_hover_text(reason.as_str());
+                                        }
+                                        None => {}
                                     }
                                 });
-                                match &self.opencode_install {
-                                    Some(CliJobState::Done(Ok(()))) => {
-                                        ui.colored_label(success, "OpenCode CLI установлен");
-                                    }
-                                    Some(CliJobState::Done(Err(reason))) => {
-                                        ui.colored_label(
-                                            warning,
-                                            format!("Не удалось установить: {reason} — см. журнал"),
-                                        );
-                                    }
-                                    _ => {}
+                                ui.colored_label(weak, "Windows может запросить подтверждение (UAC).");
+                                if failed || !can_install {
+                                    ui.horizontal(|ui| {
+                                        if ui.link("Скачать Node.js").clicked() {
+                                            open_link = Some(NODEJS_DOWNLOAD_URL);
+                                        }
+                                        if ui.link("Сайт OpenCode").clicked() {
+                                            open_link = Some(OPENCODE_SITE_URL);
+                                        }
+                                    });
                                 }
                             });
                         ui.add_space(8.0);
                     } else if let Some(path) = &self.dependencies.opencode_cli_path {
-                        ui.colored_label(
-                            success,
-                            format!("OpenCode CLI обнаружен: {}", path.display()),
-                        );
+                        ui.colored_label(success, "OpenCode CLI установлен")
+                            .on_hover_text(path.display().to_string());
                     }
                     if self.dependencies.opencode_cli_available() {
                         let upgrading =
@@ -1101,16 +1168,14 @@ impl eframe::App for DelegatorApp {
                             match &self.opencode_upgrade {
                                 Some(CliJobState::Running) => {
                                     ui.spinner();
-                                    ui.label("OpenCode CLI обновляется…");
+                                    ui.label("Обновляю…");
                                 }
                                 Some(CliJobState::Done(Ok(()))) => {
-                                    ui.colored_label(success, "OpenCode CLI обновлён");
+                                    ui.colored_label(success, "Обновлено");
                                 }
-                                Some(CliJobState::Done(Err(_))) => {
-                                    ui.colored_label(
-                                        warning,
-                                        "Обновление не удалось — см. журнал",
-                                    );
+                                Some(CliJobState::Done(Err(reason))) => {
+                                    ui.colored_label(warning, "Не удалось обновить")
+                                        .on_hover_text(reason.as_str());
                                 }
                                 None => {}
                             }
@@ -1125,14 +1190,17 @@ impl eframe::App for DelegatorApp {
                     if upgrade_request {
                         self.start_opencode_upgrade();
                     }
+                    if let Some(url) = open_link {
+                        open_url(url);
+                    }
                     if self.config.enabled_opencode_models.is_empty() {
                         ui.colored_label(
                             self.theme.warning_color(),
-                            "Не выбрана ни одна модель OpenCode/OpenRouter.",
+                            "Не выбрана ни одна модель.",
                         );
                     }
                     ui.horizontal(|ui| {
-                        ui.label("Поиск моделей OpenRouter/OpenCode:");
+                        ui.label("Поиск:");
                         ui.text_edit_singleline(&mut self.opencode_search);
                         if self.is_loading_opencode {
                             ui.spinner();
@@ -1179,7 +1247,7 @@ impl eframe::App for DelegatorApp {
                 }
                 SelectedTab::Stats => {
                     ui.horizontal(|ui| {
-                        ui.label("Статистика использования Delegator за последние 7 дней.");
+                        ui.label("Использование за последние 7 дней.");
                         if ui.button("Обновить").clicked() {
                             self.refresh_usage();
                         }
@@ -1193,11 +1261,9 @@ impl eframe::App for DelegatorApp {
                     if let Some(error) = &self.usage_error {
                         ui.colored_label(
                             self.theme.warning_color(),
-                            format!("Статистика пока недоступна: {error}."),
-                        );
-                        ui.label(
-                            "Убедитесь, что ядро Delegator запущено, и нажмите «Обновить».",
-                        );
+                            "Нет связи с ядром Delegator — нажмите «Обновить».",
+                        )
+                        .on_hover_text(error.as_str());
                     }
 
                     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1272,19 +1338,19 @@ impl eframe::App for DelegatorApp {
                                     });
                             }
                         } else if self.is_loading_usage {
-                            ui.label("Загрузка статистики...");
+                            ui.label("Загрузка…");
                         } else if self.usage_error.is_none() {
                             ui.label("Нет данных. Нажмите «Обновить».");
                         }
                     });
                 }
                 SelectedTab::Proxies => {
-                    ui.label(
-                        "Прокси применяется к запросам к моделям. Для каждого прокси отметьте, \
-                         какие бэкенды его используют; при нескольких подходящих используется \
-                         первый включённый сверху. Переменная окружения DELEGATOR_PROXY имеет \
-                         приоритет. Поддерживаются http://, https://, socks5://.",
-                    );
+                    ui.label("Прокси для запросов к моделям: http://, https://, socks5://.")
+                        .on_hover_text(
+                            "Отметьте, какие бэкенды используют прокси; при нескольких \
+                             подходящих берётся первый включённый сверху. Переменная \
+                             окружения DELEGATOR_PROXY имеет приоритет.",
+                        );
                     ui.add_space(4.0);
                     ui.label(self.proxy_status_line("gemini", "Gemini"));
                     ui.label(self.proxy_status_line("opencode", "OpenCode"));
@@ -1325,7 +1391,7 @@ impl eframe::App for DelegatorApp {
                                 if !proxy.url.trim().is_empty() && !url_ok {
                                     ui.colored_label(
                                         self.theme.warning_color(),
-                                        "URL должен начинаться с http://, https://, socks5:// или socks5h://",
+                                        "Нужен http://, https://, socks5:// или socks5h://",
                                     );
                                 }
                                 ui.horizontal(|ui| {

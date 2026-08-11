@@ -14,6 +14,8 @@ mod update_check;
 use eframe::egui;
 use gui::DelegatorApp;
 use runtime_service::RuntimeService;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tray_service::TrayManager;
 
 #[tokio::main]
@@ -34,7 +36,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handed to the GUI so its update loop can supervise (and respawn) the core.
     let runtime = runtime_result.ok();
     let (tray, tray_rx) = TrayManager::setup()?;
-    let _tray = tray;
     // Test hook: measure shutdown latency without driving the tray menu.
     if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_QUIT_SECS") {
         if let Ok(secs) = delay.trim().parse::<u64>() {
@@ -73,12 +74,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .map_err(|e| format!("Eframe runtime error: {}", e))?;
 
-    // The UI is gone and RuntimeService::drop has killed the core, but dropping
-    // the tokio runtime here would wait for in-flight background work (an
-    // `opencode upgrade` child can run for minutes, DNS lookups block in the
-    // blocking pool). That delay is invisible to the user and looks like
-    // «Выйти» did nothing, so end the process now.
-    kill_leftover_core();
+    // The window is gone but shutdown still takes a moment (killing the core
+    // tree). Pulse the tray icon meanwhile so quitting never looks like a hang,
+    // and run the actual teardown on a worker thread — the tray icon may only
+    // be touched from the thread that created it.
+    let cleanup_done = Arc::new(AtomicBool::new(false));
+    let worker_flag = cleanup_done.clone();
+    let cleanup = std::thread::spawn(move || {
+        kill_leftover_core();
+        worker_flag.store(true, Ordering::SeqCst);
+    });
+    tray.run_shutdown_animation(
+        &|| cleanup_done.load(Ordering::SeqCst),
+        std::time::Duration::from_secs(10),
+    );
+    let _ = cleanup.join();
+
+    // Remove the tray icon deterministically: std::process::exit skips
+    // destructors, and a tray icon of a dead process lingers as a ghost until
+    // the user hovers over it.
+    drop(tray);
+
+    // Dropping the tokio runtime here would wait for in-flight background work
+    // (an `opencode upgrade` child can run for minutes, DNS lookups block the
+    // blocking pool), which is exactly the invisible delay that made «Выйти»
+    // look broken. Everything the user cares about is already done.
     std::process::exit(0);
 }
 
