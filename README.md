@@ -72,7 +72,7 @@ Delegator вызывает их через нативный REST-метод `mod
 
 В интерфейсе доступны семь бесплатных alias OpenCode Zen:
 
-- `opencode/big-pickle` — доступна, но выключена по умолчанию;
+- `opencode/big-pickle`;
 - `opencode/deepseek-v4-flash-free`;
 - `opencode/laguna-s-2.1-free`;
 - `opencode/ling-3.0-flash-free`;
