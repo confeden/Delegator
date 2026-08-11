@@ -36,6 +36,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handed to the GUI so its update loop can supervise (and respawn) the core.
     let runtime = runtime_result.ok();
     let (tray, tray_rx) = TrayManager::setup()?;
+    // Test hook: verify the tray «Открыть» path without clicking the menu.
+    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_OPEN_SECS") {
+        if let Ok(secs) = delay.trim().parse::<u64>() {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+                tray_service::request_open_for_test();
+            });
+        }
+    }
     // Test hook: measure shutdown latency without driving the tray menu.
     if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_QUIT_SECS") {
         if let Ok(secs) = delay.trim().parse::<u64>() {
@@ -69,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 runtime,
                 runtime_status,
                 theme,
+                start_in_background,
             )))
         }),
     )

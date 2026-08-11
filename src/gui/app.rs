@@ -17,10 +17,12 @@ use crate::update_check::{self, UpdateStatus};
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::theme::ThemeConfig;
-use crate::tray_service::{attach_ui_context, mark_quit_handled, TrayAction};
+use crate::tray_service::{
+    attach_ui_context, attach_window_handle, mark_quit_handled, set_toggle_label, TrayAction,
+};
 
 /// Header title, derived from the crate version at compile time. It must be
 /// the FULL version: the window title and the tray tooltip use the same
@@ -133,6 +135,16 @@ pub struct DelegatorApp {
     // «Прокси» tab: per-proxy connectivity test state, keyed by proxy id.
     proxy_tests: HashMap<String, ProxyTestState>,
 
+    /// Deadline for dropping the temporary always-on-top state used to
+    /// raise the window from the tray.
+    unpin_window_at: Option<Instant>,
+
+    /// Frames left to re-hide the window after an autostart. eframe forces
+    /// `set_visible(true)` once the first frame is painted (epi_integration
+    /// `post_rendering`), so `with_visible(false)` alone cannot keep a
+    /// `--background` launch in the tray.
+    hide_frames_left: u8,
+
     /// Newest GitHub release seen by the 8-hourly check (button source).
     update_status: Option<UpdateStatus>,
     update_check_running: bool,
@@ -169,6 +181,7 @@ impl DelegatorApp {
         runtime: Option<RuntimeService>,
         runtime_status: String,
         theme: ThemeConfig,
+        start_in_background: bool,
     ) -> Self {
         let config = AppConfig::load();
         let google_account_drafts = config
@@ -217,6 +230,8 @@ impl DelegatorApp {
             stats_tab_was_active: false,
             window_width_fitted: false,
             proxy_tests: HashMap::new(),
+            unpin_window_at: None,
+            hide_frames_left: if start_in_background { 3 } else { 0 },
             update_status: update_check::cached_status(),
             update_check_running: false,
             update_job: None,
@@ -237,6 +252,20 @@ impl DelegatorApp {
             theme,
             runtime,
         };
+
+        set_toggle_label(app.config.delegator_enabled);
+
+        // Hand the raw window handle to the tray: while the window is hidden the
+        // egui loop is not running, so «Открыть» has to show it via Win32.
+        #[cfg(target_os = "windows")]
+        {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            if let Ok(handle) = cc.window_handle() {
+                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                    attach_window_handle(isize::from(win32.hwnd));
+                }
+            }
+        }
 
         // Let tray callbacks wake this context; otherwise their messages sit
         // unread while the window is hidden in the tray.
@@ -546,12 +575,25 @@ impl eframe::App for DelegatorApp {
         while let Ok(action) = self.tray_rx.try_recv() {
             match action {
                 TrayAction::Open => {
+                    self.hide_frames_left = 0;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    // A hidden window can also be minimised; without this the
+                    // window stays on the taskbar and never comes forward.
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    // Windows refuses to let a background process take the
+                    // foreground, so Focus alone is unreliable. A brief
+                    // always-on-top flip raises the window; it is reset a few
+                    // frames later so the window does not stay pinned.
+                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                        egui::WindowLevel::AlwaysOnTop,
+                    ));
+                    self.unpin_window_at = Some(Instant::now() + Duration::from_millis(400));
                 }
                 TrayAction::Toggle => {
                     self.config.delegator_enabled = !self.config.delegator_enabled;
                     self.config.save();
+                    set_toggle_label(self.config.delegator_enabled);
                     self.sync_all_ide_hooks();
                 }
                 TrayAction::Quit => self.begin_shutdown(),
@@ -576,6 +618,26 @@ impl eframe::App for DelegatorApp {
             }
             ctx.request_repaint();
             return;
+        }
+
+        // Autostart must stay in the tray. eframe shows the window after the
+        // first painted frame no matter what, so the request has to be repeated
+        // for a few frames before it sticks.
+        if self.hide_frames_left > 0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.hide_frames_left -= 1;
+            ctx.request_repaint();
+        }
+
+        if let Some(deadline) = self.unpin_window_at {
+            if Instant::now() >= deadline {
+                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                    egui::WindowLevel::Normal,
+                ));
+                self.unpin_window_at = None;
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
         }
 
         if ctx.input(|input| input.viewport().close_requested()) && !self.quitting {
@@ -726,6 +788,7 @@ impl eframe::App for DelegatorApp {
                     if ui.toggle_value(&mut active, label).changed() {
                         self.config.delegator_enabled = active;
                         self.config.save();
+                        set_toggle_label(active);
                         self.sync_all_ide_hooks();
                     }
                     // Right-to-left layout: added after the toggle, so it sits

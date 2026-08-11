@@ -1,6 +1,6 @@
 [package]
 name = "delegator"
-version = "0.4.4"
+version = "0.5.0"
 edition = "2021"
 authors = ["Delegator contributors"]
 description = "Portable Windows tray orchestrator for Gemini and OpenCode delegation"
@@ -12,6 +12,8 @@ publish = false
 [dependencies]
 # UI and System Tray
 eframe = "0.29.1"
+# Same version eframe already depends on: needed to read the HWND.
+raw-window-handle = "0.6"
 egui = "0.29.1"
 tray-icon = "0.19.0"
 
@@ -33,6 +35,9 @@ winresource = "0.1"
 version = "0.59"
 features = [
     "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Threading",
     "Win32_Security_Cryptography",
     "Win32_System_Memory"
 ]

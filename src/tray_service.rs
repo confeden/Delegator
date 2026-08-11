@@ -1,7 +1,8 @@
 use eframe::egui;
+use std::cell::RefCell;
 use std::os::windows::process::CommandExt;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -41,6 +42,76 @@ pub fn request_quit_for_test() {
     }
 }
 
+/// Injects the action «Открыть Delegator» produces. Used by the
+/// `DELEGATOR_SELFTEST_OPEN_SECS` hook to verify that the window really comes
+/// to the front without driving the tray menu by hand.
+pub fn request_open_for_test() {
+    if let Some(tx) = QUIT_TX.get() {
+        raise_window();
+        let _ = tx.send(TrayAction::Open);
+        wake_ui();
+    }
+}
+
+/// Window handle of the GUI, published once eframe has created it.
+///
+/// Windows delivers no paint messages to a hidden window, so while Delegator
+/// sits in the tray its egui loop does not run at all: a queued «Открыть»
+/// action would only be handled the next time something else woke the loop
+/// (reported 2026-08-11 — the window simply stayed hidden). Showing the window
+/// therefore has to happen through Win32 directly, from the tray callback.
+static WINDOW_HANDLE: AtomicIsize = AtomicIsize::new(0);
+
+pub fn attach_window_handle(handle: isize) {
+    WINDOW_HANDLE.store(handle, Ordering::SeqCst);
+}
+
+/// Shows, un-minimises and foregrounds the GUI window. No-op until the window
+/// exists.
+pub fn raise_window() {
+    let handle = WINDOW_HANDLE.load(Ordering::SeqCst);
+    if handle == 0 {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
+            SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        };
+
+        let hwnd = handle as HWND;
+        ShowWindow(hwnd, SW_SHOW);
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+
+        // Windows only hands the foreground to the process that owns the
+        // current foreground window, so borrow its input queue for the switch.
+        let foreground = GetForegroundWindow();
+        let foreground_thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+        let this_thread = GetCurrentThreadId();
+        let attached = foreground_thread != 0
+            && foreground_thread != this_thread
+            && AttachThreadInput(this_thread, foreground_thread, 1) != 0;
+
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
+
+        if attached {
+            AttachThreadInput(this_thread, foreground_thread, 0);
+        }
+    }
+}
+
 /// Set by the GUI as soon as it acts on «Выйти».
 static QUIT_HANDLED: AtomicBool = AtomicBool::new(false);
 const QUIT_WATCHDOG: Duration = Duration::from_secs(5);
@@ -66,6 +137,27 @@ fn start_quit_watchdog() {
     });
 }
 
+/// The «Включить/Отключить» item, so its label can follow the actual state.
+/// Thread-local because tray handles may only be touched from the thread that
+/// created them — the same thread that runs the egui loop.
+thread_local! {
+    static TOGGLE_ITEM: RefCell<Option<MenuItem>> = const { RefCell::new(None) };
+}
+
+/// Label the tray toggle with the action it performs, not with the state.
+pub fn set_toggle_label(enabled: bool) {
+    let text = if enabled {
+        "Отключить"
+    } else {
+        "Включить"
+    };
+    TOGGLE_ITEM.with(|item| {
+        if let Some(item) = item.borrow().as_ref() {
+            item.set_text(text);
+        }
+    });
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum TrayAction {
     Open,
@@ -86,7 +178,8 @@ impl TrayManager {
     pub fn setup() -> Result<(Self, Receiver<TrayAction>), Box<dyn std::error::Error>> {
         let tray_menu = Menu::new();
         let open_item = MenuItem::new("Открыть Delegator", true, None);
-        let toggle_item = MenuItem::new("Активен / Пауза", true, None);
+        // Text is replaced by set_toggle_label as soon as the GUI knows the state.
+        let toggle_item = MenuItem::new("Отключить", true, None);
         let quit_item = MenuItem::new("Выйти из Delegator", true, None);
 
         let _ = tray_menu.append(&open_item);
@@ -114,6 +207,7 @@ impl TrayManager {
         let menu_tx = tx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             let action = if event.id == open_id {
+                raise_window();
                 Some(TrayAction::Open)
             } else if event.id == toggle_id {
                 Some(TrayAction::Toggle)
@@ -130,10 +224,13 @@ impl TrayManager {
         }));
         TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
             if matches!(event, TrayIconEvent::DoubleClick { .. }) {
+                raise_window();
                 let _ = tx.send(TrayAction::Open);
                 wake_ui();
             }
         }));
+
+        TOGGLE_ITEM.with(|slot| *slot.borrow_mut() = Some(toggle_item.clone()));
 
         Ok((
             Self {
