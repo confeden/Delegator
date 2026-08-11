@@ -19,7 +19,7 @@ IDE-ассистенты (Codex/ChatGPT, Antigravity, OpenCode, Cursor, Claude, 
 
 ## Установка
 
-Запустите `dist\DelegatorSetup-0.4.4.exe`. Права администратора не требуются. Программа устанавливается в:
+Права администратора не требуются. Программа устанавливается в:
 
 ```text
 %LOCALAPPDATA%\Programs\Delegator\
