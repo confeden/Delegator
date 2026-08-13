@@ -18,6 +18,8 @@ turns a correct draft into a rewrite, and a rewrite of a correct answer is how
 
 from __future__ import annotations
 
+import ast
+import builtins
 import json
 import re
 import sqlite3
@@ -97,6 +99,63 @@ def python_defect(code: str) -> str | None:
     return None
 
 
+def undefined_names(code: str) -> list[str]:
+    """Names the code USES but never binds anywhere — `re.fullmatch` with no
+    `import re`.
+
+    Benchmark run #8, 2026-08-13: `improve` rewrote a PERFECT answer (13/13) into
+    one that used `re.fullmatch` and put `import re` in a SEPARATE code block
+    with a note to "add it at the top". Every check died on
+    `NameError: name 're' is not defined` and a 3/3 became 0.3/3. `compile()`
+    cannot catch that: an unbound name is a runtime error, not a syntax error.
+
+    Deliberately module-wide rather than scope-aware: a name bound in ANY scope
+    counts as defined. That misses some real errors and reports none that are
+    not — which is the trade we want, since a false defect rewrites correct code.
+    """
+    source = textwrap.dedent(code)
+    if not source.strip() or _looks_like_a_fragment(source):
+        return []
+    try:
+        # `compile`, not just `ast.parse`: the parser ACCEPTS a top-level
+        # `return`, and only compilation rejects it. A snippet like
+        # «return value + 1» would otherwise be reported as using an undefined
+        # `value`, which is exactly the false positive this module must not make.
+        compile(source, "<draft>", "exec")
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
+        return []  # the syntax check already owns this case
+
+    bound: set[str] = set(dir(builtins)) | {"__name__", "__file__", "__doc__", "__spec__"}
+    loaded: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    return []  # a star import can bind anything; stay silent
+                bound.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound.update(node.names)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(node, ast.Name):
+            if isinstance(node.ctx, ast.Load):
+                loaded.add(node.id)
+            else:
+                bound.add(node.id)
+
+    missing = sorted(name for name in loaded if name not in bound)
+    return missing[:3]
+
+
 def schema_from_text(text: str) -> list[str]:
     """CREATE TABLE statements recoverable from the task text.
 
@@ -156,9 +215,11 @@ def check_draft(task: str, draft: str) -> dict[str, Any]:
     schema = schema_from_text(task)
     defects: list[str] = []
     python_blocks = sql_blocks = 0
+    python_sources: list[str] = []
     for language, code in extract_blocks(draft):
         if language in PYTHON_LANGS or (not language and re.search(r"(?m)^\s*(def|class)\s+\w+", code)):
             python_blocks += 1
+            python_sources.append(textwrap.dedent(code))
             defect = python_defect(code)
         elif language in SQL_LANGS:
             sql_blocks += 1
@@ -167,6 +228,16 @@ def check_draft(task: str, draft: str) -> dict[str, Any]:
             continue
         if defect and defect not in defects:
             defects.append(defect)
+
+    # Unbound names are judged on ALL the Python together: an answer may well
+    # put its imports in a second block, and only the whole thing is broken.
+    if python_sources:
+        missing = undefined_names("\n\n".join(python_sources))
+        if missing:
+            defects.append(
+                "код использует %s, но нигде не определяет и не импортирует"
+                % ", ".join("`%s`" % name for name in missing)
+            )
     return {
         "defects": defects[:5],
         "checkedPython": python_blocks,
@@ -175,7 +246,47 @@ def check_draft(task: str, draft: str) -> dict[str, Any]:
     }
 
 
-def run_cli(task_path: str, draft_path: str, result_path: str) -> int:
+def _python_blocks(text: str) -> list[str]:
+    return [
+        textwrap.dedent(code)
+        for language, code in extract_blocks(text)
+        if language in PYTHON_LANGS
+        or (not language and re.search(r"(?m)^\s*(def|class)\s+\w+", code))
+    ]
+
+
+def rewrite_defects(task: str, draft: str, rewrite: str) -> list[str]:
+    """Reasons to THROW AWAY a rewrite and keep the draft.
+
+    Benchmark run #8: `improve` turned a 13/13 answer into 2/13. The rewrite put
+    `re.fullmatch` in the code block and `import re` in a SECOND block with the
+    note "add it at the top" — a fine thing to say to a human, and a broken
+    answer to submit anywhere. Nothing checked the rewrite at all; the mechanical
+    check only ever looked at the draft.
+
+    Two rules, both narrow enough that a correct rewrite never trips them:
+    the first code block must stand on its own, and the rewrite must not
+    introduce a mechanical defect the draft did not have.
+    """
+    reasons: list[str] = []
+    blocks = _python_blocks(rewrite)
+    if len(blocks) > 1:
+        alone = undefined_names(blocks[0])
+        together = set(undefined_names("\n\n".join(blocks)))
+        split = [name for name in alone if name not in together]
+        if split:
+            reasons.append(
+                "ответ разбит на несколько блоков: первый не самодостаточен (нет %s)"
+                % ", ".join("`%s`" % name for name in split)
+            )
+    before = set(check_draft(task, draft)["defects"])
+    for defect in check_draft(task, rewrite)["defects"]:
+        if defect not in before:
+            reasons.append("переписанный ответ хуже исходного: %s" % defect)
+    return reasons[:3]
+
+
+def run_cli(task_path: str, draft_path: str, result_path: str, rewrite_path: str = "") -> int:
     """`delegator-core.exe --lint-draft <task> <draft> <result>`.
 
     A CLI and not an HTTP endpoint on purpose: `improve` is called by IDE agents
@@ -191,9 +302,12 @@ def run_cli(task_path: str, draft_path: str, result_path: str) -> int:
 
     payload: dict[str, Any]
     try:
-        payload = check_draft(read(task_path), read(draft_path))
+        task, draft = read(task_path), read(draft_path)
+        payload = check_draft(task, draft)
+        if rewrite_path:
+            payload["rewriteDefects"] = rewrite_defects(task, draft, read(rewrite_path))
     except Exception as error:  # noqa: BLE001 - a linter must never fail a delegation
-        payload = {"defects": [], "error": str(error)}
+        payload = {"defects": [], "rewriteDefects": [], "error": str(error)}
     try:
         with open(result_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False)
@@ -206,8 +320,12 @@ LINT_FLAG = "--lint-draft"
 
 
 def maybe_run_as_linter(argv: list[str]) -> bool:
-    """True when this process was started only to lint one draft."""
+    """True when this process was started only to lint one draft.
+
+    `--lint-draft <task> <draft> <result> [rewrite]` — the optional fifth path
+    makes it judge a REWRITE against that draft as well.
+    """
     if len(argv) >= 5 and argv[1] == LINT_FLAG:
-        run_cli(argv[2], argv[3], argv[4])
+        run_cli(argv[2], argv[3], argv[4], argv[5] if len(argv) >= 6 else "")
         return True
     return False

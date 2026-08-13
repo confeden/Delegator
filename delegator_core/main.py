@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .benchmark import (
+    ARM_MODEL,
     BENCHMARK_VERSION,
     BenchmarkStore,
     export_report,
@@ -1216,6 +1217,28 @@ def create_app() -> FastAPI:
             "ok": True,
             "benchmarkVersion": BENCHMARK_VERSION,
             "report": report,
+        }
+
+    @app.post("/api/benchmark/cancel")
+    def benchmark_cancel(payload: dict[str, Any]) -> dict[str, Any]:
+        """Drops a run nobody is driving any more.
+
+        The benchmark lives in the IDE chat, and that chat can die mid-run — the
+        agent hits a "servers are overloaded" error and never calls `finish`.
+        Without this the app kept announcing «Бенчмарк идёт» until the run aged
+        out an hour later, and no partial result was ever going to arrive.
+        """
+        core: AppState = app.state.core
+        run_id = str(payload.get("runId") or "")
+        state = core.benchmark.get(run_id) if run_id else core.benchmark.active()
+        if state is None:
+            return {"ok": True, "cancelled": None}
+        core.benchmark.drop(state.run_id)
+        return {
+            "ok": True,
+            "cancelled": state.run_id,
+            "answeredModel": state.answered(ARM_MODEL),
+            "tasksTotal": len(state.tasks),
         }
 
     @app.get("/api/benchmark/items")

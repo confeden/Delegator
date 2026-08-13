@@ -2,7 +2,7 @@ use crate::config::{is_supported_proxy_url, unix_now, AppConfig};
 use crate::dependency_service::DependencyStatus;
 use crate::gui::background;
 use crate::gui::benchmark::{
-    export_last, fetch_last, fetch_status, format_points, level_label, pulse_alpha,
+    cancel_run, export_last, fetch_last, fetch_status, format_points, level_label, pulse_alpha,
     BenchmarkReport, RunStatus, PULSE_PERIOD_SEC,
 };
 use crate::gui::opencode_setup::{
@@ -11,6 +11,7 @@ use crate::gui::opencode_setup::{
     NO_INSTALLER_FOUND, OPENCODE_SITE_URL,
 };
 use crate::gui::proxy::{run_proxy_test, GoogleProbe, ProxyTestResult};
+use crate::gui::quota::{limit_line, read_limits, ProviderLimit};
 use crate::gui::updater::{progress_label, run_update, update_button_label};
 use crate::gui::usage::{fetch_usage, format_count, UsageReport};
 use crate::ide_detector::IdeDetector;
@@ -59,6 +60,8 @@ pub enum AppMessage {
     BenchmarkExported(Result<Vec<String>, String>),
     /// Live state of a run in flight (None = nothing is running).
     BenchmarkStatus(Option<RunStatus>),
+    /// A stalled run was dropped by the core (or the drop failed).
+    BenchmarkCancelled(Result<(), String>),
     /// Whole percent of the installer download.
     UpdateProgress(u8),
     /// The updater script is running (Ok) or nothing was started (Err).
@@ -161,6 +164,13 @@ pub struct DelegatorApp {
     benchmark_status_polled_at: Option<Instant>,
     /// True while the previous poll saw a run, so its end can trigger a reload.
     benchmark_was_running: bool,
+
+    // Provider limits, read from <RT>\cooldowns.json. A free tier running out
+    // used to be invisible here — the owner found out because a benchmark run
+    // started answering badly.
+    gemini_limit: Option<ProviderLimit>,
+    opencode_limit: Option<ProviderLimit>,
+    limits_read_at: Option<Instant>,
 
     /// Deadline for dropping the temporary always-on-top state used to
     /// raise the window from the tray.
@@ -267,6 +277,9 @@ impl DelegatorApp {
             benchmark_status: None,
             benchmark_status_polled_at: None,
             benchmark_was_running: false,
+            gemini_limit: None,
+            opencode_limit: None,
+            limits_read_at: None,
             unpin_window_at: None,
             hide_frames_left: if start_in_background { 3 } else { 0 },
             update_status: update_check::cached_status(),
@@ -621,6 +634,34 @@ impl DelegatorApp {
         google_missing || openrouter_key_missing
     }
 
+    /// Re-reads the cooldown ledger at most every REFRESH. One small local file
+    /// and no provider call, so it stays honest while the window is open and
+    /// costs nothing while it is not (the tray runs no `update()` at all).
+    fn refresh_limits(&mut self) {
+        const REFRESH: Duration = Duration::from_secs(20);
+        if self.limits_read_at.is_some_and(|at| at.elapsed() < REFRESH) {
+            return;
+        }
+        self.limits_read_at = Some(Instant::now());
+        let (gemini, opencode) = read_limits(&crate::config::runtime_home_dir());
+        self.gemini_limit = gemini;
+        self.opencode_limit = opencode;
+    }
+
+    /// Forgets a run the IDE chat abandoned. Nothing is lost that was not lost
+    /// already: the answers live in the core's memory and no `finish` is coming.
+    fn cancel_benchmark(&mut self, run_id: String) {
+        let tx = self.tx.clone();
+        let ctx = self.egui_ctx.clone();
+        self.benchmark_status = None;
+        self.benchmark_was_running = false;
+        tokio::spawn(async move {
+            let result = cancel_run(run_id).await;
+            let _ = tx.send(AppMessage::BenchmarkCancelled(result));
+            ctx.request_repaint();
+        });
+    }
+
     fn opencode_models_need_attention(&self) -> bool {
         self.config.enabled_opencode_models.is_empty()
             || (self
@@ -664,6 +705,29 @@ impl TabAccent {
             Self::None
         }
     }
+}
+
+/// «OpenCode сообщает о достижении лимита… Примерно до сброса: 3д 5ч 23м.»
+///
+/// Deliberately not an error colour: nothing is broken and the user cannot fix
+/// it — they need to know when it comes back, and that delegation moves to the
+/// other provider meanwhile.
+fn limit_banner(ui: &mut egui::Ui, theme: &ThemeConfig, provider: &str, limit: &ProviderLimit) {
+    let colour = theme.warning_color();
+    let fill = egui::Color32::from_rgba_unmultiplied(colour.r(), colour.g(), colour.b(), 28);
+    egui::Frame::none()
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, colour))
+        .rounding(5.0)
+        .inner_margin(8.0)
+        .show(ui, |ui| {
+            ui.colored_label(colour, limit_line(provider, limit))
+                .on_hover_text(format!(
+                    "Причина по данным провайдера: {}. Пока лимит держится, Delegator                      обращается к другому провайдеру, если там остались модели.",
+                    limit.reason
+                ));
+        });
+    ui.add_space(4.0);
 }
 
 fn tab_button(
@@ -809,6 +873,7 @@ impl eframe::App for DelegatorApp {
             self.refresh_benchmark();
         }
         self.poll_benchmark_status(benchmark_tab_active);
+        self.refresh_limits();
         // Between polls nothing would wake the loop, and the slow heartbeat
         // would stall on whatever frame the user last caused.
         if !benchmark_tab_active && self.benchmark_status.is_none() {
@@ -905,6 +970,12 @@ impl eframe::App for DelegatorApp {
                     self.benchmark_exporting = false;
                     self.benchmark_export = Some(result);
                 }
+                AppMessage::BenchmarkCancelled(result) => {
+                    if let Err(error) = result {
+                        self.benchmark_error = Some(error);
+                    }
+                    self.refresh_benchmark();
+                }
                 AppMessage::BenchmarkStatus(status) => {
                     let running = status.is_some();
                     // A run that just ended has written its report: pick it up
@@ -956,7 +1027,9 @@ impl eframe::App for DelegatorApp {
             // Header Bar
             let mut update_request = false;
             ui.horizontal(|ui| {
-                ui.heading(APP_TITLE);
+                // No title text here: the window caption already says
+                // «Delegator vX.Y.Z» and the tray tooltip repeats it. A third
+                // copy only cost vertical space and drifted out of date once.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let mut active = self.config.delegator_enabled;
                     let label = if active { "АКТИВЕН" } else { "ПАУЗА" };
@@ -981,13 +1054,24 @@ impl eframe::App for DelegatorApp {
 
             // Navigation Tabs
             let api_warning = self.api_keys_need_attention();
-            let gemini_warning = self.config.enabled_gemini_models.is_empty();
-            let opencode_warning = self.opencode_models_need_attention();
+            // A provider that reports a limit is exactly the state the tab
+            // highlight exists for: nothing is broken, but delegation to that
+            // side will not work until the quota resets.
+            let gemini_warning =
+                self.config.enabled_gemini_models.is_empty() || self.gemini_limit.is_some();
+            let opencode_warning =
+                self.opencode_models_need_attention() || self.opencode_limit.is_some();
             // A run is driven from the IDE chat and takes minutes; the pulse is
             // what tells the user it is still going while they are on any other
             // tab. Animated only while a window is actually on screen — in the
             // tray `update()` never runs at all (see gui::background).
-            let benchmark_accent = if self.benchmark_status.is_some() {
+            // A stalled run must not keep breathing: the pulse means "work is
+            // happening", and nothing is happening any more.
+            let benchmark_accent = if self
+                .benchmark_status
+                .as_ref()
+                .is_some_and(|status| !status.stalled)
+            {
                 ctx.request_repaint_after(Duration::from_millis(40));
                 TabAccent::Busy(pulse_alpha(ctx.input(|i| i.time), PULSE_PERIOD_SEC))
             } else {
@@ -1393,6 +1477,9 @@ impl eframe::App for DelegatorApp {
                 }
                 SelectedTab::GeminiModels => {
                     ui.label("Delegator использует только отмеченные модели Google.");
+                    if let Some(limit) = self.gemini_limit.clone() {
+                        limit_banner(ui, &self.theme, "Google AI Studio", &limit);
+                    }
                     ui.horizontal(|ui| {
                         ui.label("Поиск:");
                         ui.text_edit_singleline(&mut self.gemini_search);
@@ -1403,7 +1490,13 @@ impl eframe::App for DelegatorApp {
 
                     ui.separator();
 
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // `auto_shrink` off horizontally: without it the area is only
+                    // as wide as its widest row, so widening the window leaves
+                    // the scrollbar stranded in the middle instead of at the
+                    // right edge where it belongs.
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
                         for model in &self.gemini_models {
                             if !self.gemini_search.is_empty()
                                 && !model
@@ -1436,6 +1529,9 @@ impl eframe::App for DelegatorApp {
                 }
                 SelectedTab::OpenCodeModels => {
                     ui.label("Список берётся из OpenCode CLI: новые бесплатные модели включаются сами, сильные — сверху.");
+                    if let Some(limit) = self.opencode_limit.clone() {
+                        limit_banner(ui, &self.theme, "OpenCode", &limit);
+                    }
                     let warning = self.theme.warning_color();
                     let success = self.theme.success_color();
                     let weak = self.theme.weak_text_color();
@@ -1582,7 +1678,13 @@ impl eframe::App for DelegatorApp {
 
                     ui.separator();
 
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    // `auto_shrink` off horizontally: without it the area is only
+                    // as wide as its widest row, so widening the window leaves
+                    // the scrollbar stranded in the middle instead of at the
+                    // right edge where it belongs.
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
                         for model in &self.opencode_models {
                             if !self.opencode_search.is_empty()
                                 && !model
@@ -1607,7 +1709,13 @@ impl eframe::App for DelegatorApp {
                                     self.config.save();
                                 }
 
-                                if model.is_free {
+                                if crate::models_service::is_custom_provider_model(&model.id) {
+                                    ui.colored_label(self.theme.accent_color(), "[СВОЙ]")
+                                        .on_hover_text(format!(
+                                            "Провайдер из вашей конфигурации OpenCode: {}.                                              Работает и в обычном делегировании, и в бенчмарке.",
+                                            model.provider
+                                        ));
+                                } else if model.is_free {
                                     ui.colored_label(self.theme.success_color(), "[FREE]");
                                 }
                                 ui.colored_label(
@@ -1739,7 +1847,46 @@ impl eframe::App for DelegatorApp {
 
                     // A run is in flight: show what it is doing right now. The
                     // last report stays visible underneath for comparison.
-                    if let Some(status) = &self.benchmark_status {
+                    // The IDE chat died mid-run: say so instead of showing a
+                    // progress bar that will never move again.
+                    let mut cancel_request: Option<String> = None;
+                    if let Some(status) = self.benchmark_status.clone().filter(|s| s.stalled) {
+                        let warning = self.theme.warning_color();
+                        let fill = egui::Color32::from_rgba_unmultiplied(
+                            warning.r(),
+                            warning.g(),
+                            warning.b(),
+                            28,
+                        );
+                        egui::Frame::none()
+                            .fill(fill)
+                            .stroke(egui::Stroke::new(1.5, warning))
+                            .rounding(6.0)
+                            .inner_margin(10.0)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.strong("Прогон прерван");
+                                    ui.colored_label(
+                                        self.theme.weak_text_color(),
+                                        format!(
+                                            "решено задач: {} из {}",
+                                            status.answered_model, status.tasks_total
+                                        ),
+                                    );
+                                });
+                                ui.colored_label(warning, status.stalled_line());
+                                if ui.button("Прекратить прогон").clicked() {
+                                    cancel_request = Some(status.run_id.clone());
+                                }
+                            });
+                        ui.add_space(8.0);
+                    }
+                    if let Some(run_id) = cancel_request {
+                        self.cancel_benchmark(run_id);
+                    }
+
+                    if let Some(status) = self.benchmark_status.clone().filter(|s| !s.stalled) {
+                        let status = &status;
                         let accent = self.theme.accent_color();
                         let fill = egui::Color32::from_rgba_unmultiplied(
                             accent.r(),

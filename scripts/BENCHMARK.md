@@ -74,3 +74,10 @@ do not soften it or spin it either way.
 If a command fails because Delegator Core is not answering, tell the user to
 start Delegator and run `-benchmark` again. Do not invent results, ever: a
 benchmark that lies is worse than no benchmark.
+
+**If YOU fail — an overloaded-servers error, a rate limit, anything that stops
+you mid-run — say so to the user in plain words and stop.** Do not retry
+silently and do not leave the run hanging: it holds the report until you either
+finish it or it is cancelled. Delegator notices a chat that has gone silent for
+ten minutes and offers to end the run on the «Бенчмарк» tab, but the user should
+hear it from you first, with the task number you got to.

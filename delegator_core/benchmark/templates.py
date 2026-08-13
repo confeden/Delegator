@@ -92,6 +92,27 @@ def default_checks(entry: str, cases: list, extra: str = "") -> list[dict]:
     return checks
 
 
+def forbid_modules(*names: str) -> str:
+    """A prelude that makes the named modules unusable from the answer.
+
+    The point of a `trap` task is that the OBVIOUS route is closed: "implement
+    glob matching without regular expressions" only measures anything if
+    reaching for `re` actually fails. Replacing the module in `sys.modules`
+    before the answer runs is the only reliable way — a top-level `import re`
+    in the answer would otherwise capture the real module first.
+    """
+    body = [
+        "import sys as _dg_sys, types as _dg_types",
+        "class _DgForbidden(_dg_types.ModuleType):",
+        "    def __getattr__(self, _name):",
+        "        raise AssertionError('модуль %s запрещён условием задачи' % self.__name__)",
+        "for _dg_name in %r:" % (list(names),),
+        "    _dg_sys.modules[_dg_name] = _DgForbidden(_dg_name)",
+        "",
+    ]
+    return "\n".join(body)
+
+
 def _py(
     reference: str,
     entry: str,
@@ -99,6 +120,7 @@ def _py(
     extra: str = "",
     solution: str = "",
     checks: list[dict] | None = None,
+    prelude: str = "",
 ) -> dict:
     """Property check: candidate(entry) must agree with the reference on `cases`.
 
@@ -116,6 +138,7 @@ def _py(
         "entry": entry,
         "cases": cases,
         "extra": extra,
+        "prelude": prelude,
         "checks": checks if checks is not None else default_checks(entry, cases, extra),
         "solution": solution or reference.replace("_dg_ref", entry),
     }
@@ -489,21 +512,34 @@ def _t_topo_sort(rng: random.Random) -> Task:
         "зависимостей». Верни список узлов, где зависимости идут раньше зависящих. Если "
         "вариантов несколько — выбирай узел, который меньше по алфавиту. При цикле возбуди ValueError.",
         _py(
+            # Kahn with a MIN-HEAP, because the task pins ONE answer: "if several
+            # nodes are available, take the alphabetically smallest". The old DFS
+            # reference produced a different (also valid) topological order and
+            # therefore marked correct answers wrong for as long as this template
+            # existed. Run #9 finally exposed it — BOTH arms "failed" the same
+            # case with the same correct answer.
+            "import heapq as _dg_heapq\n"
             "def _dg_ref(graph):\n"
+            "    nodes = set(graph)\n"
+            "    for deps in graph.values():\n"
+            "        nodes.update(deps)\n"
+            "    pending = {node: set(graph.get(node, [])) for node in nodes}\n"
+            "    dependents = {node: [] for node in nodes}\n"
+            "    for node, deps in pending.items():\n"
+            "        for dep in deps:\n"
+            "            dependents[dep].append(node)\n"
+            "    ready = [node for node, deps in pending.items() if not deps]\n"
+            "    _dg_heapq.heapify(ready)\n"
             "    result = []\n"
-            "    state = {}\n"
-            "    def visit(node):\n"
-            "        if state.get(node) == 2:\n"
-            "            return\n"
-            "        if state.get(node) == 1:\n"
-            "            raise ValueError('cycle')\n"
-            "        state[node] = 1\n"
-            "        for dep in sorted(graph.get(node, [])):\n"
-            "            visit(dep)\n"
-            "        state[node] = 2\n"
+            "    while ready:\n"
+            "        node = _dg_heapq.heappop(ready)\n"
             "        result.append(node)\n"
-            "    for node in sorted(graph):\n"
-            "        visit(node)\n"
+            "        for dependent in dependents[node]:\n"
+            "            pending[dependent].discard(node)\n"
+            "            if not pending[dependent]:\n"
+            "                _dg_heapq.heappush(ready, dependent)\n"
+            "    if len(result) != len(nodes):\n"
+            "        raise ValueError('cycle')\n"
             "    return result\n",
             "topo_sort",
             [[graph], [{"app": ["lib", "util"], "lib": ["util"], "util": []}], [{"b": [], "a": []}], [{}]],
@@ -1787,7 +1823,7 @@ def _t_validate_order(rng: random.Random) -> Task:
         "    return sorted(errors)\n"
     )
     return Task(
-        "validate-order", "deep", "spec",
+        "validate-order", "deep", "contract",
         "Проверка заказа по девяти правилам",
         "Напиши функцию на Python `validate_order(order)`. На вход — словарь. Верни "
         "ОТСОРТИРОВАННЫЙ по алфавиту список кодов ошибок; если нарушений нет — пустой список. "
@@ -1889,7 +1925,7 @@ def _t_apply_discounts(rng: random.Random) -> Task:
         "    return running\n"
     )
     return Task(
-        "apply-discounts", "deep", "spec",
+        "apply-discounts", "deep", "contract",
         "Скидки в строгом порядке",
         "Напиши функцию на Python `apply_discounts(total, percent, fixed, coupon)`. Все суммы — "
         "целые числа в копейках. Правила ровно такие:\n"
@@ -1994,7 +2030,7 @@ def _t_fix_insert_point(rng: random.Random) -> Task:
         "    return low\n"
     )
     return Task(
-        "fix-insert-point", "deep", "debug",
+        "fix-insert-point", "deep", "repair",
         "Починить точку вставки",
         "Этот код должен возвращать индекс, КУДА вставить value в отсортированный список items, "
         "чтобы он остался отсортированным; при равных значениях — правее всех равных "
@@ -2063,7 +2099,7 @@ def _t_fix_pagination(rng: random.Random) -> Task:
         "    return -(-total // per_page)\n"
     )
     return Task(
-        "fix-pagination", "deep", "debug",
+        "fix-pagination", "deep", "repair",
         "Починить счётчик страниц",
         "Этот код должен считать, сколько страниц нужно, чтобы разложить total записей по "
         "per_page штук на страницу.\n\n"
@@ -2154,7 +2190,7 @@ def _t_top_k_fast(rng: random.Random) -> Task:
         "    return [value for value, _ in ordered[:k]]\n"
     )
     return Task(
-        "top-k-fast", "deep", "performance",
+        "top-k-fast", "deep", "budget",
         "Топ-k частых значений в срок",
         "Напиши функцию на Python `top_k(items, k)`, которая возвращает список из k самых часто "
         "встречающихся значений списка items. Порядок: сначала по убыванию частоты, при равной "
@@ -2199,6 +2235,514 @@ def _t_top_k_fast(rng: random.Random) -> Task:
     )
 
 
+# ── 2.0: tasks built to break a STRONG model ────────────────────────────────
+#
+# The owner's brief, 2026-08-13: Delegator's job is no longer saving tokens —
+# it is making answers better, INCLUDING for smart models. So the benchmark has
+# to stop asking "does the model know this" and start asking "does a second
+# pass catch what the first one missed".
+#
+# Every task below is chosen because a strong single pass fails it in a way a
+# careful re-read WOULD catch: an interaction between rules, a forbidden
+# shortcut, a boundary the spec states and the model glosses over. That is
+# exactly the gap `improve` is supposed to close, so a failure here is
+# actionable — it tells us what the reviewer must learn to look for.
+
+
+def _t_token_bucket(rng: random.Random) -> Task:
+    capacity = rng.choice([5, 8, 10])
+    rate = rng.choice([1, 2, 4])
+    reference = (
+        "class _DgRef:\n"
+        "    def __init__(self, capacity, refill_per_sec):\n"
+        "        if not isinstance(capacity, int) or capacity <= 0:\n"
+        "            raise ValueError('capacity')\n"
+        "        if not isinstance(refill_per_sec, (int, float)) or refill_per_sec <= 0:\n"
+        "            raise ValueError('refill')\n"
+        "        self.capacity = capacity\n"
+        "        self.rate = refill_per_sec\n"
+        "        self.tokens = float(capacity)\n"
+        "        self.last = None\n"
+        "    def allow(self, now, cost=1):\n"
+        "        if not isinstance(cost, int) or cost <= 0:\n"
+        "            raise ValueError('cost')\n"
+        "        if self.last is not None and now < self.last:\n"
+        "            raise ValueError('time went backwards')\n"
+        "        if self.last is None:\n"
+        "            self.last = now\n"
+        "        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)\n"
+        "        self.last = now\n"
+        "        if cost > self.capacity:\n"
+        "            return False\n"
+        "        if self.tokens + 1e-9 < cost:\n"
+        "            return False\n"
+        "        self.tokens -= cost\n"
+        "        return True\n"
+        "\n"
+        "def _dg_ref(script):\n"
+        "    out = []\n"
+        "    limiter = None\n"
+        "    for step in script:\n"
+        "        kind = step[0]\n"
+        "        try:\n"
+        "            if kind == 'new':\n"
+        "                limiter = _DgRef(step[1], step[2])\n"
+        "                out.append('ok')\n"
+        "            else:\n"
+        "                out.append(limiter.allow(step[1], step[2]))\n"
+        "        except ValueError:\n"
+        "            out.append('error')\n"
+        "    return out\n"
+    )
+    return Task(
+        "token-bucket", "deep", "contract",
+        "Ограничитель запросов: двенадцать правил",
+        "Напиши на Python класс `RateLimiter` — «дырявое ведро» с непрерывным пополнением.\n"
+        "Конструктор `RateLimiter(capacity, refill_per_sec)`, метод `allow(now, cost=1) -> bool`.\n"
+        "Чтобы проверка была одинаковой для всех, оберни его функцией "
+        "`run_limiter(script)`: script — список шагов, `('new', capacity, rate)` создаёт "
+        "ограничитель, `('allow', now, cost)` вызывает allow. Функция возвращает список: "
+        "для 'new' — строку `'ok'`, для 'allow' — результат метода, а если шаг возбудил "
+        "ValueError — строку `'error'` (и продолжает выполнять остальные шаги).\n\n"
+        "Правила ровно такие:\n"
+        "1. Ведро создаётся ПОЛНЫМ.\n"
+        "2. Перед каждой проверкой в ведро добавляется `(now - предыдущий now) * refill_per_sec` "
+        "токенов, но не выше capacity.\n"
+        "3. Первый вызов allow задаёт точку отсчёта времени и ничего не пополняет.\n"
+        "4. Запрос разрешён, если после пополнения токенов не меньше cost; тогда cost "
+        "вычитается.\n"
+        "5. Отклонённый запрос НЕ тратит токены.\n"
+        "6. Если cost больше capacity, запрос отклоняется ВСЕГДА, даже когда ведро полно, "
+        "и токены не меняются.\n"
+        "7. Повторный вызов с тем же now не пополняет ведро.\n"
+        "8. Если now меньше предыдущего now — ValueError.\n"
+        "9. Если cost не целое число или меньше 1 — ValueError.\n"
+        "10. Если capacity не целое число или не больше нуля — ValueError в конструкторе.\n"
+        "11. Если refill_per_sec не число или не больше нуля — ValueError в конструкторе.\n"
+        "12. Количество токенов никогда не превышает capacity.\n\n"
+        "Пример: `run_limiter([('new', 2, 1), ('allow', 0.0, 1), ('allow', 0.0, 1), "
+        "('allow', 0.0, 1), ('allow', 1.0, 1)])` → `['ok', True, True, False, True]`.",
+        _py(
+            reference,
+            "run_limiter",
+            [],
+            checks=_spec_checks(
+                "run_limiter",
+                [
+                    ("worked-example", "пример из условия", [
+                        [[("new", 2, 1), ("allow", 0.0, 1), ("allow", 0.0, 1),
+                          ("allow", 0.0, 1), ("allow", 1.0, 1)]],
+                    ]),
+                    ("starts-full", "правило 1: ведро полно с самого начала", [
+                        [[("new", capacity, rate)] + [("allow", 0.0, 1)] * capacity],
+                    ]),
+                    ("refill-is-continuous", "правило 2: пополнение пропорционально времени", [
+                        [[("new", 4, 2), ("allow", 0.0, 4), ("allow", 0.5, 1), ("allow", 0.5, 1)]],
+                        [[("new", 4, 2), ("allow", 0.0, 4), ("allow", 0.25, 1)]],
+                    ]),
+                    ("refill-capped", "правило 12: пополнение не переполняет ведро", [
+                        [[("new", 3, 5), ("allow", 0.0, 3), ("allow", 100.0, 3), ("allow", 100.0, 1)]],
+                    ]),
+                    ("reject-costs-nothing", "правило 5: отказ не тратит токены", [
+                        [[("new", 2, 1), ("allow", 0.0, 2), ("allow", 0.0, 1), ("allow", 0.0, 0)]],
+                        [[("new", 3, 1), ("allow", 0.0, 2), ("allow", 0.0, 2), ("allow", 0.0, 1)]],
+                    ]),
+                    ("cost-over-capacity", "правило 6: cost больше вместимости — всегда отказ", [
+                        [[("new", 2, 1), ("allow", 0.0, 3), ("allow", 0.0, 2)]],
+                        [[("new", 5, 1), ("allow", 0.0, 6), ("allow", 0.0, 5)]],
+                    ]),
+                    ("same-now-no-refill", "правило 7: тот же now не пополняет", [
+                        [[("new", 1, 100), ("allow", 5.0, 1), ("allow", 5.0, 1)]],
+                    ]),
+                    ("time-goes-backwards", "правило 8: время назад — ValueError", [
+                        [[("new", 2, 1), ("allow", 5.0, 1), ("allow", 4.0, 1), ("allow", 5.0, 1)]],
+                    ]),
+                    ("bad-cost", "правило 9: неверный cost — ValueError", [
+                        [[("new", 2, 1), ("allow", 0.0, 0), ("allow", 0.0, -1), ("allow", 0.0, 1)]],
+                    ]),
+                    ("bad-construction", "правила 10-11: неверные параметры конструктора", [
+                        [[("new", 0, 1)]],
+                        [[("new", 2, 0)]],
+                        [[("new", 2.5, 1)]],
+                    ]),
+                ],
+            ),
+            solution=(
+                "class RateLimiter:\n"
+                "    def __init__(self, capacity, refill_per_sec):\n"
+                "        if not isinstance(capacity, int) or capacity <= 0:\n"
+                "            raise ValueError('capacity')\n"
+                "        if not isinstance(refill_per_sec, (int, float)) or refill_per_sec <= 0:\n"
+                "            raise ValueError('refill')\n"
+                "        self.capacity = capacity\n"
+                "        self.rate = refill_per_sec\n"
+                "        self.tokens = float(capacity)\n"
+                "        self.last = None\n"
+                "    def allow(self, now, cost=1):\n"
+                "        if not isinstance(cost, int) or cost <= 0:\n"
+                "            raise ValueError('cost')\n"
+                "        if self.last is not None and now < self.last:\n"
+                "            raise ValueError('backwards')\n"
+                "        if self.last is None:\n"
+                "            self.last = now\n"
+                "        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)\n"
+                "        self.last = now\n"
+                "        if cost > self.capacity:\n"
+                "            return False\n"
+                "        if self.tokens + 1e-9 < cost:\n"
+                "            return False\n"
+                "        self.tokens -= cost\n"
+                "        return True\n"
+                "\n"
+                "def run_limiter(script):\n"
+                "    out = []\n"
+                "    limiter = None\n"
+                "    for step in script:\n"
+                "        try:\n"
+                "            if step[0] == 'new':\n"
+                "                limiter = RateLimiter(step[1], step[2])\n"
+                "                out.append('ok')\n"
+                "            else:\n"
+                "                out.append(limiter.allow(step[1], step[2]))\n"
+                "        except ValueError:\n"
+                "            out.append('error')\n"
+                "    return out\n"
+            ),
+        ),
+    )
+
+
+def _t_glob_no_regex(rng: random.Random) -> Task:
+    sample = rng.choice(["report-2026.txt", "data_01.csv", "a.b.c"])
+    reference = (
+        "def _dg_ref(pattern, name):\n"
+        "    def cls(pat, index):\n"
+        "        # returns (matcher, next_index) or None when '[' is literal\n"
+        "        start = index + 1\n"
+        "        negate = False\n"
+        "        if start < len(pat) and pat[start] == '!':\n"
+        "            negate = True\n"
+        "            start += 1\n"
+        "        items = []\n"
+        "        first = True\n"
+        "        i = start\n"
+        "        while i < len(pat):\n"
+        "            ch = pat[i]\n"
+        "            if ch == ']' and not first:\n"
+        "                return (items, negate, i + 1)\n"
+        "            first = False\n"
+        "            if i + 2 < len(pat) and pat[i + 1] == '-' and pat[i + 2] != ']':\n"
+        "                items.append((ch, pat[i + 2]))\n"
+        "                i += 3\n"
+        "                continue\n"
+        "            items.append((ch, ch))\n"
+        "            i += 1\n"
+        "        return None\n"
+        "    def walk(pi, ni):\n"
+        "        if pi == len(pattern):\n"
+        "            return ni == len(name)\n"
+        "        ch = pattern[pi]\n"
+        "        if ch == '*':\n"
+        "            for step in range(ni, len(name) + 1):\n"
+        "                if walk(pi + 1, step):\n"
+        "                    return True\n"
+        "            return False\n"
+        "        if ch == '?':\n"
+        "            return ni < len(name) and walk(pi + 1, ni + 1)\n"
+        "        if ch == '\\\\':\n"
+        "            if pi + 1 >= len(pattern):\n"
+        "                return ni < len(name) and name[ni] == '\\\\' and walk(pi + 1, ni + 1)\n"
+        "            return ni < len(name) and name[ni] == pattern[pi + 1] and walk(pi + 2, ni + 1)\n"
+        "        if ch == '[':\n"
+        "            parsed = cls(pattern, pi)\n"
+        "            if parsed is None:\n"
+        "                return ni < len(name) and name[ni] == '[' and walk(pi + 1, ni + 1)\n"
+        "            items, negate, nxt = parsed\n"
+        "            if ni >= len(name):\n"
+        "                return False\n"
+        "            hit = any(low <= name[ni] <= high for low, high in items)\n"
+        "            if hit == negate:\n"
+        "                return False\n"
+        "            return walk(nxt, ni + 1)\n"
+        "        return ni < len(name) and name[ni] == ch and walk(pi + 1, ni + 1)\n"
+        "    return walk(0, 0)\n"
+    )
+    return Task(
+        "glob-no-regex", "deep", "trap",
+        "Маски файлов без регулярных выражений",
+        "Напиши функцию на Python `match_glob(pattern, name) -> bool`: совпадает ли имя с "
+        "маской ЦЕЛИКОМ.\n\n"
+        "Поддержи ровно это:\n"
+        "1. `*` — любая последовательность символов, включая пустую.\n"
+        "2. `?` — ровно один любой символ.\n"
+        "3. `[abc]` — один символ из перечисленных; `[a-z]` — из диапазона; можно смешивать: "
+        "`[a-z0-9_]`.\n"
+        "4. `[!abc]` — один символ, НЕ входящий в набор.\n"
+        "5. `]` сразу после `[` или `[!` — это обычный символ `]`, а не конец набора.\n"
+        "6. `-` в конце набора (перед `]`) — обычный дефис.\n"
+        "7. Обратный слэш экранирует следующий символ: `\\*` — это звёздочка.\n"
+        "8. Незакрытая `[` — обычный символ `[`.\n\n"
+        "**Модули `re` и `fnmatch` использовать запрещено** — проверка это выявит. "
+        "Пример: `match_glob('[!a-c]*.txt', %r)`." % sample,
+        _py(
+            reference,
+            "match_glob",
+            [],
+            prelude=forbid_modules("re", "fnmatch", "regex"),
+            checks=_spec_checks(
+                "match_glob",
+                [
+                    ("star", "правило 1: звёздочка, включая пустое совпадение", [
+                        ["*", ""], ["*", sample], ["a*c", "ac"], ["a*c", "abbbc"], ["a*c", "ab"],
+                        ["*.txt", "report-2026.txt"], ["*.txt", "report.txt.bak"],
+                    ]),
+                    ("question", "правило 2: ровно один символ", [
+                        ["?", "a"], ["?", ""], ["?", "ab"], ["a?c", "abc"], ["a?c", "ac"],
+                    ]),
+                    ("class-and-range", "правило 3: наборы и диапазоны", [
+                        ["[abc]x", "ax"], ["[abc]x", "dx"], ["[a-z]1", "q1"], ["[a-z]1", "Q1"],
+                        ["[a-z0-9_]*", "_x"], ["[a-z0-9_]*", "-x"],
+                    ]),
+                    ("negated-class", "правило 4: отрицание набора", [
+                        ["[!abc]x", "dx"], ["[!abc]x", "ax"], ["[!a-c]*.txt", sample],
+                        ["[!a-c]*.txt", "b.txt"],
+                    ]),
+                    ("literal-bracket", "правило 5: `]` сразу после `[`", [
+                        ["[]]", "]"], ["[]]", "a"], ["[!]]", "a"], ["[!]]", "]"],
+                    ]),
+                    ("trailing-dash", "правило 6: дефис в конце набора", [
+                        ["[a-]", "-"], ["[a-]", "a"], ["[a-]", "b"],
+                    ]),
+                    ("escape", "правило 7: экранирование", [
+                        ["\\*", "*"], ["\\*", "abc"], ["a\\?b", "a?b"], ["a\\?b", "axb"],
+                        ["\\[a]", "[a]"],
+                    ]),
+                    ("unterminated-class", "правило 8: незакрытая скобка — обычный символ", [
+                        ["[abc", "[abc"], ["[abc", "a"], ["a[b", "a[b"],
+                    ]),
+                    ("whole-string", "совпадение только целиком", [
+                        ["abc", "abcd"], ["abc", "abc"], ["b", "abc"],
+                    ]),
+                ],
+            ),
+        ),
+    )
+
+
+def _t_iso_week(rng: random.Random) -> Task:
+    year = rng.choice([2020, 2021, 2024, 2026])
+    reference = (
+        "def _dg_ref(year, month, day):\n"
+        "    def days_from_civil(y, m, d):\n"
+        "        y -= m <= 2\n"
+        "        era = (y if y >= 0 else y - 399) // 400\n"
+        "        yoe = y - era * 400\n"
+        "        doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1\n"
+        "        doe = yoe * 365 + yoe // 4 - yoe // 100 + doy\n"
+        "        return era * 146097 + doe - 719468\n"
+        "    def weekday(days):\n"
+        "        return (days + 3) % 7 + 1\n"
+        "    days = days_from_civil(year, month, day)\n"
+        "    wd = weekday(days)\n"
+        "    thursday = days + (4 - wd)\n"
+        "    iso_year = 1970 + 0\n"
+        "    # civil year of that Thursday\n"
+        "    z = thursday + 719468\n"
+        "    era = (z if z >= 0 else z - 146096) // 146097\n"
+        "    doe = z - era * 146097\n"
+        "    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365\n"
+        "    y = yoe + era * 400\n"
+        "    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)\n"
+        "    mp = (5 * doy + 2) // 153\n"
+        "    m = mp + (3 if mp < 10 else -9)\n"
+        "    iso_year = y + (m <= 2)\n"
+        "    jan4 = days_from_civil(iso_year, 1, 4)\n"
+        "    week1_monday = jan4 - (weekday(jan4) - 1)\n"
+        "    week = (days - week1_monday) // 7 + 1\n"
+        "    return (iso_year, week, wd)\n"
+    )
+    return Task(
+        "iso-week", "deep", "exactness",
+        "Номер недели по ISO 8601",
+        "Напиши функцию на Python `iso_week(year, month, day)`, которая возвращает кортеж "
+        "`(iso_year, iso_week, iso_weekday)` по стандарту ISO 8601.\n\n"
+        "Правила стандарта, которые обычно помнят неправильно:\n"
+        "1. Неделя начинается с ПОНЕДЕЛЬНИКА; `iso_weekday` = 1 для понедельника, 7 для "
+        "воскресенья.\n"
+        "2. Первая неделя года — та, которая содержит первый ЧЕТВЕРГ января (равносильно: "
+        "содержит 4 января).\n"
+        "3. Поэтому у дат в конце декабря `iso_year` может быть СЛЕДУЮЩИМ годом, а у дат "
+        "в начале января — ПРЕДЫДУЩИМ.\n"
+        "4. В году бывает 52 или 53 недели.\n\n"
+        "Примеры: `iso_week(2021, 1, 1)` → `(2020, 53, 5)`; `iso_week(2019, 12, 30)` → "
+        "`(2020, 1, 1)`; `iso_week(2026, 1, 1)` → `(2026, 1, 4)`.\n\n"
+        "**Модули `datetime`, `calendar` и `time` использовать запрещено** — считай сам "
+        "из года, месяца и дня. Результат должен совпадать со стандартом на любых датах "
+        "с 1900 по 2100 год.",
+        _py(
+            reference,
+            "iso_week",
+            [],
+            prelude=forbid_modules("datetime", "calendar", "time"),
+            checks=_spec_checks(
+                "iso_week",
+                [
+                    ("worked-examples", "примеры из условия", [
+                        [2021, 1, 1], [2019, 12, 30], [2026, 1, 1],
+                    ]),
+                    ("year-belongs-to-previous", "правило 3: январь предыдущего ISO-года", [
+                        [2016, 1, 1], [2016, 1, 3], [2010, 1, 2],
+                    ]),
+                    ("year-belongs-to-next", "правило 3: декабрь следующего ISO-года", [
+                        [2019, 12, 30], [2019, 12, 31], [2024, 12, 30],
+                    ]),
+                    ("fifty-three-week-years", "правило 4: год из 53 недель", [
+                        [2020, 12, 31], [2015, 12, 31], [2026, 12, 31],
+                    ]),
+                    ("weekday-numbering", "правило 1: нумерация дней недели", [
+                        [2026, 8, 10], [2026, 8, 16], [2026, 8, 13],
+                    ]),
+                    ("ordinary-dates", "обычные даты середины года", [
+                        [year, 6, 15], [year, 3, 1], [year, 9, 30], [2000, 2, 29],
+                    ]),
+                    ("century-boundaries", "границы столетий", [
+                        [1900, 1, 1], [2100, 1, 1], [2000, 1, 1],
+                    ]),
+                ],
+            ),
+        ),
+    )
+
+
+# ── working against SOMEONE ELSE'S api ──────────────────────────────────────
+#
+# Run #10 settled the escalation question: `gemini-3.7-flash` solved every one
+# of the tasks written to break it — twelve interacting rules, glob matching
+# with `re` mechanically blocked, ISO weeks without `datetime` — all perfect on
+# the first try. **A short, self-contained, precisely-specified coding task is a
+# solved problem for a current model, and no amount of extra rules changes
+# that.** Piling on more of the same only buys another 28/28.
+#
+# What a strong model still gets wrong is what it cannot look up: an API it was
+# not trained on. It writes plausible calls — the method that SHOULD exist, the
+# return shape that USUALLY comes back, the commit everyone else does
+# implicitly. That is the most common real failure in a chat, it is mechanically
+# checkable, and it is something a second pass with the context in hand can
+# actually fix. This is the class to grow.
+
+_STORE_MODULE = '''
+class Store:
+    """Paged store with staged writes. NOT a list, NOT a dict, NOT an ORM."""
+
+    def __init__(self, rows=None):
+        self._rows = list(rows or [])
+        self._staged = []
+        self.commits = 0
+
+    def read(self, offset, count):
+        """Returns {"items": [...], "next": <offset or None>}."""
+        chunk = self._rows[offset:offset + count]
+        nxt = offset + count
+        return {"items": chunk, "next": nxt if nxt < len(self._rows) else None}
+
+    def stage(self, items):
+        """Queues rows. They are NOT visible until commit(). Returns the queue size."""
+        self._staged.extend(items)
+        return len(self._staged)
+
+    def commit(self):
+        """Makes staged rows visible. Returns how many were published."""
+        published = len(self._staged)
+        self._rows.extend(self._staged)
+        self._staged = []
+        self.commits += 1
+        return published
+
+    def snapshot(self):
+        """The visible rows, in order."""
+        return list(self._rows)
+'''
+
+
+def _t_provided_api(rng: random.Random) -> Task:
+    total = rng.choice([7, 11, 13])
+    page = rng.choice([2, 3, 4])
+    reference = (
+        "def _dg_ref(rows, page_size):\n"
+        "    src, dst = Store(rows), Store()\n"
+        "    offset = 0\n"
+        "    copied = 0\n"
+        "    while offset is not None:\n"
+        "        chunk = src.read(offset, page_size)\n"
+        "        if chunk['items']:\n"
+        "            dst.stage(chunk['items'])\n"
+        "            copied += len(chunk['items'])\n"
+        "        offset = chunk['next']\n"
+        "    dst.commit()\n"
+        "    return (copied, dst.snapshot(), dst.commits)\n"
+    )
+    return Task(
+        "provided-api", "deep", "integration",
+        "Работа по чужому API",
+        "Тебе дан ГОТОВЫЙ класс `Store` (он уже определён, писать его не нужно):\n\n"
+        "```python%s```\n\n"
+        "Напиши функцию `copy_all(rows, page_size)`, которая:\n"
+        "1. Создаёт исходное хранилище `Store(rows)` и пустое приёмное `Store()`.\n"
+        "2. Переносит ВСЕ строки из исходного в приёмное, сохраняя порядок, читая их "
+        "постранично по `page_size` штук.\n"
+        "3. Пользуется ТОЛЬКО показанным API — других методов у `Store` нет.\n"
+        "4. Фиксирует запись РОВНО ОДИН раз, в самом конце.\n"
+        "5. Возвращает кортеж `(сколько_скопировано, приёмное.snapshot(), приёмное.commits)`.\n\n"
+        "Обрати внимание: `read` возвращает словарь с ключами `items` и `next`, а не список; "
+        "`next` равен None, когда страниц больше нет. Записанное через `stage` не видно, "
+        "пока не вызван `commit`." % _STORE_MODULE,
+        _py(
+            reference,
+            "copy_all",
+            [],
+            prelude=_STORE_MODULE,
+            checks=_spec_checks(
+                "copy_all",
+                [
+                    ("copies-everything", "все строки перенесены в том же порядке", [
+                        [list(range(total)), page],
+                        [["a", "b", "c", "d", "e"], 2],
+                    ]),
+                    ("pagination", "страницы не делятся нацело", [
+                        [list(range(7)), 3], [list(range(8)), 3], [list(range(9)), 3],
+                    ]),
+                    ("page-larger-than-data", "страница больше объёма данных", [
+                        [[1, 2], 10], [[1], 1],
+                    ]),
+                    ("empty-source", "пустой источник", [
+                        [[], page], [[], 1],
+                    ]),
+                    ("single-commit", "правило 4: ровно одна фиксация", [
+                        [list(range(total)), 1], [list(range(6)), 2],
+                    ]),
+                    ("visible-only-after-commit", "без commit данные не видны", [
+                        [list(range(5)), 5],
+                    ]),
+                ],
+            ),
+            solution=(
+                "def copy_all(rows, page_size):\n"
+                "    src, dst = Store(rows), Store()\n"
+                "    offset = 0\n"
+                "    copied = 0\n"
+                "    while offset is not None:\n"
+                "        chunk = src.read(offset, page_size)\n"
+                "        if chunk['items']:\n"
+                "            dst.stage(chunk['items'])\n"
+                "            copied += len(chunk['items'])\n"
+                "        offset = chunk['next']\n"
+                "    dst.commit()\n"
+                "    return (copied, dst.snapshot(), dst.commits)\n"
+            ),
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class TemplateGroup:
     level: str
@@ -2234,6 +2778,8 @@ TEMPLATES: dict[str, list[Callable[[random.Random], Task]]] = {
         # debug-from-a-failing-case, and a stated time budget.
         _t_validate_order, _t_apply_discounts, _t_fix_insert_point,
         _t_fix_pagination, _t_top_k_fast,
+        # 2.0: built to break a STRONG model (see the section comment).
+        _t_token_bucket, _t_glob_no_regex, _t_iso_week, _t_provided_api,
     ],
 }
 
@@ -2306,9 +2852,16 @@ MIN_DRAW_WEIGHT = 0.1
 CATEGORY_PRIOR = {
     "code": 0.9,
     "sql": 0.9,
-    "spec": 0.35,
-    "debug": 0.35,
-    "performance": 0.35,
+    "contract": 0.35,
+    "repair": 0.35,
+    "budget": 0.35,
+    # The 2.0 classes are built to break a strong model, so an unmeasured one
+    # is the most promising slot in the run.
+    "trap": 0.25,
+    "exactness": 0.25,
+    # Run #10: a strong model aced every self-contained task. Working against an
+    # API it was never trained on is the class that still produces failures.
+    "integration": 0.2,
 }
 
 

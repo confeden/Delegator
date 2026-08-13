@@ -563,7 +563,13 @@ function Select-Backend {
     if (Test-VisionContent $Text) { return "gemini" }
     $effectiveModel = if (-not [string]::IsNullOrWhiteSpace($ChosenModel)) { $ChosenModel } else { $Model }
     if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) {
-        if ($effectiveModel -like "google/gemma*" -or $effectiveModel -like "opencode/*" -or $effectiveModel -like "openrouter/*") { return "opencode" }
+        # ANY provider-prefixed id goes through the OpenCode CLI - that is what
+        # serves opencode/*, openrouter/* and every provider the user added to
+        # their own config (agentrouter/..., ornith/..., a local gemma). Only a
+        # bare `gemini-*` name is a direct Google call. Before this, a custom id
+        # fell through to the gemini backend and could never work.
+        if ($effectiveModel -like "gemini-*") { return "gemini" }
+        if ($effectiveModel -like "*/*") { return "opencode" }
         return "gemini"
     }
     # Default backend is gemini for prioritizing Gemini models over OpenCode/Deepseek
@@ -610,6 +616,218 @@ function Invoke-Delegate {
         } catch {
             return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
         }
+    }
+}
+
+function Get-GeminiModelScore {
+    <#
+      Ranks a Google model id. Higher is stronger.
+
+      Two rules, both from measurement rather than taste:
+      * GENERATION dominates tier. The owner measured `gemini-3.7-flash` as
+        stronger than what `gemini-pro-latest` resolves to today (3.1 Pro), so
+        a newer flash outranks an older pro.
+      * An explicitly VERSIONED id outranks a `-latest` alias of the same tier.
+        An alias is a moving target we cannot rank: `pro-latest` is still 3.1
+        Pro while 3.7 Flash ships as its own id, so trusting the alias to be
+        "the newest" would pick the weaker model.
+    #>
+    param([string]$ModelId)
+
+    $id = ([string]$ModelId).ToLowerInvariant()
+    $tier = if ($id -match "flash-?lite" -or $id -match "lite") { 1 }
+            elseif ($id -match "pro") { 3 }
+            else { 2 }
+    $generation = 0.0
+    if ($id -match "gemini-(\d+(?:\.\d+)?)") { $generation = [double]$Matches[1] }
+    if ($generation -le 0) { return $tier * 3 }   # alias: tier only, ranks last
+    return [int]([math]::Round($generation * 10)) + $tier * 3
+}
+
+function Get-EnabledGeminiModelsByStrength {
+    # Enabled Google models, strongest first, cooldown-aware.
+    #
+    # Returns a LIST, not one model, because Google meters each model
+    # separately: measured live 2026-08-13, `gemini-pro-latest` answered 429
+    # while the key itself was healthy and flash still had quota. A fallback
+    # that tries only the strongest one fails exactly when it is needed most.
+    param([string[]]$Exclude = @())
+    $enabled = @(Get-DelegatorEnabledModels "enabled_gemini_models")
+    if ($Exclude.Count -gt 0) { $enabled = @($enabled | Where-Object { $Exclude -notcontains $_ }) }
+    if ($enabled.Count -eq 0) { return @() }
+    $ranked = @($enabled | Sort-Object `
+        @{ Expression = { Get-GeminiModelScore $_ }; Descending = $true }, `
+        @{ Expression = { [string]$_ }; Descending = $false })
+    # Not-cooling first, but a cooling model still stays in the list: it may be
+    # the only one left, and the provider re-checks the cooldown itself.
+    $active = @(Select-ActiveRankedModels $ranked)
+    $rest = @($ranked | Where-Object { $active -notcontains $_ })
+    return @($active + $rest)
+}
+
+# OpenRouter's "auto free" route: it picks whatever free model is available, so
+# it keeps answering when every metered model is out of quota. Mirrors
+# config.rs UNIVERSAL_FREE_MODEL - change both together.
+$script:UniversalFreeModel = "openrouter/openrouter/free"
+
+function Get-UniversalFreeModel {
+    # Only if the GUI has it enabled: the allowlist is mandatory (CONTRIBUTING),
+    # and the v9->v10 migration is what puts it there.
+    $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
+    if ($enabled -contains $script:UniversalFreeModel) { return $script:UniversalFreeModel }
+    return ""
+}
+
+function Get-StrongEnabledGeminiModel {
+    param([string[]]$Exclude = @())
+    $models = @(Get-EnabledGeminiModelsByStrength -Exclude $Exclude)
+    if ($models.Count -gt 0) { return [string]$models[0] }
+    return ""
+}
+
+function Get-CustomProviderModels {
+    <#
+      Enabled models from a provider the USER added to their OpenCode config
+      (agentrouter/..., a local gemma, ...). Everything with a `/` that is not
+      one of the providers OpenCode ships with.
+
+      Owner's rule 2026-08-13: their own providers come first, because the only
+      reason to configure one is to use it.
+    #>
+    $builtIn = @("opencode", "openrouter", "google", "google-vertex", "google-vertex-anthropic")
+    $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
+    return @($enabled | Where-Object {
+        $parts = ([string]$_).Split("/", 2)
+        $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1]) -and $builtIn -notcontains $parts[0]
+    } | Sort-Object)
+}
+
+function Get-StrongestReviewer {
+    <#
+      The model that CHECKS an answer, picked across BOTH providers.
+
+      Until 0.5.13 this read `enabled_opencode_models` only, so the reviewer was
+      always a free Zen model even when a current-generation Gemini was sitting
+      right there. Owner's brief 2026-08-13: Delegator's first job is now the
+      QUALITY of the answer, economy second - and a reviewer weaker than the
+      model it reviews invents defects it cannot justify (`verdict-unparsable`
+      showed up twice in run #9 for exactly that reason).
+
+      Order: best available Google model, then the strongest enabled Zen model,
+      then the universal free route. Free Zen models and Gemini cannot honestly
+      be put on one numeric scale, but a current-generation Gemini is stronger
+      than any of the free aliases, so this IS "the strongest available".
+
+      Returns @{ model; backend } - empty model when nothing is configured.
+    #>
+    # A provider the user configured themselves outranks everything: they added
+    # it deliberately, and it is usually a frontier model behind their own key.
+    $custom = @(Get-CustomProviderModels)
+    if ($custom.Count -gt 0) {
+        return [pscustomobject]@{ model = [string]$custom[0]; backend = "opencode" }
+    }
+    $gemini = @(Get-EnabledGeminiModelsByStrength)
+    if ($gemini.Count -gt 0) {
+        return [pscustomobject]@{ model = [string]$gemini[0]; backend = "gemini" }
+    }
+    $zen = Get-StrongEnabledModel
+    if (-not [string]::IsNullOrWhiteSpace($zen)) {
+        return [pscustomobject]@{ model = $zen; backend = "opencode" }
+    }
+    $free = Get-UniversalFreeModel
+    if (-not [string]::IsNullOrWhiteSpace($free)) {
+        return [pscustomobject]@{ model = $free; backend = "opencode" }
+    }
+    return [pscustomobject]@{ model = ""; backend = "gemini" }
+}
+
+function Invoke-DelegateAcrossBackends {
+    <#
+      One call, and if the whole backend is unusable, the SAME call on the other
+      one with that backend's strongest enabled model.
+
+      Why: `improve` picked its reviewer from enabled_opencode_models only, so
+      when the OpenCode free tier ran out the reviewer call failed and improve
+      exited 1 - Delegator simply stopped working, while the Google keys still
+      had quota. The owner hit exactly that during a benchmark run.
+
+      Returns the original result object plus `backend`, `model` and
+      `fellBack` so callers can report which side actually answered.
+    #>
+    param(
+        [string]$ChosenBackend,
+        [string]$Text,
+        [string]$ChosenModel = "",
+        [string]$EffectiveComplexity = ""
+    )
+
+    $result = Invoke-Delegate -ChosenBackend $ChosenBackend -Text $Text -ChosenModel $ChosenModel -EffectiveComplexity $EffectiveComplexity
+    if ($result.exitCode -eq 0) {
+        return [pscustomobject]@{
+            exitCode = 0; output = $result.output; backend = $ChosenBackend
+            model = $ChosenModel; fellBack = $false
+        }
+    }
+
+    # A custom provider usually exposes SEVERAL models and they fail
+    # independently: the owner's AgentRouter answers on gpt-5.6-sol while both
+    # Claude routes return HTTP 402 (budget pool exhausted). Walk the rest of
+    # their own models before leaving the provider they configured.
+    $custom = @(Get-CustomProviderModels | Where-Object { $_ -ne $ChosenModel })
+    foreach ($sibling in @($custom | Select-Object -First 2)) {
+        [Console]::Error.WriteLine("[Delegator] $ChosenModel failed, trying $sibling")
+        Write-DelegateMetric -Stage "failover" -Model $sibling -Backend "opencode" -Status "same-provider" -Extra "was=$ChosenModel"
+        $retry = Invoke-Delegate -ChosenBackend "opencode" -Text $Text -ChosenModel $sibling -EffectiveComplexity $EffectiveComplexity
+        if ($retry.exitCode -eq 0) {
+            return [pscustomobject]@{
+                exitCode = 0; output = $retry.output; backend = "opencode"
+                model = $sibling; fellBack = $true
+            }
+        }
+    }
+
+    $otherBackend = if ($ChosenBackend -eq "opencode") { "gemini" } else { "opencode" }
+    # Up to two models on the other side. Google meters each model separately,
+    # so "pro is out of quota" must not read as "Google is out of quota".
+    $candidates = if ($otherBackend -eq "gemini") {
+        @(Get-EnabledGeminiModelsByStrength | Select-Object -First 2)
+    } else {
+        $first = Get-StrongEnabledModel
+        $second = if ([string]::IsNullOrWhiteSpace($first)) { "" } else { Get-StrongEnabledModel -Exclude @($first) }
+        @(@($first, $second) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    if ($candidates.Count -eq 0) {
+        return [pscustomobject]@{
+            exitCode = $result.exitCode; output = $result.output; backend = $ChosenBackend
+            model = $ChosenModel; fellBack = $false
+        }
+    }
+
+    # Last rung: the universal free route, whichever side we ended up on. When
+    # both providers are rate-limited this is the only thing left that answers.
+    $universal = Get-UniversalFreeModel
+    if (-not [string]::IsNullOrWhiteSpace($universal) -and $candidates -notcontains $universal) {
+        $candidates = @($candidates) + $universal
+    }
+
+    $lastRetry = $null
+    foreach ($otherModel in $candidates) {
+        # `openrouter/*` is served by the opencode side regardless of which
+        # backend we failed over FROM.
+        $useBackend = if ($otherModel -like "openrouter/*") { "opencode" } else { $otherBackend }
+        [Console]::Error.WriteLine("[Delegator] $ChosenBackend failed, retrying on $useBackend ($otherModel)")
+        Write-DelegateMetric -Stage "failover" -Model $otherModel -Backend $useBackend -Status "from-$ChosenBackend" -Extra "was=$ChosenModel"
+        $lastRetry = Invoke-Delegate -ChosenBackend $useBackend -Text $Text -ChosenModel $otherModel -EffectiveComplexity $EffectiveComplexity
+        if ($lastRetry.exitCode -eq 0) {
+            return [pscustomobject]@{
+                exitCode = 0; output = $lastRetry.output; backend = $useBackend
+                model = $otherModel; fellBack = $true
+            }
+        }
+    }
+    return [pscustomobject]@{
+        exitCode = $lastRetry.exitCode; output = $lastRetry.output; backend = $otherBackend
+        model = [string]$candidates[-1]; fellBack = $true
     }
 }
 
@@ -1488,7 +1706,7 @@ function Get-MechanicalDefects {
 
       Never throws and never blocks: no core, no Python, no answer - no defects.
     #>
-    param([string]$Task, [string]$Draft)
+    param([string]$Task, [string]$Draft, [string]$Rewrite = "", [switch]$WantRewriteDefects)
 
     $core = Get-CoreExecutable
     if ([string]::IsNullOrWhiteSpace($core)) { return @() }
@@ -1497,11 +1715,17 @@ function Get-MechanicalDefects {
     $taskPath = Join-Path $tempDir "dg-lint-task-$stamp.txt"
     $draftPath = Join-Path $tempDir "dg-lint-draft-$stamp.txt"
     $resultPath = Join-Path $tempDir "dg-lint-result-$stamp.json"
+    $rewritePath = Join-Path $tempDir "dg-lint-rewrite-$stamp.txt"
+    $utf8 = New-Object System.Text.UTF8Encoding $false
     try {
-        [System.IO.File]::WriteAllText($taskPath, [string]$Task, (New-Object System.Text.UTF8Encoding $false))
-        [System.IO.File]::WriteAllText($draftPath, [string]$Draft, (New-Object System.Text.UTF8Encoding $false))
-        $process = Start-Process -FilePath $core -ArgumentList @("--lint-draft", $taskPath, $draftPath, $resultPath) `
-            -PassThru -WindowStyle Hidden
+        [System.IO.File]::WriteAllText($taskPath, [string]$Task, $utf8)
+        [System.IO.File]::WriteAllText($draftPath, [string]$Draft, $utf8)
+        $arguments = @("--lint-draft", $taskPath, $draftPath, $resultPath)
+        if ($WantRewriteDefects) {
+            [System.IO.File]::WriteAllText($rewritePath, [string]$Rewrite, $utf8)
+            $arguments += $rewritePath
+        }
+        $process = Start-Process -FilePath $core -ArgumentList $arguments -PassThru -WindowStyle Hidden
         $null = $process.Handle
         if (-not $process.WaitForExit(20000)) {
             try { $process.Kill() } catch { }
@@ -1509,12 +1733,14 @@ function Get-MechanicalDefects {
         }
         if (-not (Test-Path -LiteralPath $resultPath)) { return @() }
         $payload = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($null -eq $payload -or $null -eq $payload.defects) { return @() }
-        return @($payload.defects | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+        if ($null -eq $payload) { return @() }
+        $found = if ($WantRewriteDefects) { $payload.rewriteDefects } else { $payload.defects }
+        if ($null -eq $found) { return @() }
+        return @($found | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
     } catch {
         return @()
     } finally {
-        foreach ($path in @($taskPath, $draftPath, $resultPath)) {
+        foreach ($path in @($taskPath, $draftPath, $resultPath, $rewritePath)) {
             try { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } catch { }
         }
     }
@@ -1628,7 +1854,9 @@ function Run-Improve {
 
     # The reviewer is the strongest model available: a weaker one invents defects
     # in code it cannot follow, and the rewrite then makes things worse.
-    $reviewModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { Get-StrongEnabledModel }
+    # Strongest across BOTH providers, not just the Zen list (see the function).
+    $reviewer = Get-StrongestReviewer
+    $reviewModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { $reviewer.model }
     if ([string]::IsNullOrWhiteSpace($reviewModel)) { $reviewModel = "gemini-pro-latest" }
     $reviewBackend = Select-Backend -Text $task -ChosenModel $reviewModel
     $script:FinalModel = $reviewModel
@@ -1673,11 +1901,20 @@ DRAFT ANSWER:
 $draftForReview
 "@
 
-    $checkResult = Invoke-Delegate -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    # Falls over to the other backend rather than giving up: an exhausted
+    # OpenCode free tier must not stop Delegator while the Google keys still
+    # have quota.
+    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    if ($checkResult.fellBack) {
+        $reviewBackend = $checkResult.backend
+        $reviewModel = $checkResult.model
+        $script:FinalModel = $reviewModel
+        $script:FinalProvider = Get-UsageProviderName $reviewBackend
+    }
     $checkText = (($checkResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
     if ($checkResult.exitCode -ne 0) {
         Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "check-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
-        [Console]::Error.WriteLine("[Delegator] improve: the reviewer backend failed, keeping your draft")
+        [Console]::Error.WriteLine("[Delegator] improve: every backend failed, keeping your draft")
         Exit-Delegate 1
     }
     $verdictObj = Get-ImproveVerdict $checkText
@@ -1733,13 +1970,35 @@ $draftForReview
 "@
     $rewritePrompt = Add-ExecutionLanguagePolicy $rewriteBody
 
-    $rewriteResult = Invoke-Delegate -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    # Same failover on the second call: the free tier can run out between the
+    # review and the rewrite, and half a delegation is worth nothing.
+    $rewriteResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    if ($rewriteResult.fellBack) {
+        $reviewBackend = $rewriteResult.backend
+        $reviewModel = $rewriteResult.model
+        $script:FinalModel = $reviewModel
+        $script:FinalProvider = Get-UsageProviderName $reviewBackend
+    }
     $improved = Filter-ConversationalNoise ((($rewriteResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim())
     if ($rewriteResult.exitCode -ne 0) {
         Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,ctxmissing=$($script:ImproveMissingContext)"
         [Console]::Error.WriteLine("[Delegator] improve: the rewrite failed, keeping your draft")
         Exit-Delegate 1
     }
+    # The rewrite gets the same mechanical treatment as the draft did. Benchmark
+    # run #8: a 13/13 answer came back as 2/13 because the rewrite used
+    # re.fullmatch and put `import re` in a SEPARATE block with a note to move
+    # it. Nothing checked the rewrite at all - only the draft was ever linted.
+    $rewriteProblems = @(Get-MechanicalDefects -Task $task -Draft $draft -Rewrite $improved -WantRewriteDefects)
+    if ($rewriteProblems.Count -gt 0) {
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-rewrite-broken" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=fail,reason=$($rewriteProblems[0])"
+        [Console]::Error.WriteLine("[Delegator] improve: rewrite is worse than the draft, keeping yours - $($rewriteProblems[0])")
+        if ($callerWantsJson) {
+            [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "rewrite-broken"; output = "" } | ConvertTo-Json -Depth 4
+        }
+        Exit-Delegate 3
+    }
+
     $guard = Test-ImproveGuards -Draft $draft -Improved $improved
     if (-not [string]::IsNullOrWhiteSpace($guard)) {
         Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=fail,ctxmissing=$($script:ImproveMissingContext)"

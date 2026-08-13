@@ -12,6 +12,7 @@ number matches. It moves independently of the Delegator version.
 """
 
 from .engine import (
+    ARM_MODEL,
     BENCHMARK_VERSION,
     BenchmarkStore,
     export_report,
@@ -25,6 +26,7 @@ from .stats import load_items, summarise
 from .templates import known_template_ids
 
 __all__ = [
+    "ARM_MODEL",
     "BENCHMARK_VERSION",
     "BenchmarkStore",
     "export_report",

@@ -143,7 +143,20 @@ pub fn order_opencode_models(
     models: Vec<ModelInfo>,
     catalog: &HashMap<String, i32>,
 ) -> Vec<ModelInfo> {
-    let (mut zen, rest): (Vec<ModelInfo>, Vec<ModelInfo>) = models
+    // Owner's order, 2026-08-13: their own providers at the very top, then the
+    // universal free route, then the Zen aliases strongest-first, then anything
+    // else. A model you added yourself is the one you came to this tab for.
+    let (mut custom, others): (Vec<ModelInfo>, Vec<ModelInfo>) = models
+        .into_iter()
+        .partition(|model| crate::models_service::is_custom_provider_model(&model.id));
+    custom.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let (mut free_route, others): (Vec<ModelInfo>, Vec<ModelInfo>) = others
+        .into_iter()
+        .partition(|model| model.id == crate::config::UNIVERSAL_FREE_MODEL);
+    free_route.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let (mut zen, rest): (Vec<ModelInfo>, Vec<ModelInfo>) = others
         .into_iter()
         .partition(|model| model.id.starts_with("opencode/"));
     zen.sort_by(|a, b| {
@@ -151,8 +164,11 @@ pub fn order_opencode_models(
             .cmp(&strength_of(&a.id, catalog))
             .then_with(|| a.id.cmp(&b.id))
     });
-    zen.extend(rest);
-    zen
+
+    custom.extend(free_route);
+    custom.extend(zen);
+    custom.extend(rest);
+    custom
 }
 
 /// Which background CLI job produced a result (they share one code path but
@@ -607,5 +623,47 @@ mod tests {
         assert_eq!(short_failure("", ""), "нет вывода команды");
         let long = "e".repeat(300);
         assert_eq!(short_failure("", &long).chars().count(), 121);
+    }
+}
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+
+    fn model(id: &str) -> ModelInfo {
+        ModelInfo {
+            id: id.to_string(),
+            name: id.to_string(),
+            is_free: true,
+            provider: "x".into(),
+        }
+    }
+
+    #[test]
+    fn custom_providers_come_first_then_the_free_route() {
+        let catalog: HashMap<String, i32> = [
+            ("opencode/weak".to_string(), 10),
+            ("opencode/strong".to_string(), 90),
+        ]
+        .into_iter()
+        .collect();
+        let ordered = order_opencode_models(
+            vec![
+                model("opencode/weak"),
+                model(crate::config::UNIVERSAL_FREE_MODEL),
+                model("opencode/strong"),
+                model("agentrouter/claude-opus-5"),
+            ],
+            &catalog,
+        );
+        let ids: Vec<&str> = ordered.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "agentrouter/claude-opus-5",
+                crate::config::UNIVERSAL_FREE_MODEL,
+                "opencode/strong",
+                "opencode/weak",
+            ]
+        );
     }
 }

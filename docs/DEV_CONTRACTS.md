@@ -447,3 +447,40 @@ Mechanical defects (§11) bypass this entirely — they are already proven.
 
 `delegate-metrics.jsonl` carries `unsupported=<n>` on the keep path: that is the tuning signal for
 how often the reviewer claims something it cannot demonstrate.
+
+### 11b. The REWRITE is checked too (0.5.11)
+
+Benchmark run #8: `improve` took a **13/13 answer and returned a 2/13 one**. The rewrite used
+`re.fullmatch` and put `import re` in a SECOND code block with a note to move it to the top. Two
+holes met: nothing ever linted the rewrite (only the draft), and `compile()` cannot see a missing
+import — an unbound name is a RUNTIME error.
+
+- `undefined_names(code)` walks the AST and reports names that are loaded but bound nowhere.
+  **`compile()` first, not just `ast.parse`**: the parser ACCEPTS a top-level `return`, so a
+  snippet like «return value + 1» would otherwise be reported as using an undefined `value` — a
+  false positive the module's own test caught. Module-wide, not scope-aware, and silent on
+  `from x import *`: it must never blame correct code.
+- `rewrite_defects(task, draft, rewrite)` returns reasons to THROW AWAY a rewrite: its first code
+  block is not self-contained (names bound only in a later block), or it introduced a mechanical
+  defect the draft did not have. `improve` then keeps the draft and records
+  `guard-rewrite-broken`. Transport: the optional 5th path of
+  `delegator-core.exe --lint-draft <task> <draft> <result> [rewrite]`.
+- Answers are linted with ALL their Python joined, because an import in a second block does not
+  make the code wrong — only badly presented. The "split" rule above is what judges presentation,
+  and it applies to REWRITES only: `improve`'s output is fed back as *the* answer.
+
+### 12. Provider failover and the universal free route
+
+`Invoke-DelegateAcrossBackends` (ai-delegate.ps1) tries the chosen backend, then up to two models
+on the other one, then `openrouter/openrouter/free`. Google meters each MODEL separately — measured
+live, `gemini-pro-latest` returned 429 while the key was healthy and flash still had quota — so a
+single-candidate fallback fails exactly when it is needed.
+
+`openrouter/openrouter/free` (`config.rs UNIVERSAL_FREE_MODEL`, mirrored in ai-delegate.ps1) routes
+to whatever free model OpenRouter has, so it answers when every metered model is out of quota.
+Config migration **v9→v10** puts it in `enabled_opencode_models` — the runtime allowlist is
+mandatory and refused it before ("Requested model … is not enabled in the Delegator GUI"), and the
+Zen catalog sync never saw it because it only keeps ids matching `^opencode/…`. It is deliberately
+NOT added to `known_opencode_models`: that list is the Zen catalog's memory and stays `opencode/*`
+only (a test guards this), and `sync_opencode_catalog` never prunes `openrouter/*` anyway.
+`openrouter/*` always goes to the **opencode** backend, whichever side the failover started from.

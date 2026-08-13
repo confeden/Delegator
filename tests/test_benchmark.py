@@ -74,6 +74,31 @@ def test_correct_answer_passes_and_broken_answer_fails(template_id):
     assert broken["note"]
 
 
+def test_an_answer_split_across_code_blocks_is_read_whole():
+    """Run #8: an answer put the function in one block and `import re` in a
+    second. Grading only the first block scored working code as eleven
+    NameErrors and cost Delegator the task."""
+    task = _task_of("safe-div")
+    split = (
+        "```python\ndef safe_div(a, b):\n"
+        "    return None if b == 0 else fractions.Fraction(a, b).__float__()\n```\n\n"
+        "```python\nimport fractions\n```\n\nПоставьте импорт наверх."
+    )
+    verdict = engine.grade_answer(task, split)
+    assert verdict["passed"], verdict["note"]
+
+
+def test_a_demonstration_block_is_not_executed_as_the_answer():
+    """A `print(...)` example must not run at grading time and take the answer
+    down with it."""
+    task = _task_of("safe-div")
+    with_demo = (
+        "```python\ndef safe_div(a, b):\n    return None if b == 0 else a / b\n```\n\n"
+        "```python\nprint(safe_div(1, 0))\nraise SystemExit(3)\n```"
+    )
+    assert engine.grade_answer(task, with_demo)["passed"]
+
+
 def test_answer_without_code_never_scores():
     task = build_tasks(5)[0]
     verdict = engine.grade_answer(task, "Конечно! Вот подробное объяснение без кода.")
@@ -249,6 +274,31 @@ def test_missing_answers_names_the_gaps(tmp_path):
     for index in (11, 12):
         engine.record_answer(state, index, engine.ARM_DELEGATOR, "x")
     assert engine.missing_answers(state) == {}
+
+
+def test_a_silent_ide_chat_is_reported_as_a_stalled_run(tmp_path):
+    """The run lives in the IDE chat, and that chat can die — the agent hits an
+    "servers are overloaded" error and never calls `finish`. The app used to
+    keep announcing «Бенчмарк идёт» for an hour with no result coming."""
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(store, mode="compare", model_label="m", seed=808)
+    state = store.get(started["runId"])
+
+    fresh = engine.run_status(state)
+    assert fresh["stalled"] is False
+    assert fresh["stalledAfterSec"] == engine.STALE_AFTER_SEC
+
+    # The agent pings progress before every slow step, so silence this long
+    # means the other side is gone, not that a task is hard.
+    state.updated_unix -= engine.STALE_AFTER_SEC + 5
+    stalled = engine.run_status(state)
+    assert stalled["stalled"] is True
+    assert stalled["idleSec"] >= engine.STALE_AFTER_SEC
+
+    # Cancelling is just forgetting it: nothing is lost that was not lost already.
+    store.drop(state.run_id)
+    assert store.active() is None
+    assert engine.run_status(store.active()) is None
 
 
 def test_solo_run_does_not_wait_for_a_delegator_arm(tmp_path):
@@ -533,12 +583,14 @@ def test_an_unmeasured_new_class_task_outweighs_an_unmeasured_legacy_one():
     from delegator_core.benchmark.templates import CATEGORY_PRIOR, _draw_weight
 
     legacy = _draw_weight("never-seen", "code", {})
-    fresh = _draw_weight("never-seen", "spec", {})
+    fresh = _draw_weight("never-seen", "contract", {})
     assert fresh > legacy * 4, (fresh, legacy)
-    assert CATEGORY_PRIOR["debug"] == CATEGORY_PRIOR["performance"] < CATEGORY_PRIOR["code"]
+    assert CATEGORY_PRIOR["repair"] == CATEGORY_PRIOR["budget"] < CATEGORY_PRIOR["code"]
+    # The 2.0 classes are the most promising slot of all until measured.
+    assert CATEGORY_PRIOR["trap"] < CATEGORY_PRIOR["contract"]
 
     # One recorded observation replaces the prior outright, in both directions.
-    assert _draw_weight("t", "spec", {"t": 1.0}) == pytest.approx(0.1)
+    assert _draw_weight("t", "contract", {"t": 1.0}) == pytest.approx(0.1)
     assert _draw_weight("t", "code", {"t": 0.0}) == pytest.approx(1.0)
 
     new_classes = {"validate-order", "apply-discounts", "fix-pagination", "top-k-fast"}

@@ -26,12 +26,19 @@ from .templates import LEVEL_POINTS, MAX_POINTS, TASKS_PER_RUN, Task, build_task
 
 # Version of the TASK SET and the scoring rules. Reports may only be compared
 # when this matches; bump it whenever a template or a weight changes.
-# 1.5 — the draw now uses a PER-CATEGORY prior for templates nobody has measured
-# yet. In 1.4 "never drawn" was one bucket, so twelve unmeasured legacy tasks
-# competed on equal terms with the five written to break a model, and run #6
-# gave the new classes one of six deep slots. Scoring is unchanged, but which
-# tasks a run contains is not, so totals are not comparable with 1.4.
-BENCHMARK_VERSION = "1.5"
+# 2.1 — run #10 settled the escalation question: gemini-3.7-flash aced every
+# task written to break it. Piling on rules buys nothing; the new `integration`
+# class (work against an API the model was never trained on) is the direction
+# that still produces failures.
+# 2.0 — the owner's brief changed the target: Delegator is a reasoning
+# amplifier first and a token saver second, so the set has to ask "does a second
+# pass catch what the first missed" instead of "does the model know this".
+# New classes `trap` (the obvious route is mechanically closed) and `exactness`;
+# `spec`/`debug`/`performance` renamed to `contract`/`repair`/`budget`; the
+# `topo-sort` REFERENCE was wrong for as long as it existed (DFS order instead
+# of the alphabetically-smallest-available the task demands) and marked correct
+# answers wrong. Nothing here is comparable with 1.6.
+BENCHMARK_VERSION = "2.1"
 
 ARM_MODEL = "model"
 ARM_DELEGATOR = "delegator"
@@ -193,12 +200,23 @@ def record_answer(state: RunState, task_index: int, arm: str, text: str, elapsed
     state.touch(task_index, STAGE_MODEL if arm == ARM_MODEL else STAGE_DELEGATOR)
 
 
+# A run is driven from the IDE chat, and that chat can die: the agent hits a
+# "servers are overloaded" error, or the user closes the session. Nothing then
+# ever calls `finish`, and the app used to keep saying «Бенчмарк идёт» for an
+# hour. The agent pings progress before every slow step, so silence this long
+# means the other side is gone, not that a task is hard.
+STALE_AFTER_SEC = 600
+
+
 def run_status(state: RunState | None) -> dict | None:
     """Live picture of a run for the GUI; None when nothing is in flight."""
     if state is None:
         return None
     now = int(time.time())
+    idle = max(0, now - (state.updated_unix or state.started_unix))
     return {
+        "stalled": idle >= STALE_AFTER_SEC,
+        "stalledAfterSec": STALE_AFTER_SEC,
         "runId": state.run_id,
         "mode": state.mode,
         "modelLabel": state.model_label,
@@ -213,7 +231,7 @@ def run_status(state: RunState | None) -> dict | None:
         ),
         "stage": state.stage,
         "elapsedSec": max(0, now - state.started_unix),
-        "idleSec": max(0, now - (state.updated_unix or state.started_unix)),
+        "idleSec": idle,
     }
 
 
@@ -221,9 +239,26 @@ def run_status(state: RunState | None) -> dict | None:
 
 
 def _extract_python(answer: str) -> str:
-    match = _CODE_FENCE.search(answer or "")
-    if match:
-        return match.group(1)
+    """ALL the Python the answer gave, in order — not just the first block.
+
+    Run #8: an answer put the function in one block and `import re` in a second
+    with a note to move it. Taking only the first block scored a working answer
+    as eleven NameErrors. Whatever one thinks of an answer split that way, the
+    grader must read the code that was actually written, and Python binds a
+    module-level import before any function is CALLED, so order does not matter
+    here. Blocks that are pure demonstration (no import/def/class/assignment)
+    are skipped: `print(f([1,2]))` would otherwise run at grading time.
+    """
+    blocks = [match.group(1) for match in _CODE_FENCE.finditer(answer or "")]
+    real = [
+        block
+        for block in blocks
+        if re.search(r"(?m)^\s*(import\s+\w|from\s+\w|def\s+\w|class\s+\w|@\w|\w+\s*=)", block)
+    ]
+    if real:
+        return "\n\n".join(real)
+    if blocks:
+        return blocks[0]
     if re.search(r"(?m)^\s*(def|class)\s+\w+", answer or ""):
         return answer
     return ""
@@ -319,7 +354,13 @@ def _harness(checks: list[dict], entry: str) -> str:
 
 def _python_script(task: Task, candidate: str) -> str:
     checker = task.checker
-    parts = [candidate, ""]
+    parts = []
+    # A PRELUDE runs before the answer. That is the only place a task can
+    # forbid a module: the candidate's own `import re` at the top of its file
+    # would otherwise capture the real one before any check could intervene.
+    if checker.get("prelude"):
+        parts.append(checker["prelude"])
+    parts.extend([candidate, ""])
     if checker.get("reference"):
         parts.append(checker["reference"])
     parts.append(_harness(checker.get("checks") or [], checker.get("entry") or ""))
@@ -455,9 +496,12 @@ def missing_answers(state: RunState) -> dict[str, list[int]]:
 CATEGORY_LABELS = {
     "code": "код",
     "sql": "SQL",
-    "spec": "много требований",
-    "debug": "починка кода",
-    "performance": "скорость",
+    "contract": "много требований",
+    "repair": "починка кода",
+    "budget": "скорость",
+    "trap": "закрытый обходной путь",
+    "exactness": "точность правил",
+    "integration": "чужой API",
 }
 
 # Below this the difference is float noise from proportional partial credit.

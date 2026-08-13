@@ -42,6 +42,11 @@ pub struct RunStatus {
     pub stage: String,
     pub elapsed_sec: u64,
     pub idle_sec: u64,
+    /// The IDE chat has gone silent for longer than the core tolerates — the
+    /// agent died (an overloaded-servers error, a closed session) and `finish`
+    /// is never coming.
+    pub stalled: bool,
+    pub stalled_after_sec: u64,
 }
 
 impl RunStatus {
@@ -227,6 +232,36 @@ pub struct BenchmarkStats {
     pub mcnemar_p: Option<f64>,
     pub min_discordant_for_proof: u32,
     pub text: String,
+}
+
+impl RunStatus {
+    /// What to say when the run is dead rather than slow.
+    pub fn stalled_line(&self) -> String {
+        format!(
+            "Похоже, прогон прерван: чат IDE молчит {}. Обычно это ошибка на стороне              IDE («серверы перегружены»). Результата не будет — прогон можно прекратить              и запустить заново.",
+            format_duration(self.idle_sec)
+        )
+    }
+}
+
+const CANCEL_URL: &str = "http://127.0.0.1:1380/api/benchmark/cancel";
+
+/// Drops a run nobody is driving any more. Returns the run id the core forgot.
+pub async fn cancel_run(run_id: String) -> Result<(), String> {
+    let response = client()
+        .await?
+        .post(CANCEL_URL)
+        .json(&serde_json::json!({ "runId": run_id }))
+        .send()
+        .await
+        .map_err(|_| "ядро Delegator не отвечает".to_string())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "ядро Delegator вернуло ошибку HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    Ok(())
 }
 
 /// How long one breath of the «Бенчмарк» tab highlight takes.

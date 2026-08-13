@@ -36,7 +36,9 @@ impl OpenCodeCatalog {
             OpenCodeCatalogSource::LiveCli => Some(
                 self.models
                     .iter()
-                    .filter(|model| model.id.starts_with("opencode/"))
+                    .filter(|model| {
+                        model.id.starts_with("opencode/") || is_custom_provider_model(&model.id)
+                    })
                     .map(|model| model.id.clone())
                     .collect(),
             ),
@@ -95,7 +97,19 @@ const OPENCODE_FREE_MODELS: [(&str, &str); 7] = [
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const OPENCODE_CLI_TIMEOUT: Duration = Duration::from_secs(15);
 
-const GEMINI_DELEGATE_MODELS: [(&str, &str); 3] = [
+/// Text-capable Gemini models worth delegating to, newest generation first.
+///
+/// The `-latest` aliases alone were too narrow: `gemini-3.7-flash` exists and
+/// the owner measured it as stronger than what `gemini-pro-latest` currently
+/// resolves to (3.1 Pro). Image / TTS / live-audio / customtools variants are
+/// deliberately absent — they cannot answer a delegation.
+const GEMINI_DELEGATE_MODELS: [(&str, &str); 9] = [
+    ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+    ("gemini-3.6-flash", "Gemini 3.6 Flash"),
+    ("gemini-3.5-flash", "Gemini 3.5 Flash"),
+    ("gemini-3.1-pro-preview", "Gemini 3.1 Pro (preview)"),
+    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+    ("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
     ("gemini-pro-latest", "Gemini Pro Latest"),
     ("gemini-flash-latest", "Gemini Flash Latest"),
     ("gemini-flash-lite-latest", "Gemini Flash-Lite Latest"),
@@ -120,6 +134,11 @@ fn opencode_display_name(id: &str) -> String {
     if let Some((_, name)) = OPENCODE_FREE_MODELS.iter().find(|(known, _)| *known == id) {
         return (*name).to_string();
     }
+    // A custom provider keeps its full id: «agentrouter/claude-opus-5» is what
+    // the user typed into their OpenCode config and what they will look for.
+    if is_custom_provider_model(id) {
+        return id.to_string();
+    }
     let slug = id.strip_prefix("opencode/").unwrap_or(id);
     slug.split(['-', '_'])
         .filter(|part| !part.is_empty())
@@ -136,18 +155,58 @@ fn opencode_display_name(id: &str) -> String {
 
 /// Keeps trimmed lines that are exactly an `opencode/<alias>` id; everything
 /// else the CLI prints (google/* ids, local gguf paths, banners) is noise.
+/// Providers OpenCode ships with. Their catalogs are either enormous (335
+/// `openrouter/*` entries) or reachable elsewhere in Delegator (the Gemini
+/// tab), so they are not listed here wholesale. **Anything NOT on this list is
+/// a provider the user added to their own OpenCode config** — the whole reason
+/// they added it is to use it, so it is discovered and shown first.
+const BUILT_IN_PROVIDERS: [&str; 5] = [
+    "opencode",
+    "openrouter",
+    "google",
+    "google-vertex",
+    "google-vertex-anthropic",
+];
+
+/// True for `agentrouter/claude-opus-5` and friends: a provider the user
+/// configured themselves.
+pub fn is_custom_provider_model(id: &str) -> bool {
+    match id.split_once('/') {
+        Some((provider, rest)) => {
+            !provider.is_empty() && !rest.is_empty() && !BUILT_IN_PROVIDERS.contains(&provider)
+        }
+        None => false,
+    }
+}
+
+fn is_clean_model_id(id: &str, allow_slashes: bool) -> bool {
+    !id.is_empty()
+        && id.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') || (allow_slashes && c == '/')
+        })
+}
+
+/// Ids from `opencode models` worth offering: the Zen aliases, the universal
+/// free route, and every model of a provider the user added themselves.
+///
+/// Keeping ONLY `opencode/*` is why `agentrouter/claude-opus-5` was invisible
+/// in the app after the owner configured it.
 fn parse_opencode_zen_ids(stdout: &str) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     for line in stdout.lines() {
         let id = line.trim();
-        let Some(alias) = id.strip_prefix("opencode/") else {
-            continue;
+        let keep = if let Some(alias) = id.strip_prefix("opencode/") {
+            is_clean_model_id(alias, false)
+        } else if id == crate::config::UNIVERSAL_FREE_MODEL {
+            true
+        } else if is_custom_provider_model(id) {
+            id.split_once('/').is_some_and(|(provider, rest)| {
+                is_clean_model_id(provider, false) && is_clean_model_id(rest, true)
+            })
+        } else {
+            false
         };
-        let valid = !alias.is_empty()
-            && alias
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
-        if valid && !ids.iter().any(|existing| existing == id) {
+        if keep && !ids.iter().any(|existing| existing == id) {
             ids.push(id.to_string());
         }
     }
@@ -322,8 +381,17 @@ pub async fn fetch_opencode_models(api_key: &str) -> Result<OpenCodeCatalog, Str
                 .map(|id| ModelInfo {
                     id: id.clone(),
                     name: opencode_display_name(id),
-                    is_free: true,
-                    provider: "OpenCode Zen".into(),
+                    // A model from the user's own provider is NOT a free Zen
+                    // alias: it bills against whatever account they configured,
+                    // and the list must not claim otherwise.
+                    is_free: !is_custom_provider_model(id),
+                    provider: if is_custom_provider_model(id) {
+                        id.split_once('/')
+                            .map(|(provider, _)| provider.to_string())
+                            .unwrap_or_else(|| "свой провайдер".to_string())
+                    } else {
+                        "OpenCode Zen".into()
+                    },
                 })
                 .collect();
             (models, OpenCodeCatalogSource::LiveCli)
@@ -428,8 +496,26 @@ mod tests {
             "gemini-flash-latest",
             &generate
         ));
-        assert!(!is_delegate_compatible_gemini_model(
+        // Since 0.5.14 the allowlist carries explicit generations too: the
+        // owner measured `gemini-3.7-flash` as stronger than what
+        // `gemini-pro-latest` resolves to, and a model that cannot be listed
+        // can never be chosen as the reviewer.
+        assert!(is_delegate_compatible_gemini_model(
+            "gemini-3.7-flash",
+            &generate
+        ));
+        assert!(is_delegate_compatible_gemini_model(
             "gemini-3.6-flash",
+            &generate
+        ));
+        // An id nobody vetted still does not pass — the list is an allowlist.
+        assert!(!is_delegate_compatible_gemini_model(
+            "gemini-4.0-experimental",
+            &generate
+        ));
+        // Specialized protocols stay out even when the id looks ordinary.
+        assert!(!is_delegate_compatible_gemini_model(
+            "gemini-3.1-flash-image",
             &generate
         ));
         assert!(!is_delegate_compatible_gemini_model(
@@ -483,6 +569,49 @@ opencode/deepseek-v4-flash-free
     }
 
     #[test]
+    fn custom_providers_are_discovered_and_labelled() {
+        // The owner added AgentRouter to their OpenCode config and could not
+        // find it in Delegator: the parser kept `opencode/*` only.
+        let stdout = concat!(
+            "opencode/big-pickle
+",
+            "agentrouter/claude-opus-5
+",
+            "agentrouter-openai/gpt-5.6-sol
+",
+            "openrouter/openrouter/free
+",
+            "openrouter/google/gemma-4-31b-it:free
+",
+            "google/gemini-3.7-flash
+",
+            "not a model line
+"
+        );
+        let ids = parse_opencode_zen_ids(stdout);
+        assert!(ids.contains(&"agentrouter/claude-opus-5".to_string()));
+        assert!(ids.contains(&"agentrouter-openai/gpt-5.6-sol".to_string()));
+        assert!(ids.contains(&"opencode/big-pickle".to_string()));
+        assert!(ids.contains(&crate::config::UNIVERSAL_FREE_MODEL.to_string()));
+        // The 335-model OpenRouter catalog and Google (its own tab) stay out.
+        assert!(!ids
+            .iter()
+            .any(|id| id.starts_with("openrouter/google/") || id.starts_with("google/")));
+
+        assert!(is_custom_provider_model("agentrouter/claude-opus-5"));
+        assert!(!is_custom_provider_model("opencode/big-pickle"));
+        assert!(!is_custom_provider_model(
+            crate::config::UNIVERSAL_FREE_MODEL
+        ));
+        assert!(!is_custom_provider_model("gemini-3.7-flash"));
+        // The full id is the display name: it is what the user typed.
+        assert_eq!(
+            opencode_display_name("agentrouter/claude-opus-5"),
+            "agentrouter/claude-opus-5"
+        );
+    }
+
+    #[test]
     fn display_names_prefer_curated_then_title_case_the_slug() {
         assert_eq!(
             opencode_display_name("opencode/deepseek-v4-flash-free"),
@@ -513,6 +642,25 @@ opencode/deepseek-v4-flash-free
         let ids = live.zen_ids_for_sync().expect("live catalog offers ids");
         assert_eq!(ids.len(), 7);
         assert!(ids.iter().all(|id| id.starts_with("opencode/")));
+    }
+
+    /// Runs the REAL `opencode models` on this machine and prints what the tab
+    /// will show. Ignored in CI; `cargo test -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_cli_lists_what_this_machine_offers() {
+        let catalog = fetch_opencode_models("").await.expect("catalog");
+        println!(
+            "source: {:?}, models: {}",
+            catalog.source,
+            catalog.models.len()
+        );
+        for model in &catalog.models {
+            println!(
+                "  {:<40} free={} provider={}",
+                model.id, model.is_free, model.provider
+            );
+        }
     }
 
     #[tokio::test]

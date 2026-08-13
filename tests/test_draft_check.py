@@ -142,3 +142,62 @@ def test_the_cli_guard_only_fires_on_its_own_flag(tmp_path):
 def test_at_most_five_defects_are_reported():
     draft = "\n".join("```python\ndef f%d(x)\n    return x\n```" % index for index in range(9))
     assert len(draft_check.check_draft("задача", draft)["defects"]) <= 5
+
+
+# ── run #8: a perfect answer rewritten into eleven NameErrors ───────────────
+
+SPLIT_REWRITE = """```python
+def validate_order(order):
+    return sorted(['x']) if re.fullmatch(r'[A-Z]{2}', order['country']) else []
+```
+
+```python
+import re
+```
+
+Put the `import re` at the top of the module."""
+
+
+def test_an_unbound_name_is_a_defect_even_though_it_compiles():
+    """`compile()` cannot see it: an unbound name is a runtime error. Run #8
+    turned a 13/13 answer into 2/13 exactly this way."""
+    broken = "```python\ndef f(x):\n    return re.fullmatch('a', x)\n```"
+    defects = draft_check.check_draft("задача", broken)["defects"]
+    assert defects and "`re`" in defects[0]
+
+
+def test_imports_may_live_in_another_block():
+    """All the Python of an answer is judged together — the import being in a
+    second block does not make the code wrong, only badly presented."""
+    assert draft_check.check_draft("задача", SPLIT_REWRITE)["defects"] == []
+
+
+def test_ordinary_python_never_trips_the_name_check():
+    for source in (
+        "import os\nclass A:\n    def m(self, n):\n        return [i for i in range(n) if os.sep]\n",
+        "def f(v):\n    try:\n        if (w := v):\n            return w\n    except ValueError as err:\n        return err\n",
+        "import functools\n@functools.cache\ndef g(a):\n    return (lambda b: b + a)(1)\n",
+        "from math import *\ndef f(x):\n    return sqrt(x)\n",
+    ):
+        assert draft_check.undefined_names(source) == [], source
+
+
+def test_a_rewrite_split_across_blocks_is_rejected():
+    """`improve` feeds its output back as THE answer. One that needs the reader
+    to move an import by hand is not an answer — and nothing checked the
+    rewrite at all before run #8."""
+    draft = "```python\nimport re\ndef validate_order(order):\n    return []\n```"
+    reasons = draft_check.rewrite_defects("задача", draft, SPLIT_REWRITE)
+    assert reasons and "самодостаточен" in reasons[0]
+
+
+def test_a_healthy_rewrite_is_not_rejected():
+    draft = "```python\ndef f(x):\n    return x\n```"
+    better = "```python\ndef f(x):\n    return x * 2\n```"
+    assert draft_check.rewrite_defects("задача", draft, better) == []
+
+
+def test_a_rewrite_is_only_blamed_for_defects_it_introduced():
+    """A draft that was already broken must not make every rewrite look guilty."""
+    broken = "```python\ndef f(x)\n    return x\n```"
+    assert draft_check.rewrite_defects("задача", broken, broken) == []

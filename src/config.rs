@@ -86,9 +86,11 @@ pub struct AppConfig {
     pub enabled_gemini_models: Vec<String>,
     #[serde(default = "default_opencode_models")]
     pub enabled_opencode_models: Vec<String>,
-    /// Every `opencode/*` Zen id the app has ever seen, whether enabled or
+    /// Every `opencode/*` Zen id — and every model of a provider the user added
+    /// to their own OpenCode config — that the app has ever seen, enabled or
     /// not. Lets catalog sync distinguish "new upstream model" (auto-enable)
-    /// from "model the user deliberately disabled" (leave alone).
+    /// from "model the user deliberately disabled" (leave alone). Never holds
+    /// `openrouter/*`: that catalog is 335 models we do not track.
     #[serde(default)]
     pub known_opencode_models: Vec<String>,
     /// Outbound proxies (DEV_CONTRACTS §7a). Always serialized — the mere
@@ -109,7 +111,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 9,
+            config_version: 11,
             google_api_key_enc: String::new(),
             google_accounts: Vec::new(),
             opencode_api_key_enc: String::new(),
@@ -124,6 +126,12 @@ impl Default for AppConfig {
         }
     }
 }
+
+/// OpenRouter's "auto free" route: it picks whatever free model is available,
+/// so it answers when every metered model is rate-limited. The last rung of
+/// every fallback ladder, and the reason a quota outage no longer means
+/// "Delegator stopped working".
+pub const UNIVERSAL_FREE_MODEL: &str = "openrouter/openrouter/free";
 
 impl AppConfig {
     fn config_path() -> Option<PathBuf> {
@@ -240,6 +248,64 @@ impl AppConfig {
         if self.config_version < 9 {
             self.migrate_enable_all_known_opencode_models();
         }
+        if self.config_version < 10 {
+            self.migrate_universal_free_model();
+        }
+        if self.config_version < 11 {
+            self.migrate_current_gemini_models();
+        }
+    }
+
+    /// v10→v11 (owner request 2026-08-13): the newest Gemini generations join
+    /// the enabled set.
+    ///
+    /// Only the three `-latest` aliases used to be enabled, so an explicitly
+    /// versioned model could never be chosen — including `gemini-3.7-flash`,
+    /// which the owner measured as stronger than what `pro-latest` resolves to.
+    /// Additive only: a model the user unchecked is not re-enabled, because
+    /// this runs once.
+    fn migrate_current_gemini_models(&mut self) {
+        if self.config_version >= 11 {
+            return;
+        }
+        for model in default_gemini_models() {
+            if !self.enabled_gemini_models.contains(&model) {
+                self.enabled_gemini_models.push(model);
+            }
+        }
+        self.config_version = 11;
+    }
+
+    /// v9→v10 (owner request 2026-08-13): the universal free model is always
+    /// enabled.
+    ///
+    /// `openrouter/openrouter/free` routes to whatever free model OpenRouter
+    /// has available, so it keeps answering when every metered model is out of
+    /// quota — which is exactly the state the owner hit mid-benchmark. It was
+    /// invisible until now because the Zen catalog sync only keeps ids matching
+    /// `^opencode/…`, and the runtime allowlist then refused it
+    /// («Requested model … is not enabled in the Delegator GUI»).
+    ///
+    /// Safe to add once and leave: `sync_opencode_catalog` never prunes
+    /// `openrouter/*`, so a later catalog refresh cannot drop it, and a user who
+    /// unchecks it keeps it unchecked.
+    fn migrate_universal_free_model(&mut self) {
+        if self.config_version >= 10 {
+            return;
+        }
+        // Deliberately NOT added to `known_opencode_models`: that list is the
+        // Zen catalog's memory and must stay `opencode/*` only — a test guards
+        // it. `sync_opencode_catalog` never prunes `openrouter/*`, so being
+        // absent from `known` cannot cost it its place in `enabled`.
+        if !self
+            .enabled_opencode_models
+            .iter()
+            .any(|model| model == UNIVERSAL_FREE_MODEL)
+        {
+            self.enabled_opencode_models
+                .push(UNIVERSAL_FREE_MODEL.to_string());
+        }
+        self.config_version = 10;
     }
 
     /// v8→v9 (owner request 2026-08-11): every free Zen model the app knows
@@ -317,8 +383,14 @@ impl AppConfig {
             return false;
         }
 
+        // A provider the user added to their own OpenCode config counts the same
+        // as a new Zen alias: seen for the first time → enabled, and remembered
+        // so a later uncheck is never undone. `openrouter/*` stays out of
+        // `known_*` — that catalog is 335 models we do not want to track.
+        let trackable =
+            |id: &String| is_zen(id) || crate::models_service::is_custom_provider_model(id);
         let mut changed = false;
-        for id in discovered.iter().filter(|id| is_zen(id)) {
+        for id in discovered.iter().filter(|id| trackable(id)) {
             if !self.known_opencode_models.contains(id) {
                 self.known_opencode_models.push(id.clone());
                 if !self.enabled_opencode_models.contains(id) {
@@ -707,6 +779,12 @@ fn default_ide_states() -> HashMap<String, bool> {
 
 fn default_gemini_models() -> Vec<String> {
     [
+        // Newest generation first: the owner measured `gemini-3.7-flash` as
+        // stronger than what `gemini-pro-latest` resolves to today (3.1 Pro),
+        // and the reviewer picks the strongest ENABLED model.
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
         "gemini-pro-latest",
         "gemini-flash-latest",
         "gemini-flash-lite-latest",
@@ -720,6 +798,11 @@ fn default_gemini_models() -> Vec<String> {
 /// Since config v9 EVERY entry ships enabled, `opencode/big-pickle` included.
 fn default_opencode_models() -> Vec<String> {
     [
+        // A FRESH config is created at the current `config_version`, so it runs
+        // no migrations at all — the universal free route has to be in the
+        // defaults or a new install would never get it. Found the hard way:
+        // config v10 with the model missing.
+        UNIVERSAL_FREE_MODEL,
         "opencode/big-pickle",
         "opencode/deepseek-v4-flash-free",
         "opencode/laguna-s-2.1-free",
@@ -736,7 +819,12 @@ fn default_opencode_models() -> Vec<String> {
 /// The full built-in Zen catalog. Since v9 it is identical to the enabled
 /// defaults — nothing ships known-but-disabled anymore.
 fn default_known_opencode_models() -> Vec<String> {
+    // `known_*` is the Zen catalog's memory and stays `opencode/*` only, or
+    // `sync_opencode_catalog` starts reasoning about ids it does not own.
     default_opencode_models()
+        .into_iter()
+        .filter(|model| model.starts_with("opencode/"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -746,14 +834,25 @@ mod tests {
     #[test]
     fn defaults_enable_current_opencode_free_models() {
         let config = AppConfig::default();
-        assert_eq!(config.config_version, 9);
+        assert_eq!(config.config_version, 11);
         assert!(config.proxies.is_empty());
         assert_eq!(config.enabled_opencode_models, default_opencode_models());
         // Since v9 every known free Zen model ships enabled, big-pickle too.
         assert!(config
             .enabled_opencode_models
             .contains(&"opencode/big-pickle".to_string()));
-        assert_eq!(config.known_opencode_models, config.enabled_opencode_models);
+        // `known_*` is Zen-only; `enabled_*` also carries the universal free route.
+        assert!(config
+            .enabled_opencode_models
+            .contains(&UNIVERSAL_FREE_MODEL.to_string()));
+        assert!(!config
+            .known_opencode_models
+            .iter()
+            .any(|model| model.starts_with("openrouter/")));
+        assert_eq!(
+            config.known_opencode_models,
+            default_known_opencode_models()
+        );
         assert_eq!(config.enabled_gemini_models, default_gemini_models());
         assert_eq!(config.opencode_upgrade_checked_at, 0);
     }
@@ -838,17 +937,23 @@ mod tests {
         fs::write(&path, legacy).expect("write legacy config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 9);
+        assert_eq!(cfg.config_version, 11);
         assert_eq!(cfg.google_accounts.len(), 1);
         assert_eq!(cfg.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert!(cfg.google_accounts[0].enabled);
         assert_eq!(cfg.enabled_gemini_models, default_gemini_models());
         // The chained migrations end with the full built-in Zen set enabled
-        // (v5 dropped big-pickle, v9 put it back), order is history-dependent.
+        // (v5 dropped big-pickle, v9 put it back), plus the universal free
+        // route v10 adds. Order is history-dependent.
+        // `default_opencode_models()` already carries the universal free route
+        // (a fresh config runs no migrations, so it has to be in the defaults).
         assert_eq!(
             sorted(&cfg.enabled_opencode_models),
             sorted(&default_opencode_models())
         );
+        assert!(cfg
+            .enabled_opencode_models
+            .contains(&UNIVERSAL_FREE_MODEL.to_string()));
         assert_eq!(
             sorted(&cfg.known_opencode_models),
             sorted(&default_known_opencode_models())
@@ -862,7 +967,7 @@ mod tests {
 
         // The migrated config is persisted and loads back cleanly.
         let reloaded = AppConfig::load_from_path(&path);
-        assert_eq!(reloaded.config_version, 9);
+        assert_eq!(reloaded.config_version, 11);
         assert_eq!(reloaded.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert_eq!(reloaded.proxies.len(), 1);
         cleanup(&path);
@@ -875,7 +980,7 @@ mod tests {
         fs::write(&path, garbage).expect("write corrupt config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 9);
+        assert_eq!(cfg.config_version, 11);
         assert!(cfg.google_accounts.is_empty());
 
         let dir = path.parent().expect("temp dir");
@@ -895,7 +1000,7 @@ mod tests {
         // A fresh default config took the original path.
         let fresh = fs::read_to_string(&path).expect("read fresh config");
         let fresh: AppConfig = serde_json::from_str(&fresh).expect("fresh config parses");
-        assert_eq!(fresh.config_version, 9);
+        assert_eq!(fresh.config_version, 11);
         cleanup(&path);
     }
 
@@ -945,7 +1050,7 @@ mod tests {
         config.migrate();
 
         // migrate() chains through v7/v8 up to the current version 9.
-        assert_eq!(config.config_version, 9);
+        assert_eq!(config.config_version, 11);
         assert_eq!(config.proxies.len(), 1);
         // v7 seeded known = enabled opencode/* ∪ built-in catalog; v9 then
         // enabled every one of them, the user's own alias included.
@@ -976,6 +1081,130 @@ mod tests {
     }
 
     #[test]
+    fn the_newest_gemini_generations_are_enabled() {
+        // Only the three `-latest` aliases used to ship enabled, so an
+        // explicitly versioned model could never be picked — including
+        // `gemini-3.7-flash`, measured stronger than what `pro-latest`
+        // resolves to. Both the defaults and the migration must cover it.
+        assert!(default_gemini_models().contains(&"gemini-3.7-flash".to_string()));
+        assert!(AppConfig::default()
+            .enabled_gemini_models
+            .contains(&"gemini-3.7-flash".to_string()));
+
+        let mut config = AppConfig {
+            config_version: 10,
+            enabled_gemini_models: vec!["gemini-flash-latest".to_string()],
+            ..AppConfig::default()
+        };
+        config.config_version = 10;
+        config.migrate_current_gemini_models();
+        assert_eq!(config.config_version, 11);
+        assert!(config
+            .enabled_gemini_models
+            .contains(&"gemini-3.7-flash".to_string()));
+        // Additive only, and idempotent.
+        config.config_version = 10;
+        config.migrate_current_gemini_models();
+        assert_eq!(
+            config
+                .enabled_gemini_models
+                .iter()
+                .filter(|model| *model == "gemini-3.7-flash")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_custom_provider_is_auto_enabled_once_and_stays_unchecked_after() {
+        // The owner added AgentRouter to their OpenCode config; it must appear
+        // and be usable without hand-editing anything — but an uncheck must
+        // survive the next sync, exactly like a Zen alias.
+        let mut config = AppConfig::default();
+        config.enabled_opencode_models.clear();
+        config.known_opencode_models.clear();
+
+        let discovered = vec![
+            "opencode/big-pickle".to_string(),
+            "agentrouter/claude-opus-5".to_string(),
+        ];
+        assert!(config.sync_opencode_catalog(&discovered));
+        assert!(config
+            .enabled_opencode_models
+            .contains(&"agentrouter/claude-opus-5".to_string()));
+
+        // User unchecks it; a later sync must NOT bring it back.
+        config
+            .enabled_opencode_models
+            .retain(|id| id != "agentrouter/claude-opus-5");
+        config.sync_opencode_catalog(&discovered);
+        assert!(!config
+            .enabled_opencode_models
+            .contains(&"agentrouter/claude-opus-5".to_string()));
+
+        // And a custom model is never pruned for being absent from a Zen listing.
+        config
+            .enabled_opencode_models
+            .push("agentrouter/claude-opus-5".to_string());
+        config.sync_opencode_catalog(&["opencode/big-pickle".to_string()]);
+        assert!(config
+            .enabled_opencode_models
+            .contains(&"agentrouter/claude-opus-5".to_string()));
+    }
+
+    #[test]
+    fn a_fresh_config_already_has_the_universal_free_route() {
+        // A brand-new config is created AT the current version, so it runs no
+        // migrations at all. Found the hard way: config v10 on a fresh file with
+        // the model missing, because only the v9→v10 path added it.
+        let config = AppConfig::default();
+        assert_eq!(config.config_version, 11);
+        assert!(config
+            .enabled_opencode_models
+            .contains(&UNIVERSAL_FREE_MODEL.to_string()));
+    }
+
+    #[test]
+    fn migration_v9_to_v10_enables_the_universal_free_route() {
+        // The owner hit a quota outage mid-benchmark: every metered model was
+        // limited and Delegator simply stopped. `openrouter/openrouter/free`
+        // routes to whatever free model is available and keeps answering — but
+        // the runtime allowlist refused it until it was ENABLED here.
+        let mut config = AppConfig {
+            config_version: 9,
+            enabled_opencode_models: vec!["opencode/big-pickle".to_string()],
+            known_opencode_models: vec!["opencode/big-pickle".to_string()],
+            ..AppConfig::default()
+        };
+        config.config_version = 9;
+        config.migrate_universal_free_model();
+
+        assert_eq!(config.config_version, 10);
+        assert!(config
+            .enabled_opencode_models
+            .contains(&UNIVERSAL_FREE_MODEL.to_string()));
+        // `known_opencode_models` is the Zen catalog's memory and stays
+        // `opencode/*` only, or sync_opencode_catalog starts reasoning about
+        // ids it does not own.
+        assert!(!config
+            .known_opencode_models
+            .iter()
+            .any(|model| model.starts_with("openrouter/")));
+
+        // Idempotent: a second pass must not duplicate the entry.
+        config.config_version = 9;
+        config.migrate_universal_free_model();
+        assert_eq!(
+            config
+                .enabled_opencode_models
+                .iter()
+                .filter(|model| *model == UNIVERSAL_FREE_MODEL)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn migration_v8_to_v9_enables_all_known_including_big_pickle() {
         let mut config = AppConfig::default();
         config.config_version = 8;
@@ -993,7 +1222,7 @@ mod tests {
 
         config.migrate();
 
-        assert_eq!(config.config_version, 9);
+        assert_eq!(config.config_version, 11);
         for model in [
             "opencode/big-pickle",
             "opencode/nemotron-3-ultra-free",
