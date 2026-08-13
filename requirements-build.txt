@@ -16,7 +16,7 @@ pillow==12.3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 pyinstaller-hooks-contrib==2026.6
-pyinstaller==6.16.0
+pyinstaller==6.22.0
 python-multipart==0.0.32
 pywin32-ctypes==0.2.3
 setuptools==83.0.0
