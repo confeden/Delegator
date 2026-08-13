@@ -72,11 +72,37 @@ pub fn format_remaining(seconds: u64) -> String {
     parts.join(" ")
 }
 
-/// True when this model id belongs to the OpenCode/Zen side.
-fn is_opencode(model: &str) -> bool {
-    model.starts_with("opencode/")
-        || model.starts_with("openrouter/")
-        || model.starts_with("google/gemma")
+/// Which tab, if any, a cooling model belongs to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Side {
+    Gemini,
+    OpenCode,
+    /// A provider the user configured themselves. **Never reported.** Their
+    /// quota is their own account's business, one model hitting HTTP 402 does
+    /// not mean the provider is down (the runtime walks its siblings), and the
+    /// banner exists to explain a Delegator-level outage — not this.
+    Custom,
+}
+
+/// A bare `gemini-…` name is a direct Google call; a provider-prefixed id is
+/// OpenCode's, and one whose provider OpenCode does not ship with is the user's
+/// own. Before this, `agentrouter/claude-opus-4-8` had no matching prefix and
+/// fell through to the Gemini side, so the Gemini tab announced a limit on a
+/// model that is not Google's at all.
+fn side_of(model: &str) -> Side {
+    match model.split_once('/') {
+        None => Side::Gemini,
+        Some((provider, _)) => {
+            if matches!(
+                provider,
+                "opencode" | "openrouter" | "google" | "google-vertex" | "google-vertex-anthropic"
+            ) {
+                Side::OpenCode
+            } else {
+                Side::Custom
+            }
+        }
+    }
 }
 
 fn unix_now() -> i64 {
@@ -248,13 +274,11 @@ pub fn read_limits(runtime_home: &Path) -> (Option<ProviderLimit>, Option<Provid
         };
         // The EARLIEST reset is what the user is waiting for: one model coming
         // back is enough for delegation to work again.
-        if !is_opencode(&model) && gemini_is_account_wide {
-            continue; // the account-level outage already says it better
-        }
-        let slot = if is_opencode(&model) {
-            &mut opencode
-        } else {
-            &mut gemini
+        let slot = match side_of(&model) {
+            Side::Custom => continue, // never reported, see `Side::Custom`
+            Side::Gemini if gemini_is_account_wide => continue, // account outage says it better
+            Side::Gemini => &mut gemini,
+            Side::OpenCode => &mut opencode,
         };
         match slot {
             Some(current) if current.resets_in_sec <= candidate.resets_in_sec => {}
@@ -394,6 +418,32 @@ mod tests {
             Some(limit) => println!("OPENCODE: {}", limit_line("OpenCode", limit)),
             None => println!("OPENCODE: лимита нет"),
         }
+    }
+
+    #[test]
+    fn a_custom_provider_limit_is_never_reported() {
+        // The owner saw «Google AI Studio сообщает о достижении лимита
+        // (agentrouter/claude-opus-4-8)» — a model that is not Google's at all.
+        // It now belongs to neither tab and raises no banner.
+        assert_eq!(side_of("gemini-pro-latest"), Side::Gemini);
+        assert_eq!(side_of("opencode/big-pickle"), Side::OpenCode);
+        assert_eq!(side_of("openrouter/openrouter/free"), Side::OpenCode);
+        assert_eq!(side_of("agentrouter/claude-opus-4-8"), Side::Custom);
+        assert_eq!(
+            side_of("ornith/deepreinforce-ai/Ornith-1.0-9B"),
+            Side::Custom
+        );
+
+        let dir = std::env::temp_dir().join(format!("dg-quota-custom-{}", unix_now()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        write(
+            &dir,
+            r#"{"version":1,"models":{
+                 "agentrouter/claude-opus-4-8":{"until":"2099-01-01T00:00:00Z",
+                                                "reason":"rate_limit","lastStatus":429}}}"#,
+        );
+        assert_eq!(read_limits(&dir), (None, None));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

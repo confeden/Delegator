@@ -30,10 +30,10 @@ jobs:
 
       - name: Audit installer inputs
         shell: pwsh
-        run: .\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.5.17.exe
+        run: .\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.5.18.exe
 
       - uses: actions/upload-artifact@v7
         with:
-          name: DelegatorSetup-0.5.17
-          path: dist/DelegatorSetup-0.5.17.exe
+          name: DelegatorSetup-0.5.18
+          path: dist/DelegatorSetup-0.5.18.exe
           if-no-files-found: error
