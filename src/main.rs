@@ -91,6 +91,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cleanup_done = Arc::new(AtomicBool::new(false));
     let worker_flag = cleanup_done.clone();
     let cleanup = std::thread::spawn(move || {
+        // The supervisor lives on its own thread now: tell it to stop and let
+        // it release the core first, otherwise it can respawn one right after
+        // the taskkill below.
+        gui::background::request_stop();
+        gui::background::wait_until_core_released(std::time::Duration::from_secs(3));
         kill_leftover_core();
         worker_flag.store(true, Ordering::SeqCst);
     });

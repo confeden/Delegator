@@ -590,8 +590,13 @@ function Write-ResponseCache {
 }
 
 function Get-PromptHash {
-    param([string]$Text)
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text.Trim().ToLowerInvariant())
+    # `Variant` separates answers that the same prompt must not share: a
+    # -DiffOnly run returns a unified diff, and without this it would be served
+    # from the cache to the next plain ask of the same question.
+    param([string]$Text, [string]$Variant = "")
+    $key = $Text.Trim().ToLowerInvariant()
+    if (-not [string]::IsNullOrWhiteSpace($Variant)) { $key = $key + "`n##delegator-variant##" + $Variant.Trim().ToLowerInvariant() }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($key)
     $sha = [System.Security.Cryptography.SHA256]::Create()
     $hash = $sha.ComputeHash($bytes)
     return [BitConverter]::ToString($hash).Replace("-", "").Substring(0, 16)

@@ -1,5 +1,5 @@
-#define MyAppName "Delegator"
-#define MyAppVersion "0.5.0"
+﻿#define MyAppName "Delegator"
+#define MyAppVersion "0.5.8"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -53,6 +53,8 @@ Source: "..\target\release\delegator-core.exe"; DestDir: "{app}"; Flags: ignorev
 Source: "..\assets\theme.json"; DestDir: "{app}\resources"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\DELEGATOR.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\scripts\BENCHMARK.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\scripts\benchmark.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate-micro.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion

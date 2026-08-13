@@ -112,9 +112,29 @@ pub fn raise_window() {
     }
 }
 
+/// True while the main window is on screen. A hidden window gets no paint
+/// messages, so its egui loop — and everything driven from it — is frozen.
+fn window_is_visible() -> bool {
+    let handle = WINDOW_HANDLE.load(Ordering::SeqCst);
+    if handle == 0 {
+        return false;
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        IsWindowVisible(handle as HWND) != 0
+    }
+    #[cfg(not(target_os = "windows"))]
+    true
+}
+
 /// Set by the GUI as soon as it acts on «Выйти».
 static QUIT_HANDLED: AtomicBool = AtomicBool::new(false);
 const QUIT_WATCHDOG: Duration = Duration::from_secs(5);
+/// From the tray the GUI cannot act at all (frozen loop), so waiting the full
+/// watchdog only adds dead time before the forced exit.
+const QUIT_WATCHDOG_HIDDEN: Duration = Duration::from_millis(1200);
 
 pub fn mark_quit_handled() {
     QUIT_HANDLED.store(true, Ordering::SeqCst);
@@ -124,11 +144,20 @@ pub fn mark_quit_handled() {
 /// has not acted within the watchdog window, terminate the core and this
 /// process directly.
 fn start_quit_watchdog() {
-    std::thread::spawn(|| {
-        std::thread::sleep(QUIT_WATCHDOG);
+    let budget = if window_is_visible() {
+        QUIT_WATCHDOG
+    } else {
+        QUIT_WATCHDOG_HIDDEN
+    };
+    std::thread::spawn(move || {
+        std::thread::sleep(budget);
         if QUIT_HANDLED.load(Ordering::SeqCst) {
             return;
         }
+        // Stop the supervisor first, or it treats the kill below as a crash and
+        // starts a fresh core that then outlives this process.
+        crate::gui::background::request_stop();
+        crate::gui::background::wait_until_core_released(Duration::from_secs(2));
         let _ = Command::new("taskkill")
             .args(["/IM", "delegator-core.exe", "/T", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
@@ -158,10 +187,13 @@ pub fn set_toggle_label(enabled: bool) {
     });
 }
 
+/// Actions the GUI still has to perform itself. «Включить/Отключить» is NOT
+/// among them: it is executed right in the menu callback, because that callback
+/// runs on the tray/UI thread while the egui loop of a hidden window does not
+/// run at all (see `gui::background`).
 #[derive(Debug, Clone, Copy)]
 pub enum TrayAction {
     Open,
-    Toggle,
     Quit,
 }
 
@@ -210,7 +242,13 @@ impl TrayManager {
                 raise_window();
                 Some(TrayAction::Open)
             } else if event.id == toggle_id {
-                Some(TrayAction::Toggle)
+                // Done here and now: the GUI would only see the request the
+                // next time the window is opened. This callback runs on the
+                // thread that owns the menu item, so relabelling works too.
+                set_toggle_label(crate::gui::background::toggle_delegator_enabled());
+                // An open window has to re-read the config it no longer owns.
+                wake_ui();
+                None
             } else if event.id == quit_id {
                 start_quit_watchdog();
                 Some(TrayAction::Quit)

@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "comment": "Deterministic quality cases for scripts/bench-quality.ps1. Graders never call an LLM: either the answer's first python fence is executed against asserts, or narrow regexes must (not) match. Add cases freely - keep every grader mechanical.",
+  "cases": [
+    {
+      "id": "unique-ordered",
+      "task": "Напиши функцию на Python `unique_ordered(items)`, которая возвращает список уникальных элементов, сохраняя порядок их первого появления. Функция не должна изменять исходный список и должна работать с любыми хешируемыми элементами.",
+      "grader": "python",
+      "append": "src=[3,1,2,1,3,5]\nassert unique_ordered(src)==[3,1,2,5], unique_ordered(src)\nassert src==[3,1,2,1,3,5], 'original mutated'\nassert unique_ordered(['b','a','b'])==['b','a']\nassert unique_ordered([])==[]\nprint('OK')"
+    },
+    {
+      "id": "mutable-default",
+      "task": "Исправь функцию на Python так, чтобы при каждом вызове без второго аргумента список начинался пустым. Верни исправленный код функции с тем же именем.\n\ndef add_item(item, bucket=[]):\n    bucket.append(item)\n    return bucket",
+      "grader": "python",
+      "append": "assert add_item(1)==[1]\nassert add_item(2)==[2], 'default list is still shared'\nb=[9]\nassert add_item(3,b)==[9,3]\nprint('OK')"
+    },
+    {
+      "id": "chunk",
+      "task": "Напиши функцию на Python `chunk(items, size)`, которая делит список на подсписки длиной size; последний кусок может быть короче. При size <= 0 функция должна возбуждать ValueError.",
+      "grader": "python",
+      "append": "assert chunk([1,2,3,4,5],2)==[[1,2],[3,4],[5]]\nassert chunk([],3)==[]\nassert chunk([1,2,3],5)==[[1,2,3]]\ntry:\n    chunk([1],0)\n    raise AssertionError('no ValueError')\nexcept ValueError:\n    pass\nprint('OK')"
+    },
+    {
+      "id": "parse-pairs",
+      "task": "Напиши функцию на Python `parse_pairs(text)`, которая разбирает строку вида \"a=1;b=2;;c=3\" в словарь {'a':'1','b':'2','c':'3'}. Пустые фрагменты игнорируются, лишние пробелы вокруг ключа и значения обрезаются, знак = внутри значения сохраняется.",
+      "grader": "python",
+      "append": "assert parse_pairs('a=1;b=2;;c=3')=={'a':'1','b':'2','c':'3'}\nassert parse_pairs(' a = 1 ; b=x=y ')=={'a':'1','b':'x=y'}\nassert parse_pairs('')=={}\nprint('OK')"
+    },
+    {
+      "id": "flatten-one",
+      "task": "Напиши функцию на Python `flatten_once(items)`, которая разворачивает вложенность ровно на один уровень: списки и кортежи раскрываются, строки и числа остаются как есть.",
+      "grader": "python",
+      "append": "assert flatten_once([1,[2,3],(4,5),'ab'])==[1,2,3,4,5,'ab']\nassert flatten_once([[1,[2]]])==[1,[2]]\nassert flatten_once([])==[]\nprint('OK')"
+    },
+    {
+      "id": "safe-div",
+      "task": "Напиши функцию на Python `safe_div(a, b)`, которая возвращает частное a/b, а при делении на ноль возвращает None. Целочисленное деление не используем.",
+      "grader": "python",
+      "append": "assert safe_div(6,3)==2\nassert safe_div(1,0) is None\nassert safe_div(7,2)==3.5\nassert safe_div(0,5)==0\nprint('OK')"
+    },
+    {
+      "id": "top-words",
+      "task": "Напиши функцию на Python `top_words(text, k)`, которая возвращает k самых частых слов в виде списка кортежей (слово, количество). Регистр не учитывается, слова разделяются пробелами и знаками препинания. При равной частоте слова идут по алфавиту.",
+      "grader": "python",
+      "append": "r=top_words('a b a, B c! c a',2)\nassert r==[('a',3),('b',2)], r\nr2=top_words('x y',2)\nassert r2==[('x',1),('y',1)], r2\nprint('OK')"
+    },
+    {
+      "id": "roman",
+      "task": "Напиши функцию на Python `roman_to_int(s)`, которая переводит римское число в целое. Поддержи вычитательную форму (IV, IX, XL, XC, CD, CM).",
+      "grader": "python",
+      "append": "assert roman_to_int('III')==3\nassert roman_to_int('IV')==4\nassert roman_to_int('MCMXCIV')==1994\nassert roman_to_int('LVIII')==58\nprint('OK')"
+    },
+    {
+      "id": "ps-utf8-read",
+      "task": "Как в Windows PowerShell 5.1 прочитать текстовый файл в UTF-8 так, чтобы кириллица не превратилась в вопросительные знаки, даже если у файла нет BOM? Дай короткий ответ с командой.",
+      "grader": "regex",
+      "mustContain": [
+        "(?i)(ReadAllText|-Encoding\\s+UTF8|UTF8Encoding)"
+      ],
+      "mustNotContain": [
+        "(?i)Get-Content\\s+[^\\r\\n]*-Encoding\\s+ASCII"
+      ]
+    },
+    {
+      "id": "sql-index",
+      "task": "Запрос `SELECT * FROM orders WHERE lower(email) = 'a@b.c'` не использует индекс по колонке email в PostgreSQL. Назови причину и дай один конкретный способ починить.",
+      "grader": "regex",
+      "mustContain": [
+        "(?i)(функциональн|выражени|expression|lower\\(email\\))",
+        "(?i)(CREATE\\s+INDEX|индекс)"
+      ]
+    },
+    {
+      "id": "git-undo",
+      "task": "Я сделал `git commit` и понял, что забыл один файл. Коммит ещё не отправлен на сервер. Как добавить файл в этот же коммит, не создавая новый? Ответь одной командой и одним предложением объяснения.",
+      "grader": "regex",
+      "mustContain": [
+        "(?i)commit\\s+--amend"
+      ],
+      "mustNotContain": [
+        "(?i)git\\s+push\\s+--force[^\\r\\n]*\\bmain\\b"
+      ]
+    },
+    {
+      "id": "json-format",
+      "task": "Верни ТОЛЬКО минифицированный JSON без пояснений: объект с полями name (строка \"delegator\"), version (число 1) и tags (массив из двух строк \"free\" и \"local\").",
+      "grader": "regex",
+      "mustContain": [
+        "\\{\\s*\"name\"\\s*:\\s*\"delegator\"",
+        "\"version\"\\s*:\\s*1",
+        "\"tags\"\\s*:\\s*\\[\\s*\"free\"\\s*,\\s*\"local\"\\s*\\]"
+      ],
+      "mustNotContain": [
+        "(?i)```\\s*\\w*\\s*\\r?\\n[\\s\\S]*```[\\s\\S]*```"
+      ]
+    },
+    {
+      "id": "round-half-up",
+      "task": "Напиши функцию на Python `round_half_up(x, digits)`, которая округляет число по правилу «половина вверх» (0.5 всегда наружу от нуля), а не по банковскому правилу, которое использует встроенный round(). Результат — float. Учти, что двоичное представление дробей неточно: 2.675 должно округляться до 2.68.",
+      "grader": "python",
+      "append": "assert round_half_up(2.675,2)==2.68, round_half_up(2.675,2)\nassert round_half_up(0.5,0)==1\nassert round_half_up(1.5,0)==2\nassert round_half_up(2.5,0)==3\nassert round_half_up(-0.5,0)==-1\nassert round_half_up(1.005,2)==1.01, round_half_up(1.005,2)\nprint('OK')"
+    },
+    {
+      "id": "merge-intervals",
+      "task": "Напиши функцию на Python `merge_intervals(intervals)`, которая объединяет пересекающиеся и соприкасающиеся отрезки. Вход не отсортирован, отрезки заданы парами [начало, конец]. Соприкасающиеся отрезки ([1,2] и [2,3]) считаются одним. Возвращай список списков, отсортированный по началу.",
+      "grader": "python",
+      "append": "assert merge_intervals([[1,3],[2,6],[8,10],[15,18]])==[[1,6],[8,10],[15,18]]\nassert merge_intervals([[2,3],[1,2]])==[[1,3]]\nassert merge_intervals([])==[]\nassert merge_intervals([[5,5]])==[[5,5]]\nassert merge_intervals([[1,10],[2,3]])==[[1,10]]\nprint('OK')"
+    },
+    {
+      "id": "natural-sort",
+      "task": "Напиши функцию на Python `natural_sorted(items)`, которая сортирует строки «по-человечески»: числа внутри строк сравниваются как числа, а не посимвольно. Регистр букв не влияет на порядок, но исходные строки возвращаются без изменений.",
+      "grader": "python",
+      "append": "assert natural_sorted(['a10','a2','a1'])==['a1','a2','a10']\nassert natural_sorted(['file20.txt','file3.txt','File1.txt'])==['File1.txt','file3.txt','file20.txt']\nassert natural_sorted(['x','x0'])==['x','x0']\nassert natural_sorted([])==[]\nprint('OK')"
+    },
+    {
+      "id": "parse-duration",
+      "task": "Напиши функцию на Python `parse_duration(text)`, которая переводит запись длительности в секунды: поддержи часы, минуты и секунды в любом сочетании ('1h30m', '90m', '2h', '45s', '1h2m3s'). Пустая строка и мусор должны возбуждать ValueError.",
+      "grader": "python",
+      "append": "assert parse_duration('1h30m')==5400\nassert parse_duration('90m')==5400\nassert parse_duration('2h')==7200\nassert parse_duration('45s')==45\nassert parse_duration('1h2m3s')==3723\nfor bad in ['','abc','1x']:\n    try:\n        parse_duration(bad)\n        raise AssertionError('no ValueError for %r'%bad)\n    except ValueError:\n        pass\nprint('OK')"
+    },
+    {
+      "id": "truncate-words",
+      "task": "Напиши функцию на Python `truncate_words(text, limit)`, которая обрезает текст до limit символов по границе слова и добавляет многоточие '…' только если текст действительно был обрезан. Итоговая строка вместе с многоточием не должна быть длиннее limit. Пробелы в конце обрезанного текста не сохраняются.",
+      "grader": "python",
+      "append": "assert truncate_words('привет мир', 20)=='привет мир'\nr=truncate_words('один два три четыре', 12)\nassert r.endswith('…') and len(r)<=12, r\nassert r=='один два…' or r=='один два три…'[:12], r\nassert truncate_words('', 5)==''\nassert len(truncate_words('абвгдежзийклмн', 5))<=5\nprint('OK')"
+    },
+    {
+      "id": "first-repeating",
+      "task": "Напиши функцию на Python `first_repeating(items)`, которая возвращает первый элемент, встречающийся более одного раза, в порядке ПЕРВОГО появления, а не второго. Если повторов нет — верни None. Элементы хешируемые, исходный список не меняется.",
+      "grader": "python",
+      "append": "assert first_repeating([2,5,1,2,3,5,1,2,4])==2\nassert first_repeating(['b','a','a','b'])=='b'\nassert first_repeating([1,2,3]) is None\nassert first_repeating([]) is None\nsrc=[1,1]\nassert first_repeating(src)==1 and src==[1,1]\nprint('OK')"
+    },
+    {
+      "id": "closure-multipliers",
+      "task": "Напиши функцию на Python `make_multipliers(n)`, которая возвращает список из n функций: функция с индексом i умножает свой аргумент на i. Вызов должен работать после того, как make_multipliers завершилась.",
+      "grader": "python",
+      "append": "fs=make_multipliers(3)\nassert [f(2) for f in fs]==[0,2,4], [f(2) for f in fs]\nassert make_multipliers(0)==[]\nfs2=make_multipliers(2)\nassert fs2[1](5)==5\nassert fs2[0](5)==0\nprint('OK')"
+    },
+    {
+      "id": "dedup-by-keys",
+      "task": "Напиши функцию на Python `dedup_by(items, keys)`: items — список словарей, keys — список имён полей. Верни список без повторов по значениям этих полей, сохраняя порядок первого появления. Исходный список и его словари изменять нельзя. Порядок ключей внутри словаря не должен влиять на результат.",
+      "grader": "python",
+      "append": "src=[{'a':1,'b':2},{'a':1,'b':3},{'a':2,'b':2}]\nr=dedup_by(src,['a'])\nassert r==[{'a':1,'b':2},{'a':2,'b':2}], r\nassert src==[{'a':1,'b':2},{'a':1,'b':3},{'a':2,'b':2}], 'input mutated'\nassert dedup_by([],['a'])==[]\nr2=dedup_by([{'a':1,'b':1},{'b':1,'a':1}],['a','b'])\nassert r2==[{'a':1,'b':1}], r2\nprint('OK')"
+    },
+    {
+      "id": "insert-index",
+      "task": "Напиши функцию на Python `insert_index(values, value)`: values отсортирован по возрастанию, верни индекс, куда нужно вставить value, чтобы порядок сохранился, причём ПОСЛЕ всех равных элементов. Сложность — логарифмическая, модуль bisect использовать нельзя.",
+      "grader": "python",
+      "append": "banned='bi'+'sect'\nsrc=open(__file__, encoding='utf-8').read()\nassert banned not in src, 'forbidden module used'\nassert insert_index([1,2,2,2,3],2)==4\nassert insert_index([],5)==0\nassert insert_index([1,3],0)==0\nassert insert_index([1,3],4)==2\nassert insert_index([2,2,2],2)==3\nassert insert_index([1,2,3],2)==2\nprint('OK')"
+    },
+    {
+      "id": "lru-cache",
+      "task": "Напиши на Python класс `LRUCache` с конструктором `LRUCache(capacity)` и методами `get(key)` и `put(key, value)`. get возвращает значение или -1, если ключа нет. И get, и put считаются обращением к ключу. При переполнении вытесняется элемент, к которому обращались дольше всего. Обе операции — O(1).",
+      "grader": "python",
+      "append": "c=LRUCache(2)\nc.put(1,1)\nc.put(2,2)\nassert c.get(1)==1\nc.put(3,3)\nassert c.get(2)==-1, 'evicted the wrong key'\nc.put(4,4)\nassert c.get(1)==-1\nassert c.get(3)==3\nassert c.get(4)==4\nc2=LRUCache(1)\nc2.put(1,1)\nc2.put(1,2)\nassert c2.get(1)==2\nprint('OK')"
+    },
+    {
+      "id": "topo-sort",
+      "task": "Напиши функцию на Python `topo_sort(graph)`: graph — словарь, где ключ это узел, а значение — список узлов, от которых он зависит. Верни список узлов в порядке, где зависимости идут раньше зависящих. При нескольких допустимых вариантах выбирай узел, который меньше по алфавиту. Если в графе цикл — возбуди ValueError.",
+      "grader": "python",
+      "append": "assert topo_sort({'app':['lib','util'],'lib':['util'],'util':[]})==['util','lib','app']\nassert topo_sort({'b':[],'a':[]})==['a','b']\nassert topo_sort({})==[]\ntry:\n    topo_sort({'a':['b'],'b':['a']})\n    raise AssertionError('no ValueError on cycle')\nexcept ValueError:\n    pass\nprint('OK')"
+    },
+    {
+      "id": "window-max",
+      "task": "Напиши функцию на Python `window_max(nums, k)`, которая возвращает список максимумов в каждом окне длины k, скользящем по списку слева направо. При k <= 0 возбуди ValueError. Если список пуст или k больше длины списка — верни пустой список.",
+      "grader": "python",
+      "append": "assert window_max([1,3,-1,-3,5,3,6,7],3)==[3,3,5,5,6,7]\nassert window_max([-5,-2,-7],2)==[-2,-2]\nassert window_max([4],1)==[4]\nassert window_max([],3)==[]\nassert window_max([1,2],5)==[]\ntry:\n    window_max([1,2],0)\n    raise AssertionError('no ValueError')\nexcept ValueError:\n    pass\nprint('OK')"
+    },
+    {
+      "id": "normalize-key",
+      "task": "Напиши функцию на Python `normalize_key(text)`, которая приводит строку к каноническому ключу: регистр не важен для СРАВНЕНИЯ строк любых языков (немецкое ß должно совпасть с ss), пробельные последовательности любой длины схлопываются в один пробел, края обрезаются.",
+      "grader": "python",
+      "append": "assert normalize_key('  Straße  ')=='strasse', normalize_key('  Straße  ')\nassert normalize_key('Hello   World')=='hello world'\nassert normalize_key('\\u00c4PFEL')=='\\u00e4pfel'\nassert normalize_key('')==''\nassert normalize_key('a\\tb\\nc')=='a b c'\nprint('OK')"
+    },
+    {
+      "id": "find-semver",
+      "task": "Напиши функцию на Python `find_semver(text)`, которая возвращает список версий вида МАЖОР.МИНОР.ПАТЧ, найденных в тексте, с необязательным суффиксом предрелиза через дефис (1.2.3-beta.1). Числа с другим количеством частей версией не считаются: ни 1.2, ни 1.2.3.4 попадать в результат не должны — в том числе как часть более длинного числа.",
+      "grader": "python",
+      "append": "assert find_semver('v1.2.3 and 10.0.1-beta.1 end')==['1.2.3','10.0.1-beta.1'], find_semver('v1.2.3 and 10.0.1-beta.1 end')\nassert find_semver('1.2 or 1.2.3.4')==[], find_semver('1.2 or 1.2.3.4')\nassert find_semver('')==[]\nassert find_semver('0.0.1')==['0.0.1']\nprint('OK')"
+    },
+    {
+      "id": "split-amount",
+      "task": "Напиши функцию на Python `split_amount(total, parts)`, которая делит сумму в копейках на parts частей так, чтобы сумма частей была ровно равна total, части отличались не более чем на копейку, а лишние копейки доставались первым частям. При parts <= 0 или отрицательном total возбуди ValueError.",
+      "grader": "python",
+      "append": "assert split_amount(100,3)==[34,33,33]\nassert split_amount(10,2)==[5,5]\nassert split_amount(0,3)==[0,0,0]\nassert split_amount(101,4)==[26,25,25,25]\nassert sum(split_amount(9999,7))==9999\nfor bad in [(10,0),(-1,2)]:\n    try:\n        split_amount(*bad)\n        raise AssertionError('no ValueError for %r'%(bad,))\n    except ValueError:\n        pass\nprint('OK')"
+    },
+    {
+      "id": "retry-backoff",
+      "task": "Напиши функцию на Python `retry_delays(attempts, base=1.0, cap=30.0)`, которая возвращает список задержек экспоненциальной выдержки: первая задержка равна base, каждая следующая вдвое больше, но ни одна не превышает cap. Длина списка равна attempts. При отрицательном attempts возбуди ValueError.",
+      "grader": "python",
+      "append": "assert retry_delays(5)==[1.0,2.0,4.0,8.0,16.0], retry_delays(5)\nassert retry_delays(7)==[1.0,2.0,4.0,8.0,16.0,30.0,30.0], retry_delays(7)\nassert retry_delays(0)==[]\nassert retry_delays(3,base=0.5,cap=1.0)==[0.5,1.0,1.0], retry_delays(3,base=0.5,cap=1.0)\ntry:\n    retry_delays(-1)\n    raise AssertionError('no ValueError')\nexcept ValueError:\n    pass\nprint('OK')"
+    },
+    {
+      "id": "sql-top-n-per-group",
+      "task": "Таблица SQLite: orders(id INTEGER PRIMARY KEY, customer_id INTEGER, amount INTEGER). Напиши ОДИН SQL-запрос, который для каждого клиента возвращает два самых крупных заказа: столбцы customer_id, id, amount. При равных суммах раньше идёт заказ с меньшим id. Итог отсортирован по customer_id, затем по amount по убыванию, затем по id. Верни только запрос в блоке ```sql.",
+      "grader": "sqlite",
+      "setup": "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, amount INTEGER);INSERT INTO orders VALUES (1,10,500),(2,10,900),(3,10,900),(4,10,100),(5,20,300),(6,20,300),(7,30,700);",
+      "expect": [
+        [
+          10,
+          2,
+          900
+        ],
+        [
+          10,
+          3,
+          900
+        ],
+        [
+          20,
+          5,
+          300
+        ],
+        [
+          20,
+          6,
+          300
+        ],
+        [
+          30,
+          7,
+          700
+        ]
+      ]
+    },
+    {
+      "id": "sql-dup-emails",
+      "task": "Таблица SQLite: users(id INTEGER PRIMARY KEY, email TEXT). Напиши ОДИН SQL-запрос, который находит адреса, встречающиеся более одного раза без учёта регистра. Верни два столбца: адрес в нижнем регистре и количество. Сортировка по адресу. Верни только запрос в блоке ```sql.",
+      "grader": "sqlite",
+      "setup": "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);INSERT INTO users VALUES (1,'Ann@Example.com'),(2,'ann@example.com'),(3,'bob@example.com'),(4,'BOB@EXAMPLE.COM'),(5,'carl@example.com'),(6,'ANN@example.COM');",
+      "expect": [
+        [
+          "ann@example.com",
+          3
+        ],
+        [
+          "bob@example.com",
+          2
+        ]
+      ]
+    }
+  ]
+}

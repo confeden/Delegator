@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Position = 0)]
-    [ValidateSet("ask", "delegate", "boost", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage")]
+    [ValidateSet("ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage")]
     [string]$Command = "ask",
 
     [Parameter(Position = 1)]
@@ -29,6 +29,14 @@
     # from the command line (-PromptFile "a.txt;b.txt") - powershell -File cannot
     # bind the same named parameter twice.
     [string[]]$PromptFile,
+
+    # `improve`: the answer the CALLER already produced and wants checked.
+    # UTF-8 file, same transport rule as -PromptFile (DEV_CONTRACTS section 1).
+    [string]$DraftFile,
+
+    # `improve`: source files / logs the reviewer should look at, semicolon
+    # separated ("a.rs;b.rs"). Trimmed to a budget, see Read-ContextFiles.
+    [string[]]$ContextFile,
 
     # Window for the `usage` subcommand summary.
     [int]$Days = 7,
@@ -194,6 +202,160 @@ function Get-FastEnabledOpenCodeModel {
     $ordered = @(Select-ActiveRankedModels $ordered)
     if ($ordered.Count -gt 0) { return [string]$ordered[0] }
     return ""
+}
+
+function Get-ModelLatencyStats {
+    # Recent per-model behaviour from <RT>\usage.jsonl, in call order. Read
+    # without the usage mutex on purpose - the file is append-only and a torn
+    # last line is simply skipped; blocking a routing decision on a writer would
+    # be worse than losing one sample.
+    if ($null -ne $script:ModelLatencyStats) { return $script:ModelLatencyStats }
+    $stats = @{}
+    $usageFile = Join-Path $script:DelegateHome "usage.jsonl"
+    if (-not (Test-Path -LiteralPath $usageFile)) {
+        $script:ModelLatencyStats = $stats
+        return $stats
+    }
+    try {
+        $lines = @([System.IO.File]::ReadAllLines($usageFile))
+        if ($lines.Count -gt 400) { $lines = @($lines[($lines.Count - 400)..($lines.Count - 1)]) }
+        foreach ($line in $lines) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $row = $null
+            try { $row = $line | ConvertFrom-Json } catch { continue }
+            $id = [string]$row.model
+            if ([string]::IsNullOrWhiteSpace($id)) { continue }
+            $isOk = $true
+            try { if ($row.PSObject.Properties["ok"] -and $null -ne $row.ok) { $isOk = [bool]$row.ok } } catch {}
+            $ms = 0
+            [void][int]::TryParse([string]$row.elapsedMs, [ref]$ms)
+            if (-not $stats.ContainsKey($id)) { $stats[$id] = @() }
+            $stats[$id] += ,([pscustomobject]@{ ok = $isOk; ms = $ms })
+        }
+    } catch {}
+    $script:ModelLatencyStats = $stats
+    return $stats
+}
+
+function Get-ModelHealth {
+    # Verdict over the last MODEL_HEALTH_WINDOW calls of one model:
+    # how often it failed, and how slow it is when it does answer (p75, because
+    # the tail is what runs into the timeout - a median hides exactly the runs
+    # that get killed).
+    param([string]$ModelId)
+    $window = 12
+    $stats = Get-ModelLatencyStats
+    $health = [pscustomobject]@{ samples = 0; failRate = 0.0; p75Ms = $null }
+    if (-not $stats.ContainsKey($ModelId)) { return $health }
+    $rows = @($stats[$ModelId])
+    if ($rows.Count -gt $window) { $rows = @($rows[($rows.Count - $window)..($rows.Count - 1)]) }
+    if ($rows.Count -eq 0) { return $health }
+    $failed = @($rows | Where-Object { -not $_.ok }).Count
+    $durations = @($rows | Where-Object { $_.ok -and [int]$_.ms -gt 0 } | ForEach-Object { [int]$_.ms } | Sort-Object)
+    $health.samples = $rows.Count
+    $health.failRate = [double]$failed / [double]$rows.Count
+    if ($durations.Count -gt 0) {
+        $index = [int][Math]::Ceiling(0.75 * $durations.Count) - 1
+        if ($index -lt 0) { $index = 0 }
+        if ($index -ge $durations.Count) { $index = $durations.Count - 1 }
+        $health.p75Ms = [int]$durations[$index]
+    }
+    return $health
+}
+
+function Test-ModelAffordable {
+    # "Strongest" is worthless if the caller never gets the answer. Nothing known
+    # about a model means "try it" (a fresh install must still reach for the best
+    # one); the routing then demotes it by itself as soon as its own record says
+    # it is too slow or fails too often.
+    #
+    # Measured here 2026-08-12: nemotron-3-ultra needed 175s for a trivial Python
+    # question and failed 6 of its last 10 calls, while deepseek-v4-flash answered
+    # the same question in 7s. A pure strength ranking routed every delegation
+    # into a timeout and then into a flash-class fallback - slower AND weaker.
+    param([string]$ModelId, [int]$BudgetMs)
+    $health = Get-ModelHealth $ModelId
+    if ($health.samples -eq 0) { return $true }
+    if ($health.samples -ge 4 -and $health.failRate -ge 0.4) { return $false }
+    if ($null -eq $health.p75Ms) { return ($health.failRate -lt 0.5) }
+    return ([int]$health.p75Ms -le $BudgetMs)
+}
+
+function Get-ModelLatencyRank {
+    # Sort key for "least bad" when every candidate is unaffordable.
+    param([string]$ModelId)
+    $health = Get-ModelHealth $ModelId
+    if ($null -eq $health.p75Ms) { return [int]::MaxValue }
+    return [int]$health.p75Ms
+}
+
+function Get-LatencyBudgetMs {
+    if ($env:CODEX_DELEGATE_LATENCY_BUDGET_MS) {
+        $parsed = 0
+        if ([int]::TryParse([string]$env:CODEX_DELEGATE_LATENCY_BUDGET_MS, [ref]$parsed) -and $parsed -gt 0) { return $parsed }
+    }
+    return 100000
+}
+
+function Get-ModelStrengthScore {
+    # Strength of one model id: the Zen catalog when it exists, otherwise the
+    # same name heuristic the catalog itself is built from. The catalog is only
+    # written on the first non-dot-sourced run of opencode-delegate.ps1, so on a
+    # cold install it is missing - and without this fallback every candidate
+    # scored a flat 50 and the tie-break picked ALPHABETICALLY (big-pickle before
+    # nemotron-3-ultra), which is exactly the case this floor exists for.
+    #
+    # FOURTH copy of the heuristic (update-free-models.ps1, opencode-delegate.ps1,
+    # src/gui/opencode_setup.rs are the others) - change them together.
+    param([string]$ModelId, [hashtable]$Catalog)
+    if ($Catalog -and $Catalog.ContainsKey($ModelId)) { return [int]$Catalog[$ModelId] }
+    $name = ([string]$ModelId).ToLowerInvariant()
+    $score = 50
+    if ($name -match "ultra") { $score += 40 }
+    elseif ($name -match "pro|max") { $score += 30 }
+    elseif ($name -match "large|big") { $score += 20 }
+    elseif ($name -match "flash|standard") { $score += 10 }
+    if ($name -match "mini") { $score -= 20 }
+    if ($name -match "tiny|nano|lite") { $score -= 30 }
+    $version = [regex]::Match($name, "[1-9]")
+    if ($version.Success) { $score += [int]$version.Value }
+    return $score
+}
+
+function Get-StrongEnabledModel {
+    # Mirror image of Get-FastEnabledOpenCodeModel: user-facing answers, the
+    # fusion judge and the critic run on the STRONGEST enabled model (strength
+    # DESC from the Zen catalog, absent -> 50).
+    #
+    # Why this exists: <RT>\model-rankings.json does not ship and is absent on a
+    # normal install, so Select-RankedDelegateModel returns "" and the backend
+    # then answers with its own default, which is a flash-class model. A weak
+    # IDE agent would be delegating to an equally weak model - the delegation
+    # buys nothing. This is the floor under that path.
+    param([string[]]$Exclude = @())
+    $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
+    if ($Exclude.Count -gt 0) { $enabled = @($enabled | Where-Object { $Exclude -notcontains $_ }) }
+    if ($enabled.Count -eq 0) { return "" }
+    $strengths = Get-ZenCatalogStrengthMap
+    if ($strengths.Count -gt 0) {
+        $live = @($enabled | Where-Object { $_ -notlike "opencode/*" -or $strengths.ContainsKey($_) })
+        if ($live.Count -gt 0) { $enabled = $live }
+    }
+    $ordered = @($enabled | Sort-Object `
+        @{ Expression = { Get-ModelStrengthScore -ModelId $_ -Catalog $strengths }; Descending = $true }, `
+        @{ Expression = { [string]$_ }; Descending = $false })
+    $ordered = @(Select-ActiveRankedModels $ordered)
+    if ($ordered.Count -eq 0) { return "" }
+
+    # Strength decides the order, measured latency decides what is reachable.
+    $budget = Get-LatencyBudgetMs
+    $affordable = @($ordered | Where-Object { Test-ModelAffordable -ModelId $_ -BudgetMs $budget })
+    if ($affordable.Count -gt 0) { return [string]$affordable[0] }
+
+    # Every candidate is known to be too slow: take the least slow one rather
+    # than the strongest, so the caller gets an answer at all.
+    $fastest = @($ordered | Sort-Object @{ Expression = { Get-ModelLatencyRank $_ } })
+    return [string]$fastest[0]
 }
 
 function Get-TriageModel {
@@ -422,11 +584,17 @@ function Invoke-Delegate {
     if ($Json) { $delegateParams.Json = $true }
     if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) { $delegateParams.Model = $effectiveModel }
 
+    # $LASTEXITCODE is process-wide state, not a return value: it survives from
+    # the last external command this session ran. Clear it before the call so a
+    # provider that answers fine cannot inherit a stale non-zero code (the
+    # providers now `exit 0` explicitly, this is the second lock on that door).
     if ($ChosenBackend -eq "opencode") {
         return Invoke-WithModelLock -BackendName "opencode" -ModelName $effectiveModel -Body {
             try {
+                $global:LASTEXITCODE = 0
                 $output = & $OpenCodeDelegate @delegateParams 2>&1
-                return [pscustomobject]@{ exitCode = $LASTEXITCODE; output = $output }
+                $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+                return [pscustomobject]@{ exitCode = $code; output = $output }
             } catch {
                 return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
             }
@@ -435,8 +603,10 @@ function Invoke-Delegate {
 
     return Invoke-WithModelLock -BackendName "gemini" -ModelName $effectiveModel -Body {
         try {
+            $global:LASTEXITCODE = 0
             $output = & $GeminiDelegate @delegateParams 2>&1
-            return [pscustomobject]@{ exitCode = $LASTEXITCODE; output = $output }
+            $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+            return [pscustomobject]@{ exitCode = $code; output = $output }
         } catch {
             return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
         }
@@ -490,7 +660,7 @@ function Invoke-DelegateWithRetry {
 # ── Usage accounting helpers (DEV_CONTRACTS section 2) ──
 
 # Commands that execute prompts; only these emit the ##DELEGATOR_USAGE## marker.
-$script:PromptModes = @("ask", "delegate", "boost", "micro", "verify", "plan", "parallel", "triage", "extract")
+$script:PromptModes = @("ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "triage", "extract")
 
 function Get-DelegateUsageMode {
     if ($Command -in @("ask", "delegate")) { if ($Boost) { return "boost" } else { return "ask" } }
@@ -824,7 +994,15 @@ function Run-Micro {
 }
 
 function Get-OrchestratorModel {
+    # Judge of a boost fan-out, synthesis model and `verify` model. It reads
+    # several answers from stronger models and picks/merges - a flash-class
+    # default here is a lossy compressor placed on top of the best candidate,
+    # so the strongest enabled model wins. The old preference order stays as
+    # the fallback when nothing is enabled or everything is cooling down.
     param([string]$Preferred = "opencode/deepseek-v4-flash-free")
+
+    $strongest = Get-StrongEnabledModel
+    if (-not [string]::IsNullOrWhiteSpace($strongest)) { return $strongest }
 
     $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
     $candidates = @()
@@ -897,7 +1075,8 @@ function Run-Verify {
     }
     $verifyPrompt = "Verify this claim or context: $Prompt`nReturn three fields only: verdict is correct, partly-correct, incorrect, or uncertain. reason is one short reason. check is one minimal verification step."
 
-    # Verification prefers the fast orchestrator model.
+    # Verification runs on the strongest enabled model (Get-OrchestratorModel,
+    # see DEV_CONTRACTS section 9) - a weak verifier is worse than none.
     $verifyModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { Get-OrchestratorModel }
 
     $verifySw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -919,6 +1098,23 @@ function Run-Verify {
         $text
     }
     Exit-Delegate $code
+}
+
+function Get-AdvisorExitCode {
+    # Exit code of one advisor row, never throwing. Anything unreadable counts
+    # as a failed advisor: a boost run must degrade to "fewer advisors", never
+    # to a crash in front of the user.
+    param($Row)
+    $value = $null
+    try { $value = $Row.exitCode } catch { return 1 }
+    if ($null -eq $value) { return 1 }
+    if ($value -is [array]) {
+        $first = @($value) | Where-Object { $null -ne $_ } | Select-Object -First 1
+        $value = $first
+    }
+    $parsed = 0
+    if ([int]::TryParse([string]$value, [ref]$parsed)) { return $parsed }
+    return 1
 }
 
 function Run-Boost {
@@ -988,18 +1184,29 @@ function Run-Boost {
     }
 
     try {
-        $jsonObjects = @($raw | ConvertFrom-Json)
+        # Flatten: a nested array here makes `$_.exitCode` a member-enumerated
+        # Object[], and casting that to [int] threw a TERMINATING error - the
+        # user then got a PowerShell stack trace instead of an answer.
+        $jsonObjects = @()
+        foreach ($parsed in @($raw | ConvertFrom-Json)) {
+            if ($parsed -is [System.Collections.IEnumerable] -and $parsed -isnot [string]) {
+                foreach ($inner in $parsed) { $jsonObjects += $inner }
+            } else {
+                $jsonObjects += $parsed
+            }
+        }
         if (-not $jsonObjects -or $jsonObjects.Count -eq 0) {
             return $false
         }
     } catch {
+        Write-DelegateMetric -Stage "boost" -Status "advisors-unparsable" -LatencyMs $boostSw.ElapsedMilliseconds -Extra "raw-length=$($raw.Length)"
         return $false
     }
 
     # Advisors that actually succeeded (exit 0, non-empty output). Identical error
     # strings must never be mistaken for consensus and returned as the answer.
     $okAdvisors = @($jsonObjects | Where-Object {
-        $null -ne $_ -and $null -ne $_.exitCode -and [int]$_.exitCode -eq 0 -and
+        $null -ne $_ -and (Get-AdvisorExitCode $_) -eq 0 -and
         -not [string]::IsNullOrWhiteSpace([string]$_.output)
     })
     if ($okAdvisors.Count -eq 0) {
@@ -1127,7 +1334,12 @@ function Invoke-CritiqueCorrectionLoop {
     # Skip if answer is empty or trivial
     if ([string]::IsNullOrWhiteSpace($InitialAnswer) -or $InitialAnswer.Length -lt 50) { return $InitialAnswer }
 
-    $critiqueModel = "gemini-flash-lite-latest"
+    # The reviewer must be at least as strong as the author, otherwise it
+    # invents defects in code it cannot follow and the refinement pass makes the
+    # answer worse. gemini-flash-lite stays as the fallback for a machine with
+    # no enabled OpenCode models.
+    $critiqueModel = Get-StrongEnabledModel
+    if ([string]::IsNullOrWhiteSpace($critiqueModel)) { $critiqueModel = "gemini-flash-lite-latest" }
     $constraintsText = if ($MustHave -and $MustHave.Count -gt 0) { "- " + ($MustHave -join "`n- ") } else { "none" }
     
     $critiquePrompt = @"
@@ -1146,7 +1358,10 @@ GENERATED ANSWER:
 $InitialAnswer
 "@
 
-    $rawCritique = & $MicroDelegate $critiquePrompt -TimeoutSec 20 -Model $critiqueModel -Json 2>&1 | Out-String
+    # 20s was tuned for flash-lite; the strong models measured on this machine
+    # need 30-70s on an 8k prompt, and a timeout here silently returns the
+    # unreviewed answer.
+    $rawCritique = & $MicroDelegate $critiquePrompt -TimeoutSec 120 -Model $critiqueModel -Json 2>&1 | Out-String
     $parsedCritique = $null
     try {
         $parsedCritique = $rawCritique.Trim() | ConvertFrom-Json
@@ -1184,6 +1399,372 @@ $critiqueOutput
     return $InitialAnswer
 }
 
+# ── Cache key variant ──────────────────────────────────────────────────────
+# Everything that changes the SHAPE of the answer for one and the same prompt.
+# Without it a -DiffOnly run (a unified diff) is served back to the next plain
+# ask of the same question.
+function Get-CacheVariant {
+    $parts = @()
+    if ($DiffOnly) { $parts += "diff" }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_DELEGATE_LANGUAGE)) {
+        $parts += "lang=" + $env:CODEX_DELEGATE_LANGUAGE
+    }
+    return ($parts -join ",")
+}
+
+# ── `improve` ───────────────────────────────────────────────────────────────
+# The only mode that raises the quality of what the IDE agent finally SAYS,
+# instead of handing it a second opinion it has to merge on its own. The caller
+# sends its task and its own draft answer; a strong free model reviews the draft
+# and rewrites it only when the review found something real.
+#
+# Contract (docs/DEV_CONTRACTS.md section 8):
+#   in   -PromptFile <task> -DraftFile <the agent's own answer> [-ContextFile "a;b"]
+#   out  empty stdout  -> keep your draft
+#        "##DELEGATOR_IMPROVE## {json}" as the first line, the improved answer after it
+#   exit 0 improved | 3 keep | 2 bad input | 1 backend failure
+# Cost: one model call when the draft is fine, two when it is not.
+
+$script:ImproveTaskBudget = 8000
+$script:ImproveDraftBudget = 24000
+$script:ImproveContextBudget = 12000
+
+function Read-ContextFiles {
+    # Semicolon-separated list, same convention as -PromptFile. A path that does
+    # not exist is reported on stderr and skipped, NOT fatal: the caller is a
+    # weak IDE model that guesses paths, and failing the whole review would look
+    # to it exactly like "your draft passed" (empty stdout).
+    # $script:ImproveMissingContext counts them for the metric.
+    param([string[]]$Entries, [int]$Budget)
+    $chunks = @()
+    $spent = 0
+    foreach ($entry in @($Entries)) {
+        foreach ($piece in ([string]$entry).Split(";")) {
+            $path = $piece.Trim()
+            if ([string]::IsNullOrWhiteSpace($path)) { continue }
+            if (-not (Test-Path -LiteralPath $path)) {
+                $script:ImproveMissingContext++
+                [Console]::Error.WriteLine("[Delegator] improve: context file not found, ignored: $path")
+                continue
+            }
+            if ($spent -ge $Budget) {
+                [Console]::Error.WriteLine("[Delegator] improve: context budget reached, skipping $path")
+                continue
+            }
+            $text = [System.IO.File]::ReadAllText($path, [System.Text.UTF8Encoding]::new($false))
+            $room = $Budget - $spent
+            if ($text.Length -gt $room) { $text = $text.Substring(0, $room) + "`n... [truncated]" }
+            $spent += $text.Length
+            $chunks += "=== FILE: $path ===`n$text"
+        }
+    }
+    if ($chunks.Count -eq 0) { return "" }
+    return ($chunks -join "`n`n")
+}
+
+function Get-CoreExecutable {
+    # The runtime scripts live in <install>\runtime, the core next to them in
+    # <install>. It carries a full Python, which is the only interpreter an
+    # installed machine is guaranteed to have.
+    $candidates = @(
+        (Join-Path (Split-Path -Parent $PSScriptRoot) "delegator-core.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Delegator\delegator-core.exe")
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+    }
+    return ""
+}
+
+function Get-MechanicalDefects {
+    <#
+      Defects nobody had to READ to find: code that does not compile, SQL that
+      SQLite refuses to prepare against the schema stated in the task.
+
+      Benchmark run #4 is the whole reason this exists. Both arms submitted a
+      query with ROW_NUMBER() inside GROUP BY - SQLite will not even prepare it -
+      the reviewer read it, called it correct, and `improve` returned the broken
+      draft unchanged. A reviewer that only reads cannot catch that.
+
+      Never throws and never blocks: no core, no Python, no answer - no defects.
+    #>
+    param([string]$Task, [string]$Draft)
+
+    $core = Get-CoreExecutable
+    if ([string]::IsNullOrWhiteSpace($core)) { return @() }
+    $stamp = [guid]::NewGuid().ToString("N").Substring(0, 10)
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $taskPath = Join-Path $tempDir "dg-lint-task-$stamp.txt"
+    $draftPath = Join-Path $tempDir "dg-lint-draft-$stamp.txt"
+    $resultPath = Join-Path $tempDir "dg-lint-result-$stamp.json"
+    try {
+        [System.IO.File]::WriteAllText($taskPath, [string]$Task, (New-Object System.Text.UTF8Encoding $false))
+        [System.IO.File]::WriteAllText($draftPath, [string]$Draft, (New-Object System.Text.UTF8Encoding $false))
+        $process = Start-Process -FilePath $core -ArgumentList @("--lint-draft", $taskPath, $draftPath, $resultPath) `
+            -PassThru -WindowStyle Hidden
+        $null = $process.Handle
+        if (-not $process.WaitForExit(20000)) {
+            try { $process.Kill() } catch { }
+            return @()
+        }
+        if (-not (Test-Path -LiteralPath $resultPath)) { return @() }
+        $payload = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -eq $payload -or $null -eq $payload.defects) { return @() }
+        return @($payload.defects | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+    } catch {
+        return @()
+    } finally {
+        foreach ($path in @($taskPath, $draftPath, $resultPath)) {
+            try { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } catch { }
+        }
+    }
+}
+
+function Get-ImproveVerdict {
+    # First {...} block of the reviewer answer -> object, or $null.
+    param([string]$Raw)
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return $null }
+    $start = $Raw.IndexOf("{")
+    $end = $Raw.LastIndexOf("}")
+    if ($start -lt 0 -or $end -le $start) { return $null }
+    try { return ($Raw.Substring($start, $end - $start + 1) | ConvertFrom-Json) } catch { return $null }
+}
+
+function Get-SupportedDefects {
+    <#
+      Defects the reviewer could BACK UP with a concrete failing case.
+
+      Measured on the 30-case internal bench: `improve` rewrote 10 of 30 drafts
+      and 8 of those were already correct - about 29% verdict inflation. The
+      reviewer calls major/wrong far too eagerly when it only has to assert
+      something. A defect nobody can demonstrate is an opinion, and rewriting a
+      correct answer on an opinion is how `improve` does damage.
+
+      Accepts both shapes so an older or sloppier reviewer answer still parses:
+      a bare string (kept only when it names a case inline) and
+      {"defect": "...", "failingCase": "..."}.
+    #>
+    param($Defects)
+
+    $supported = @()
+    foreach ($entry in @($Defects)) {
+        if ($null -eq $entry) { continue }
+        if ($entry -is [string]) {
+            # A bare string counts only when it actually shows the failure.
+            $text = [string]$entry
+            if ($text -match "(?i)(например|for example|e\.g\.|input|вход|=>|->)") { $supported += $text.Trim() }
+            continue
+        }
+        $text = [string]$entry.defect
+        if ([string]::IsNullOrWhiteSpace($text)) { $text = [string]$entry.what }
+        $case = [string]$entry.failingCase
+        if ([string]::IsNullOrWhiteSpace($case)) { $case = [string]$entry.failing }
+        if ([string]::IsNullOrWhiteSpace($text) -or [string]::IsNullOrWhiteSpace($case)) { continue }
+        $supported += ("{0} (падает на: {1})" -f $text.Trim(), $case.Trim())
+    }
+    return @($supported)
+}
+
+function Test-ImproveGuards {
+    # Machine checks that a rewrite is not a downgrade. Returns "" when the
+    # rewrite may be used, otherwise the reason it was rejected. Damaging a
+    # correct draft is worse than failing to fix a wrong one, so every doubt
+    # ends in KEEP.
+    param([string]$Draft, [string]$Improved)
+    if ([string]::IsNullOrWhiteSpace($Improved)) { return "empty" }
+    if ($Draft.Length -gt 400 -and $Improved.Length -lt [int]($Draft.Length * 0.4)) { return "too-short" }
+    $fence = [char]0x60 + "" + [char]0x60 + "" + [char]0x60
+    $draftFences = ([regex]::Matches($Draft, [regex]::Escape($fence))).Count
+    $newFences = ([regex]::Matches($Improved, [regex]::Escape($fence))).Count
+    if ($draftFences -ge 2 -and $newFences -lt 2) { return "code-dropped" }
+    if ($Improved -match '(?im)^\s*(i (can not|cannot|am unable)|sorry[,.]|as an ai\b)') { return "refusal" }
+    return ""
+}
+
+function Run-Improve {
+    $improveSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $script:ImproveMissingContext = 0
+    # $ErrorActionPreference is "Stop" for this script, so Write-Error would be a
+    # TERMINATING error and the exit code below would never run: the caller got
+    # a PowerShell stack trace and exit 1 where the contract promises exit 2.
+    if ([string]::IsNullOrWhiteSpace($Prompt)) {
+        [Console]::Error.WriteLine("[Delegator] improve requires the task text: -PromptFile <file>")
+        Exit-Delegate 2
+    }
+    if ([string]::IsNullOrWhiteSpace($DraftFile) -or -not (Test-Path -LiteralPath $DraftFile)) {
+        [Console]::Error.WriteLine("[Delegator] improve requires the draft answer: -DraftFile <file>")
+        Exit-Delegate 2
+    }
+    $draft = [System.IO.File]::ReadAllText($DraftFile, [System.Text.UTF8Encoding]::new($false))
+    if ([string]::IsNullOrWhiteSpace($draft)) {
+        [Console]::Error.WriteLine("[Delegator] improve: the draft file is empty")
+        Exit-Delegate 2
+    }
+
+    # The internal review/rewrite calls must NOT inherit -Json: the providers
+    # would answer with their envelope, and the verdict parser would read the
+    # envelope's braces instead of the model's JSON - every draft would come back
+    # "unparsable" and be kept. The switch is remembered for the final output and
+    # cleared at script scope, where Invoke-Delegate reads it.
+    $callerWantsJson = [bool]$Json
+    Set-Variable -Name Json -Value $false -Scope Script
+
+    $task = $Prompt
+    if ($task.Length -gt $script:ImproveTaskBudget) { $task = $task.Substring(0, $script:ImproveTaskBudget) + "`n... [truncated]" }
+    # A draft that does not fit is reviewed on a truncated copy, and a rewrite of
+    # a truncated copy silently DELETES the rest of the caller's answer. Keep it
+    # instead - the caller loses nothing.
+    if ($draft.Length -gt $script:ImproveDraftBudget) {
+        [Console]::Error.WriteLine("[Delegator] improve: draft is longer than $($script:ImproveDraftBudget) characters, keeping it unchanged")
+        Write-DelegateMetric -Stage "improve" -Status "keep-draft-too-long" -LatencyMs $improveSw.ElapsedMilliseconds -Extra "chars=$($draft.Length)"
+        Exit-Delegate 3
+    }
+    $draftForReview = $draft
+    $context = ""
+    if ($ContextFile -and @($ContextFile).Count -gt 0) {
+        $context = Read-ContextFiles -Entries $ContextFile -Budget $script:ImproveContextBudget
+    }
+    $contextBlock = if ([string]::IsNullOrWhiteSpace($context)) { "(none provided)" } else { $context }
+
+    # The reviewer is the strongest model available: a weaker one invents defects
+    # in code it cannot follow, and the rewrite then makes things worse.
+    $reviewModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { Get-StrongEnabledModel }
+    if ([string]::IsNullOrWhiteSpace($reviewModel)) { $reviewModel = "gemini-pro-latest" }
+    $reviewBackend = Select-Backend -Text $task -ChosenModel $reviewModel
+    $script:FinalModel = $reviewModel
+    $script:FinalProvider = Get-UsageProviderName $reviewBackend
+    $taskDomain = Get-TaskDomain $task
+
+    # Facts, not opinions: code that does not compile and SQL that will not
+    # prepare are found by running a compiler, not by reading. See §11.
+    $mechanical = @(Get-MechanicalDefects -Task $task -Draft $draftForReview)
+    $mechanicalBlock = if ($mechanical.Count -gt 0) {
+        "The draft has these MECHANICAL defects, already proven by compiling it. They are facts, not opinions - never dispute them:`n- " + ($mechanical -join "`n- ")
+    } else {
+        "(none found by compiling the draft)"
+    }
+
+    $checkPrompt = @"
+You are a strict technical reviewer. Another assistant produced the DRAFT ANSWER below for the TASK below.
+Judge the draft on substance only: correctness, missed requirements, wrong APIs, broken logic, unsafe or non-working code.
+Style, wording and formatting are NOT defects.
+
+PROVEN DEFECTS:
+$mechanicalBlock
+
+Return strict minified JSON and nothing else:
+{"verdict":"ok|minor|major|wrong","defects":[{"defect":"short factual defect","failingCase":"concrete input or scenario and the wrong result it produces"}],"confidence":0-100}
+- ok    = correct and complete
+- minor = cosmetic or optional improvements only
+- major = real defects that change the outcome for the user
+- wrong = the core answer is incorrect
+EVERY defect MUST carry a failingCase: a concrete input, call or scenario where the draft
+produces a wrong or missing result. If you cannot name one, it is not a defect - leave it out.
+A defect you cannot demonstrate is an opinion, and it will be discarded.
+List at most 5 defects, each short and checkable. Do not rewrite the answer here.
+
+TASK:
+$task
+
+REPOSITORY CONTEXT:
+$contextBlock
+
+DRAFT ANSWER:
+$draftForReview
+"@
+
+    $checkResult = Invoke-Delegate -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    $checkText = (($checkResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    if ($checkResult.exitCode -ne 0) {
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "check-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
+        [Console]::Error.WriteLine("[Delegator] improve: the reviewer backend failed, keeping your draft")
+        Exit-Delegate 1
+    }
+    $verdictObj = Get-ImproveVerdict $checkText
+    $verdict = if ($verdictObj -and $verdictObj.verdict) { ([string]$verdictObj.verdict).Trim().ToLowerInvariant() } else { "" }
+    # Only defects the reviewer could demonstrate survive: see Get-SupportedDefects.
+    $defects = @()
+    $claimed = 0
+    if ($verdictObj -and $verdictObj.defects) {
+        $claimed = @($verdictObj.defects).Count
+        $defects = @(Get-SupportedDefects $verdictObj.defects)
+    }
+    $unsupported = [math]::Max(0, $claimed - $defects.Count)
+    if ($verdict -notin @("ok", "minor", "major", "wrong")) {
+        # An unparsable verdict is not evidence of a defect - unless the compiler
+        # already found one, and then the reviewer's opinion is not needed.
+        if ($mechanical.Count -eq 0) {
+            Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "verdict-unparsable" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
+            Exit-Delegate 3
+        }
+        $verdict = "major"
+    }
+    # A proven defect outranks the reviewer. Run #4: the reviewer said "ok" about
+    # a query SQLite refuses to prepare, and the broken draft was returned as-is.
+    $defects = @($mechanical + $defects | Select-Object -Unique)
+    if ($mechanical.Count -gt 0 -and $verdict -in @("ok", "minor")) { $verdict = "major" }
+    if ($verdict -in @("ok", "minor") -or $defects.Count -eq 0) {
+        # `unsupported` is the tuning signal: how often the reviewer claimed a
+        # defect it could not demonstrate. Watch it in delegate-metrics.jsonl.
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "keep-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),unsupported=$unsupported,calls=1,ctxmissing=$($script:ImproveMissingContext)"
+        if ($callerWantsJson) {
+            [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "keep"; output = "" } | ConvertTo-Json -Depth 4
+        }
+        Exit-Delegate 3
+    }
+
+    $defectList = "- " + ($defects -join "`n- ")
+    $rewriteBody = @"
+Rewrite the DRAFT ANSWER below so that every listed defect is fixed.
+Keep everything that was already correct, keep the same structure, format and level of detail, and keep every constraint of the task.
+Output the corrected answer only: no preamble, no explanation of the changes, no review notes.
+
+TASK:
+$task
+
+REPOSITORY CONTEXT:
+$contextBlock
+
+DEFECTS TO FIX:
+$defectList
+
+DRAFT ANSWER:
+$draftForReview
+"@
+    $rewritePrompt = Add-ExecutionLanguagePolicy $rewriteBody
+
+    $rewriteResult = Invoke-Delegate -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    $improved = Filter-ConversationalNoise ((($rewriteResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim())
+    if ($rewriteResult.exitCode -ne 0) {
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,ctxmissing=$($script:ImproveMissingContext)"
+        [Console]::Error.WriteLine("[Delegator] improve: the rewrite failed, keeping your draft")
+        Exit-Delegate 1
+    }
+    $guard = Test-ImproveGuards -Draft $draft -Improved $improved
+    if (-not [string]::IsNullOrWhiteSpace($guard)) {
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=fail,ctxmissing=$($script:ImproveMissingContext)"
+        [Console]::Error.WriteLine("[Delegator] improve: rewrite rejected by guard '$guard', keeping your draft")
+        if ($callerWantsJson) {
+            [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = $guard; output = "" } | ConvertTo-Json -Depth 4
+        }
+        Exit-Delegate 3
+    }
+
+    Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "improved-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=pass,ctxmissing=$($script:ImproveMissingContext)"
+    if ($callerWantsJson) {
+        [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "pass"; output = $improved } | ConvertTo-Json -Depth 4
+    } else {
+        $header = [pscustomobject]@{
+            verdict = $verdict
+            defects = $defects.Count
+            model   = $reviewModel
+        } | ConvertTo-Json -Compress
+        Write-Output ("##DELEGATOR_IMPROVE## " + $header)
+        Write-Output $improved
+    }
+    Exit-Delegate 0
+}
+
 function Run-Ask {
     $askSw = [System.Diagnostics.Stopwatch]::StartNew()
     if ([string]::IsNullOrWhiteSpace($Prompt)) {
@@ -1193,7 +1774,7 @@ function Run-Ask {
 
     # ── Response cache lookup ──
     if ($Prompt -notmatch "^Reply exactly:" -and $Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model)) {
-        $promptHash = Get-PromptHash $Prompt
+        $promptHash = Get-PromptHash $Prompt -Variant (Get-CacheVariant)
         $cachedDomain = Get-TaskDomain $Prompt
         $cachedResponse = Find-CachedResponse -PromptHash $promptHash -Domain $cachedDomain
         if ($cachedResponse) {
@@ -1233,7 +1814,12 @@ function Run-Ask {
         Exit-Delegate $direct.exitCode
     }
 
-    $plan = Read-DelegationPlan $Prompt
+    # The planner and the triage stage cost one call each on the WEAKEST enabled
+    # model and only decide routing. With an explicit -Model, or inside a boost
+    # fan-out, the routing is already fixed, so both are pure latency and pure
+    # risk of a rewritten prompt.
+    $skipRouting = (-not [string]::IsNullOrWhiteSpace($Model)) -or ($env:CODEX_DELEGATE_BOOST_ACTIVE -eq "1") -or $NoPlanner
+    $plan = if ($skipRouting) { $null } else { Read-DelegationPlan $Prompt }
     if ($plan -and $plan.mode -eq "parallel") {
         $planPromptCount = @($plan.prompts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count
         if ($planPromptCount -ge 2) {
@@ -1253,7 +1839,7 @@ function Run-Ask {
     if ($plan -and $plan.mustHave) { $mustHave = @($plan.mustHave | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ }) }
 
     $triage = $null
-    if (-not $plan) {
+    if (-not $plan -and -not $skipRouting) {
         $triage = Invoke-StructuredTriage $plannedPrompt
         if ($triage) {
             if ($triage.mode -eq "parallel" -and $triage.PSObject.Properties["prompts"]) {
@@ -1275,12 +1861,21 @@ function Run-Ask {
         }
     }
 
-    if (($plannedPreprocess -eq "extract") -or ($plannedPrompt.Length -gt 6000)) {
+    # Compressing the prompt runs the WEAKEST enabled model over it and replaces
+    # it with that model's summary. On a code task that throws away the very
+    # thing the strong model was called for, so the bar is high: only really
+    # long input, and never when the caller pinned the model (it knows what it
+    # sent) or handed us its own draft to review.
+    $extractLimit = 12000
+    if ((-not $skipRouting) -and (($plannedPreprocess -eq "extract" -and $plannedPrompt.Length -gt 4000) -or ($plannedPrompt.Length -gt $extractLimit))) {
         $plannedPrompt = Invoke-ContextExtract -Text $plannedPrompt -MustHave $mustHave
     }
     if ($mustHave.Count -gt 0) {
         $plannedPrompt = "MUST-HAVE CONSTRAINTS:`n- " + ($mustHave -join "`n- ") + "`n`nTASK:`n" + $plannedPrompt
     }
+
+    $taskDomain = Get-TaskDomain $plannedPrompt
+    $isHeavyTask = $taskDomain -match "architecture|security|code_debug|context_analysis|math_algo|data_consistency"
 
     $chosenModel = if (-not [string]::IsNullOrWhiteSpace($plannedModel)) {
         $plannedModel
@@ -1289,9 +1884,33 @@ function Run-Ask {
     } else {
         ""
     }
+
     $forcedBackend = if ($Backend -ne "auto") { $Backend } elseif ($plannedBackend -ne "auto") { $plannedBackend } else { "auto" }
     if ($forcedBackend -ne "auto" -and [string]::IsNullOrWhiteSpace($Model) -and -not (Test-ModelMatchesBackend $chosenModel $forcedBackend)) {
         $chosenModel = Get-PreferredBackendModel -BackendName $forcedBackend -Text $plannedPrompt
+    }
+
+    # Strength floor, applied AFTER the backend correction on purpose: the
+    # backend hint comes from the triage model and its "preferred model" for a
+    # backend is a flash-class one, so running the floor earlier only to have it
+    # overwritten here is exactly what happened the first time round.
+    #
+    # An empty (or flash-class) model means "let the backend decide", and the
+    # backend decides small - the caller, often a fast IDE model, then gets an
+    # answer from a model no stronger than itself. Everything deep, verified or
+    # from a heavy domain is pinned to the strongest enabled model instead, and
+    # the model decides the backend from there on. Vision is excluded: those ids
+    # come from Get-PreferredVisionModel and must stay.
+    if ([string]::IsNullOrWhiteSpace($Model) `
+            -and ($plannedComplexity -eq "deep" -or $plannedVerify -or $isHeavyTask) `
+            -and ([string]::IsNullOrWhiteSpace($chosenModel) -or $chosenModel -match "flash|lite|mini|tiny|nano") `
+            -and -not (Test-VisionContent $plannedPrompt)) {
+        $strongModel = Get-StrongEnabledModel
+        if (-not [string]::IsNullOrWhiteSpace($strongModel) -and $strongModel -ne $chosenModel) {
+            Write-DelegateMetric -Stage "strength-floor" -Model $strongModel -Status "ok" -Domain $taskDomain -Extra "was=$chosenModel"
+            $chosenModel = $strongModel
+            $plannedBackend = "auto"
+        }
     }
     $effectiveModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { $chosenModel }
     $hasVisionContent = Test-VisionContent $plannedPrompt
@@ -1313,11 +1932,12 @@ function Run-Ask {
     # BOOST MODE can fan out multiple model calls.
     # Keep it explicit by default; auto-enable only for genuinely heavy flash-routed tasks.
     $boostEnabled = $Boost -or ($env:CODEX_DELEGATE_BOOST -eq "1")
-    $isFlash = $effectiveModel -match "flash"
-    $taskDomain = Get-TaskDomain $plannedPrompt
-    $isHeavyTask = $taskDomain -match "architecture|security|code_debug|context_analysis|math_algo|data_consistency"
-    
-    # Auto-boost only when a flash model is selected for a heavy/deep task.
+    # "flash" alone missed lite/mini/tiny ids. An EMPTY model is deliberately not
+    # weak here: after the strength floor above it only stays empty when nothing
+    # is enabled, and fanning out to three advisors that cannot run helps nobody.
+    $isFlash = $effectiveModel -match "flash|lite|mini|tiny|nano"
+
+    # Auto-boost only when a weak model is selected for a heavy/deep task.
     if ($isFlash -and -not $NoBoost -and ($plannedComplexity -eq "deep" -or $isHeavyTask)) {
         $boostEnabled = $true
     }
@@ -1390,7 +2010,7 @@ function Run-Ask {
 
         # ── Cache the response ──
         if ($Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model) -and $Prompt -notmatch "^Reply exactly:") {
-            $cacheHash = Get-PromptHash $Prompt
+            $cacheHash = Get-PromptHash $Prompt -Variant (Get-CacheVariant)
             Add-CachedResponse -PromptHash $cacheHash -Response $final -Model $effectiveModel -Domain $taskDomain
         }
 
@@ -1415,14 +2035,18 @@ function Run-Ask {
         $script:FinalProvider = Get-UsageProviderName $second
     }
     $final = Filter-ConversationalNoise $secondResult.output
-    Write-DelegateMetric -Stage "solve-fallback" -Backend $second -LatencyMs $solveSw.ElapsedMilliseconds -Status "ok" -Domain $taskDomain
-    if ($plannedVerify -and -not (Test-ResponseConfidence -Response $final -Domain $taskDomain -OriginalPrompt $plannedPrompt)) {
+    $fallbackOk = ($secondResult.exitCode -eq 0)
+    Write-DelegateMetric -Stage "solve-fallback" -Backend $second -LatencyMs $solveSw.ElapsedMilliseconds -Status $(if ($fallbackOk) { "ok" } else { "failed" }) -Domain $taskDomain
+    if ($fallbackOk -and $plannedVerify -and -not (Test-ResponseConfidence -Response $final -Domain $taskDomain -OriginalPrompt $plannedPrompt)) {
         $final = Invoke-CritiqueCorrectionLoop -OriginalPrompt $plannedPrompt -InitialAnswer $final -Model $effectiveModel -Backend $second -Complexity $plannedComplexity -MustHave $mustHave
     }
 
-    # Cache the fallback response
-    if ($Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model) -and $Prompt -notmatch "^Reply exactly:") {
-        $cacheHash = Get-PromptHash $Prompt
+    # Cache the fallback response - only when it IS a response. Both backends
+    # failing used to store "All enabled Delegator ... failed" under the prompt
+    # hash, and every identical question was then answered from the cache with
+    # that error text for the next 24 hours (seen live 2026-08-12).
+    if ($fallbackOk -and $Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model) -and $Prompt -notmatch "^Reply exactly:") {
+        $cacheHash = Get-PromptHash $Prompt -Variant (Get-CacheVariant)
         Add-CachedResponse -PromptHash $cacheHash -Response $final -Model $effectiveModel -Domain $taskDomain
     }
 
@@ -1521,6 +2145,7 @@ switch ($Command) {
     "ask" { Run-Ask }
     "delegate" { Run-Ask }
     "boost" { $Boost = $true; Run-Ask }
+    "improve" { Run-Improve }
     "micro" { Run-Micro }
     "verify" { Run-Verify }
     "plan" { Run-Plan }

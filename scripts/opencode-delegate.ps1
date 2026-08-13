@@ -50,7 +50,15 @@ $OpenCodeFastModels   = @($OpenCodeDeepSeekFlashModel, $OpenCodeLingModel, $Open
 $OpenCodeNormalModels = @($OpenCodeDeepSeekFlashModel, $OpenCodeNemotronModel, $OpenCodeLagunaModel, $OpenCodeLingModel, $OpenCodeMimoModel, $OpenCodeNorthModel, $OpenCodeBigPickleModel)
 $OpenCodeDeepModels   = @($OpenCodeDeepSeekFlashModel, $OpenCodeNemotronModel, $OpenCodeNorthModel, $OpenCodeLagunaModel, $OpenCodeMimoModel, $OpenCodeLingModel, $OpenCodeBigPickleModel)
 
-# Per-model idle timeout: heavy/slow models get 90s, fast models get 45s
+# Per-model idle timeout: heavy/slow models get 150s, fast models get 90s.
+#
+# These are NOT arbitrary. Measured on this machine (usage.jsonl, 2026-08-12):
+# deepseek-v4-flash answers a real question in 34s p50 with a 45.8s max, and
+# nemotron-3-ultra needs 71.6s on an 8k prompt. With the old 45/90 budget the
+# strongest model's answer was thrown away right before it arrived - twice in a
+# row on a 250-character Python question - and the caller silently got a
+# gemini-flash fallback instead. The dispatcher's own budget is 180s, so 150
+# still leaves room for the ladder to try one more model.
 $OpenCodeHeavyModels = @($OpenCodeNemotronModel, $OpenCodeLagunaModel, $OpenCodeNorthModel, $OpenCodeBigPickleModel)
 
 function Get-OpenCodeIdleTimeout {
@@ -58,8 +66,8 @@ function Get-OpenCodeIdleTimeout {
     if ($env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC) { return [int]$env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC }
     $configured = Get-ModelSetting $OpenCodeModel "idleTimeoutSec"
     if (-not [string]::IsNullOrWhiteSpace($configured)) { return [int]$configured }
-    if ($OpenCodeHeavyModels -contains $OpenCodeModel) { return 90 }
-    return 45
+    if ($OpenCodeHeavyModels -contains $OpenCodeModel) { return 150 }
+    return 90
 }
 
 function Clean-OpenCodeOutput {
@@ -97,7 +105,7 @@ function Get-ExtraOpenCodeModels {
 # NOTE: the lists above are only the no-catalog fallback. Pool finalization
 # (Zen catalog tiers, extras merge, mandatory GUI intersection) happens in the
 # "Dynamic Zen catalog" section further down, after the helpers it needs.
-$OpenCodeIdleTimeoutSec = if ($env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC) { [int]$env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC } else { 45 }
+$OpenCodeIdleTimeoutSec = if ($env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC) { [int]$env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC } else { 90 }
 $script:OpenCodeInstalledModels = $null
 
 function Get-OpenCodeCommandPath {
@@ -1570,7 +1578,14 @@ function Run-Ask {
 
 if ($MyInvocation.InvocationName -ne ".") {
     switch ($Command) {
-        "ask" { Run-Ask }
+        # `exit 0` is load-bearing. Without it a script that merely RETURNS
+        # leaves $LASTEXITCODE untouched, and the dispatcher reads it right
+        # after an in-process `& opencode-delegate.ps1` call: it then sees the
+        # exit code of whatever external command ran last inside this script
+        # (curl, taskkill, the CLI). Good answers were being discarded as
+        # failures and re-asked on a weaker backend (diagnosed live 2026-08-12).
+        # A failure still throws, and the caller's catch turns that into 1.
+        "ask" { Run-Ask; exit 0 }
         "models" {
             $openCodeExecutable = Get-OpenCodeCommandPath
             if ([string]::IsNullOrWhiteSpace($openCodeExecutable)) { throw "OpenCode CLI is not installed. Run: npm install -g opencode-ai" }

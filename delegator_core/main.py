@@ -20,6 +20,19 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .benchmark import (
+    BENCHMARK_VERSION,
+    BenchmarkStore,
+    export_report,
+    finish_run,
+    generate_run,
+    known_template_ids,
+    load_items,
+    missing_answers,
+    record_answer,
+    run_status,
+    summarise,
+)
 from .config import CoreConfig, load_config
 from .db import connect
 from .importers import import_codex_sessions, import_antigravity_sessions
@@ -113,6 +126,9 @@ class AppState:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.events = TaskEventBus()
         self.workspace_labels = _load_workspace_labels()
+        # Benchmark runs live next to the other runtime state, not in the DB:
+        # one machine has at most one last result and a handful of live runs.
+        self.benchmark = BenchmarkStore(self.config.runtime_home)
 
 
 def _preferred_output_language(text: str) -> str:
@@ -1110,6 +1126,124 @@ def create_app() -> FastAPI:
     def usage_report(days: int = 7) -> dict[str, Any]:
         core: AppState = app.state.core
         return build_usage_report(core.config.runtime_home / "usage.jsonl", days=days)
+
+    # ── Benchmark (DEV_CONTRACTS section 10) ──
+    # The IDE agent drives this: it answers every task itself first, then (in
+    # compare mode) the same task through Delegator. Grading happens here and
+    # is entirely mechanical - the agent must never grade its own work.
+
+    @app.post("/api/benchmark/start")
+    def benchmark_start(payload: dict[str, Any]) -> dict[str, Any]:
+        core: AppState = app.state.core
+        mode = str(payload.get("mode") or "compare")
+        model = str(payload.get("model") or "")
+        seed = payload.get("seed")
+        return generate_run(
+            core.benchmark,
+            mode=mode,
+            model_label=model,
+            seed=int(seed) if seed not in (None, "") else None,
+        )
+
+    @app.post("/api/benchmark/answer")
+    def benchmark_answer(payload: dict[str, Any]) -> dict[str, Any]:
+        core: AppState = app.state.core
+        state = core.benchmark.get(str(payload.get("runId") or ""))
+        if state is None:
+            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
+        try:
+            record_answer(
+                state,
+                task_index=int(payload.get("task") or 0),
+                arm=str(payload.get("arm") or ""),
+                text=str(payload.get("answer") or ""),
+                elapsed_ms=int(payload.get("elapsedMs") or 0),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {"ok": True, "accepted": len(state.answers)}
+
+    @app.post("/api/benchmark/finish")
+    def benchmark_finish(payload: dict[str, Any]) -> dict[str, Any]:
+        core: AppState = app.state.core
+        state = core.benchmark.get(str(payload.get("runId") or ""))
+        if state is None:
+            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
+        # Finishing early scores every missing answer as zero and pins the loss
+        # on an arm that was never asked. Refuse, and say exactly what is left.
+        gaps = missing_answers(state)
+        if gaps and not bool(payload.get("force")):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "incomplete",
+                    "message": "Прогон ещё не завершён: не все ответы отправлены",
+                    "missing": gaps,
+                },
+            )
+        report = finish_run(core.benchmark, state)
+        exported = export_report(report)
+        report = dict(report)
+        report["files"] = exported
+        core.benchmark.save_last(report)
+        return report
+
+    @app.post("/api/benchmark/progress")
+    def benchmark_progress(payload: dict[str, Any]) -> dict[str, Any]:
+        """Where the run is right now. Pinged by benchmark.ps1 before a slow
+        step so the GUI shows movement instead of a frozen screen."""
+        core: AppState = app.state.core
+        state = core.benchmark.get(str(payload.get("runId") or ""))
+        if state is None:
+            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
+        state.touch(int(payload.get("task") or 0), str(payload.get("stage") or "waiting"))
+        return {"ok": True}
+
+    @app.get("/api/benchmark/status")
+    def benchmark_status() -> dict[str, Any]:
+        core: AppState = app.state.core
+        return {
+            "ok": True,
+            "benchmarkVersion": BENCHMARK_VERSION,
+            "active": run_status(core.benchmark.active()),
+        }
+
+    @app.get("/api/benchmark/last")
+    def benchmark_last() -> dict[str, Any]:
+        core: AppState = app.state.core
+        report = core.benchmark.load_last()
+        return {
+            "ok": True,
+            "benchmarkVersion": BENCHMARK_VERSION,
+            "report": report,
+        }
+
+    @app.get("/api/benchmark/items")
+    def benchmark_items() -> dict[str, Any]:
+        """Difficulty and discrimination per task template, across every run.
+
+        This is what turns a level from an opinion into a measurement: an item
+        nobody ever fails measures nothing, and an item that does not separate
+        strong runs from weak ones only adds noise. Applying a suggestion
+        changes the task set, so it belongs with a BENCHMARK_VERSION bump —
+        nothing here rewrites a template by itself.
+        """
+        core: AppState = app.state.core
+        items = load_items(core.benchmark.items_path)
+        summary = summarise(items, known_template_ids())
+        return {"ok": True, "benchmarkVersion": BENCHMARK_VERSION, **summary}
+
+    @app.post("/api/benchmark/export")
+    def benchmark_export(payload: dict[str, Any]) -> dict[str, Any]:
+        core: AppState = app.state.core
+        report = core.benchmark.load_last()
+        if report is None:
+            raise HTTPException(status_code=404, detail="Бенчмарк ещё не запускался")
+        wanted = payload.get("formats") or ["txt", "png"]
+        formats = tuple(str(item) for item in wanted if str(item) in ("txt", "png", "svg"))
+        if not formats:
+            raise HTTPException(status_code=400, detail="Неизвестный формат экспорта")
+        return {"ok": True, "files": export_report(report, formats)}
 
     @app.get("/api/config")
     def get_config() -> dict[str, object]:

@@ -884,7 +884,9 @@ function Reset-Usage {
 
 if ($MyInvocation.InvocationName -ne ".") {
     switch ($Command) {
-        "ask" { Run-Ask }
+        # See opencode-delegate.ps1: an in-process caller reads $LASTEXITCODE,
+        # which a plain `return` never sets.
+        "ask" { Run-Ask; exit 0 }
         "status" { Show-Status }
         "profiles" { Get-GoogleAccountSummaries | ForEach-Object { "$($_.id): $($_.label)" } }
         "health" { Run-Health }
