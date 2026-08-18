@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Position = 0)]
-    [ValidateSet("ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage")]
+    [ValidateSet("assist", "ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage")]
     [string]$Command = "ask",
 
     [Parameter(Position = 1)]
@@ -581,41 +581,57 @@ function Invoke-Delegate {
         [string]$ChosenBackend,
         [string]$Text,
         [string]$ChosenModel = "",
-        [string]$EffectiveComplexity = ""
+        [string]$EffectiveComplexity = "",
+
+        # Which STAGE of the request this provider call serves (DEV_CONTRACTS
+        # section 2.1: answer|triage|advisor|synthesis|verify|micro|plan|parallel).
+        # Both provider scripts have always READ $env:DELEGATOR_USAGE_STAGE and
+        # nothing ever WROTE it, so every call in usage.jsonl claimed to be the
+        # final answer: 450 rows that cannot tell a 1.8 s triage from a 224 s
+        # rewrite. No router can be tuned on a log that cannot see modes.
+        [string]$Stage = ""
     )
 
     $cx = if (-not [string]::IsNullOrWhiteSpace($EffectiveComplexity)) { $EffectiveComplexity } else { $Complexity }
     $effectiveModel = if (-not [string]::IsNullOrWhiteSpace($ChosenModel)) { $ChosenModel } else { $Model }
-    $delegateParams = @{ Command = "ask"; Prompt = $Text; Complexity = $cx; TimeoutSec = $TimeoutSec }
-    if ($Json) { $delegateParams.Json = $true }
-    if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) { $delegateParams.Model = $effectiveModel }
+    # Set for the provider child and restored afterwards: a nested call (an
+    # advisor inside boost) must not leak its stage onto the caller's next call.
+    $previousStage = $env:DELEGATOR_USAGE_STAGE
+    $env:DELEGATOR_USAGE_STAGE = if ([string]::IsNullOrWhiteSpace($Stage)) { $previousStage } else { $Stage }
+    try {
+        $delegateParams = @{ Command = "ask"; Prompt = $Text; Complexity = $cx; TimeoutSec = $TimeoutSec }
+        if ($Json) { $delegateParams.Json = $true }
+        if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) { $delegateParams.Model = $effectiveModel }
 
-    # $LASTEXITCODE is process-wide state, not a return value: it survives from
-    # the last external command this session ran. Clear it before the call so a
-    # provider that answers fine cannot inherit a stale non-zero code (the
-    # providers now `exit 0` explicitly, this is the second lock on that door).
-    if ($ChosenBackend -eq "opencode") {
-        return Invoke-WithModelLock -BackendName "opencode" -ModelName $effectiveModel -Body {
+        # $LASTEXITCODE is process-wide state, not a return value: it survives from
+        # the last external command this session ran. Clear it before the call so a
+        # provider that answers fine cannot inherit a stale non-zero code (the
+        # providers now `exit 0` explicitly, this is the second lock on that door).
+        if ($ChosenBackend -eq "opencode") {
+            return Invoke-WithModelLock -BackendName "opencode" -ModelName $effectiveModel -Body {
+                try {
+                    $global:LASTEXITCODE = 0
+                    $output = & $OpenCodeDelegate @delegateParams 2>&1
+                    $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+                    return [pscustomobject]@{ exitCode = $code; output = $output }
+                } catch {
+                    return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
+                }
+            }
+        }
+
+        return Invoke-WithModelLock -BackendName "gemini" -ModelName $effectiveModel -Body {
             try {
                 $global:LASTEXITCODE = 0
-                $output = & $OpenCodeDelegate @delegateParams 2>&1
+                $output = & $GeminiDelegate @delegateParams 2>&1
                 $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
                 return [pscustomobject]@{ exitCode = $code; output = $output }
             } catch {
                 return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
             }
         }
-    }
-
-    return Invoke-WithModelLock -BackendName "gemini" -ModelName $effectiveModel -Body {
-        try {
-            $global:LASTEXITCODE = 0
-            $output = & $GeminiDelegate @delegateParams 2>&1
-            $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
-            return [pscustomobject]@{ exitCode = $code; output = $output }
-        } catch {
-            return [pscustomobject]@{ exitCode = 1; output = @($_.Exception.Message) }
-        }
+    } finally {
+        $env:DELEGATOR_USAGE_STAGE = $previousStage
     }
 }
 
@@ -635,8 +651,8 @@ function Get-GeminiModelScore {
     param([string]$ModelId)
 
     $id = ([string]$ModelId).ToLowerInvariant()
-    $tier = if ($id -match "flash-?lite" -or $id -match "lite") { 1 }
-            elseif ($id -match "pro") { 3 }
+    $tier = if ($id -match "flash-?lite" -or $id -match "\blite\b") { 1 }
+            elseif ($id -match "\bpro\b") { 3 }
             else { 2 }
     $generation = 0.0
     if ($id -match "gemini-(\d+(?:\.\d+)?)") { $generation = [double]$Matches[1] }
@@ -696,10 +712,36 @@ function Get-CustomProviderModels {
     #>
     $builtIn = @("opencode", "openrouter", "google", "google-vertex", "google-vertex-anthropic")
     $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
-    return @($enabled | Where-Object {
+    $custom = @($enabled | Where-Object {
         $parts = ([string]$_).Split("/", 2)
         $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1]) -and $builtIn -notcontains $parts[0]
-    } | Sort-Object)
+    })
+    # ORDER BY MEASURED HEALTH, not by the alphabet. `Sort-Object` put
+    # `agentrouter/claude-...` first for no reason but its name, so a model that
+    # had just failed twice was still asked first and the healthy sibling was
+    # reached only after two timeouts.
+    #
+    # The scores are computed FIRST and sorted by property name afterwards: a
+    # Sort-Object script block runs in a child scope where a helper can fail to
+    # resolve, and this is the hot path of `improve` under
+    # $ErrorActionPreference = "Stop" — a throw here would take the whole call
+    # down. Anything unknown scores as healthy, so a fresh install still tries
+    # the user's own provider first.
+    $scored = @()
+    foreach ($id in $custom) {
+        $name = [string]$id
+        $health = $null
+        try { $health = Get-ModelHealth $name } catch { $health = $null }
+        $cooling = $false
+        try { $cooling = [bool](Test-ModelCoolingDown $name) } catch { $cooling = $false }
+        $scored += [pscustomobject]@{
+            id = $name
+            cooling = if ($cooling) { 1 } else { 0 }
+            failRate = if ($null -ne $health) { [double]$health.failRate } else { 0.0 }
+            p75 = if ($null -ne $health -and $null -ne $health.p75Ms) { [int]$health.p75Ms } else { 0 }
+        }
+    }
+    return @($scored | Sort-Object -Property cooling, failRate, p75, id | ForEach-Object { $_.id })
 }
 
 function Get-StrongestReviewer {
@@ -758,10 +800,11 @@ function Invoke-DelegateAcrossBackends {
         [string]$ChosenBackend,
         [string]$Text,
         [string]$ChosenModel = "",
-        [string]$EffectiveComplexity = ""
+        [string]$EffectiveComplexity = "",
+        [string]$Stage = ""
     )
 
-    $result = Invoke-Delegate -ChosenBackend $ChosenBackend -Text $Text -ChosenModel $ChosenModel -EffectiveComplexity $EffectiveComplexity
+    $result = Invoke-Delegate -ChosenBackend $ChosenBackend -Text $Text -ChosenModel $ChosenModel -EffectiveComplexity $EffectiveComplexity -Stage $Stage
     if ($result.exitCode -eq 0) {
         return [pscustomobject]@{
             exitCode = 0; output = $result.output; backend = $ChosenBackend
@@ -777,7 +820,7 @@ function Invoke-DelegateAcrossBackends {
     foreach ($sibling in @($custom | Select-Object -First 2)) {
         [Console]::Error.WriteLine("[Delegator] $ChosenModel failed, trying $sibling")
         Write-DelegateMetric -Stage "failover" -Model $sibling -Backend "opencode" -Status "same-provider" -Extra "was=$ChosenModel"
-        $retry = Invoke-Delegate -ChosenBackend "opencode" -Text $Text -ChosenModel $sibling -EffectiveComplexity $EffectiveComplexity
+        $retry = Invoke-Delegate -ChosenBackend "opencode" -Text $Text -ChosenModel $sibling -EffectiveComplexity $EffectiveComplexity -Stage $Stage
         if ($retry.exitCode -eq 0) {
             return [pscustomobject]@{
                 exitCode = 0; output = $retry.output; backend = "opencode"
@@ -817,7 +860,7 @@ function Invoke-DelegateAcrossBackends {
         $useBackend = if ($otherModel -like "openrouter/*") { "opencode" } else { $otherBackend }
         [Console]::Error.WriteLine("[Delegator] $ChosenBackend failed, retrying on $useBackend ($otherModel)")
         Write-DelegateMetric -Stage "failover" -Model $otherModel -Backend $useBackend -Status "from-$ChosenBackend" -Extra "was=$ChosenModel"
-        $lastRetry = Invoke-Delegate -ChosenBackend $useBackend -Text $Text -ChosenModel $otherModel -EffectiveComplexity $EffectiveComplexity
+        $lastRetry = Invoke-Delegate -ChosenBackend $useBackend -Text $Text -ChosenModel $otherModel -EffectiveComplexity $EffectiveComplexity -Stage $Stage
         if ($lastRetry.exitCode -eq 0) {
             return [pscustomobject]@{
                 exitCode = 0; output = $lastRetry.output; backend = $useBackend
@@ -1074,7 +1117,7 @@ TASK:
 $Text
 "@
     $triageSw = [System.Diagnostics.Stopwatch]::StartNew()
-    $res = Invoke-Delegate -ChosenBackend $triageBackend -Text $triagePrompt -ChosenModel $triageModel -EffectiveComplexity "fast"
+    $res = Invoke-Delegate -ChosenBackend $triageBackend -Text $triagePrompt -ChosenModel $triageModel -EffectiveComplexity "fast" -Stage "triage"
     Write-DelegateUsageRecord -Stage "triage" -Mode (Get-DelegateUsageMode) -Provider (Get-UsageProviderName $triageBackend) -Model $triageModel -ElapsedMs ([int]$triageSw.ElapsedMilliseconds) -Ok ($res.exitCode -eq 0)
     if ($res.exitCode -ne 0) { return $null }
     try {
@@ -1120,7 +1163,7 @@ $constraints
 INPUT:
 $Text
 "@
-    $res = Invoke-Delegate -ChosenBackend $extractBackend -Text $extractPrompt -ChosenModel $extractModel -EffectiveComplexity "fast"
+    $res = Invoke-Delegate -ChosenBackend $extractBackend -Text $extractPrompt -ChosenModel $extractModel -EffectiveComplexity "fast" -Stage "triage"
     if ($res.exitCode -ne 0) { return $Text }
     $out = (($res.output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
     if ([string]::IsNullOrWhiteSpace($out)) { return $Text }
@@ -1507,7 +1550,7 @@ $Text
     # In-process synthesis via the standard choke point: no nested powershell.exe
     # argv (quote stripping, 32K command-line limit) - DEV_CONTRACTS section 1.
     $synthSw = [System.Diagnostics.Stopwatch]::StartNew()
-    $synthResult = Invoke-Delegate -ChosenBackend $synthBackend -Text $synthPrompt -ChosenModel $actualSynthModel -EffectiveComplexity "deep"
+    $synthResult = Invoke-Delegate -ChosenBackend $synthBackend -Text $synthPrompt -ChosenModel $actualSynthModel -EffectiveComplexity "deep" -Stage "synthesis"
     Write-DelegateUsageRecord -Stage "synthesis" -Mode (Get-DelegateUsageMode) -Provider (Get-UsageProviderName $synthBackend) -Model $actualSynthModel -ElapsedMs ([int]$synthSw.ElapsedMilliseconds) -Ok ($synthResult.exitCode -eq 0)
     $outStr = (($synthResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
     if ($synthResult.exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($outStr)) {
@@ -1609,7 +1652,7 @@ CODE REVIEW CRITIQUE / DEFECTS TO FIX:
 $critiqueOutput
 "@
 
-    $refineResult = Invoke-Delegate -ChosenBackend $Backend -Text $refinePrompt -ChosenModel $Model -EffectiveComplexity $Complexity
+    $refineResult = Invoke-Delegate -ChosenBackend $Backend -Text $refinePrompt -ChosenModel $Model -EffectiveComplexity $Complexity -Stage "verify"
     if ($refineResult.exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($refineResult.output)) {
         return $refineResult.output
     }
@@ -1807,6 +1850,206 @@ function Test-ImproveGuards {
     return ""
 }
 
+function Get-RouterDecision {
+    <#
+      Asks the core which mode this request deserves. Pure function of the two
+      texts; the core answers from `delegator_core/router.py` in a few
+      milliseconds and cannot touch the network.
+
+      A router that can fail is a router every caller has to guard, so every
+      failure path returns the same shape with mode=delegate and tier=fallback:
+      "answer it" is what Delegator did for every request before the router
+      existed, and it is never destructive.
+    #>
+    param([string]$Task, [string]$Draft, [int]$ContextFiles = 0)
+
+    $fallback = [pscustomobject]@{
+        mode = "delegate"; reason = "router-unavailable"; confidence = 0.0
+        complexity = "auto"; escalate = $false; tier = "fallback"; routerVersion = "0"
+    }
+    $core = Get-CoreExecutable
+    if ([string]::IsNullOrWhiteSpace($core)) { return $fallback }
+
+    $stamp = [guid]::NewGuid().ToString("N").Substring(0, 10)
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $requestPath = Join-Path $tempDir "dg-route-req-$stamp.json"
+    $decisionPath = Join-Path $tempDir "dg-route-out-$stamp.json"
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    try {
+        $payload = @{ task = [string]$Task; draft = [string]$Draft; contextFiles = $ContextFiles }
+        [System.IO.File]::WriteAllText($requestPath, ($payload | ConvertTo-Json -Depth 4 -Compress), $utf8)
+        $process = Start-Process -FilePath $core -ArgumentList @("--route", $requestPath, $decisionPath) `
+            -PassThru -WindowStyle Hidden
+        # Without caching the handle first, ExitCode is $null after a timed wait.
+        $null = $process.Handle
+        if (-not $process.WaitForExit(8000)) {
+            try { $process.Kill() } catch { }
+            return $fallback
+        }
+        if (-not (Test-Path -LiteralPath $decisionPath)) { return $fallback }
+        $decision = Get-Content -LiteralPath $decisionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -eq $decision -or [string]::IsNullOrWhiteSpace([string]$decision.mode)) { return $fallback }
+        return $decision
+    } catch {
+        return $fallback
+    } finally {
+        foreach ($path in @($requestPath, $decisionPath)) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Write-RouterDecision {
+    # The audit trail: every decision, with the features it was made from, so a
+    # rule that looks clever and measures badly can be found later. Never fatal.
+    param($Decision, [string]$Mode, [int]$ElapsedMs)
+    try {
+        $line = @{
+            ts = (Get-Date).ToUniversalTime().ToString("o")
+            requestId = $script:DelegateRequestId
+            client = $env:DELEGATOR_CLIENT
+            mode = $Mode
+            reason = [string]$Decision.reason
+            confidence = [double]$Decision.confidence
+            tier = [string]$Decision.tier
+            routerVersion = [string]$Decision.routerVersion
+            routeMs = $ElapsedMs
+            features = $Decision.features
+        } | ConvertTo-Json -Depth 5 -Compress
+        $path = Join-Path $script:DelegateHome "router-decisions.jsonl"
+        $stream = New-Object System.IO.StreamWriter($path, $true, (New-Object System.Text.UTF8Encoding $false))
+        try { $stream.WriteLine($line) } finally { $stream.Dispose() }
+    } catch { }
+}
+
+function Get-EscalatedMode {
+    <#
+      TIER 2. The rules said what they think and admitted they are unsure
+      (`escalate`); one fast model gets to overrule them, and only then.
+
+      Three properties make this safe to put on the critical path:
+        * it runs ONLY when tier 1 asked for it, so a confident rule is never
+          delayed by a network call;
+        * it is capped hard (20 s) and anything it says that is not one of the
+          four modes is discarded — the tier-1 answer is the fallback, so a dead
+          provider costs latency and never correctness;
+        * the weakest enabled model is used deliberately: this is a four-way
+          classification of one paragraph, not the work itself.
+      Set DELEGATOR_ROUTER_TIER2=off to skip it entirely.
+    #>
+    param([string]$Task, [bool]$HasDraft, [string]$Fallback)
+
+    if ($env:DELEGATOR_ROUTER_TIER2 -eq "off") { return $Fallback }
+    $head = if ($Task.Length -gt 1200) { $Task.Substring(0, 1200) } else { $Task }
+    $draftLine = if ($HasDraft) { "У пользователя УЖЕ есть готовый ответ на эту задачу." }
+                 else { "Готового ответа нет — задачу нужно решить." }
+    $prompt = @"
+Ты — маршрутизатор. Выбери ОДИН режим работы и ответь РОВНО ОДНИМ словом, без пояснений.
+
+improve  — перепроверить и при необходимости исправить уже готовый ответ (только если ответ есть).
+delegate — решить задачу самому, одной сильной моделью.
+boost    — собрать несколько моделей и судью: только для действительно трудных, многосоставных вопросов.
+keep     — ничего не делать: ответ уже есть и он тривиален, либо вмешательство не окупится.
+
+$draftLine
+
+ЗАДАЧА:
+$head
+
+Ответ (одно слово):
+"@
+    $previousTimeout = $script:TimeoutSec
+    try {
+        $script:TimeoutSec = 20
+        $fastModel = Get-FastEnabledOpenCodeModel
+        $backend = if ([string]::IsNullOrWhiteSpace($fastModel)) { "auto" } else { "opencode" }
+        $result = Invoke-Delegate -ChosenBackend $backend -Text $prompt -ChosenModel $fastModel `
+            -EffectiveComplexity "fast" -Stage "triage"
+        if ($null -eq $result -or $result.exitCode -ne 0) { return $Fallback }
+        $answer = (($result.output | Out-String) -replace "[^A-Za-z]", " ").ToLowerInvariant()
+        # Word membership, not a regex: the answer is one word, and a word
+        # boundary escaped through three layers is exactly the kind of detail
+        # that silently turns a guard into a no-op (see the tier bug below).
+        $words = @($answer -split "\s+" | Where-Object { $_ })
+        foreach ($candidate in @("improve", "delegate", "boost", "keep")) {
+            if ($words -contains $candidate) { return $candidate }
+        }
+        return $Fallback
+    } catch {
+        return $Fallback
+    } finally {
+        $script:TimeoutSec = $previousTimeout
+    }
+}
+
+function Run-Assist {
+    <#
+      ONE DOOR. The IDE agent stops choosing a verb: it hands over the task, and
+      the draft it already wrote if it has one, and Delegator decides what to do.
+
+      Why this exists: the mode used to be picked by the IDE agent from prose in
+      the hook text, which is the party least able to pick it — measured on this
+      machine as 228 improve calls of which 109 had nothing to fix, agents that
+      never called improve at all, and a benchmark whose Delegator arm could
+      only ever be `improve`.
+
+      Stdout contract is unchanged per mode, because agents parse it:
+        * improve -> `##DELEGATOR_IMPROVE## {json}` + the corrected answer (exit 0),
+          or exit 3 with nothing when the draft stands;
+        * delegate/boost -> the answer itself (exit 0);
+        * keep -> exit 3, nothing on stdout.
+      The chosen mode and its reason go to stderr and to router-decisions.jsonl.
+    #>
+    if ([string]::IsNullOrWhiteSpace($Prompt)) {
+        [Console]::Error.WriteLine("[Delegator] assist requires the task text: -PromptFile <file>")
+        Exit-Delegate 2
+    }
+
+    $draftText = ""
+    if (-not [string]::IsNullOrWhiteSpace($DraftFile) -and (Test-Path -LiteralPath $DraftFile)) {
+        try { $draftText = [System.IO.File]::ReadAllText($DraftFile, (New-Object System.Text.UTF8Encoding $false)) } catch { $draftText = "" }
+    }
+    $contextCount = if ($ContextFile) { @($ContextFile).Count } else { 0 }
+
+    $routeSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $decision = Get-RouterDecision -Task $Prompt -Draft $draftText -ContextFiles $contextCount
+    $routeSw.Stop()
+    $mode = [string]$decision.mode
+    if ($mode -notin @("improve", "delegate", "boost", "keep")) { $mode = "delegate" }
+    $tier = [string]$decision.tier
+    if ($decision.escalate -and $decision.tier -eq "rules") {
+        # The rules are unsure: let one fast model have the last word.
+        $escalated = Get-EscalatedMode -Task $Prompt -HasDraft (-not [string]::IsNullOrWhiteSpace($draftText)) -Fallback $mode
+        if ($escalated -ne $mode) {
+            [Console]::Error.WriteLine("[Delegator] быстрая модель изменила режим: $mode -> $escalated")
+            $mode = $escalated
+            $tier = "model"
+        } else {
+            $tier = "model-agreed"
+        }
+    }
+    # A mode that needs a draft cannot run without one, whatever the router said.
+    if ($mode -eq "improve" -and [string]::IsNullOrWhiteSpace($draftText)) { $mode = "delegate" }
+
+    if ($decision.PSObject.Properties.Name -contains "tier") { $decision.tier = $tier }
+    Write-RouterDecision -Decision $decision -Mode $mode -ElapsedMs $routeSw.ElapsedMilliseconds
+    Write-DelegateMetric -Stage "route" -Status $mode -LatencyMs $routeSw.ElapsedMilliseconds `
+        -Extra ("reason={0};tier={1};conf={2}" -f $decision.reason, $decision.tier, $decision.confidence)
+    [Console]::Error.WriteLine("[Delegator] режим: $mode ($($decision.reason), $($routeSw.ElapsedMilliseconds) мс)")
+
+    switch ($mode) {
+        "improve" { Run-Improve }
+        "boost" { $script:Boost = $true; Run-Ask }
+        "keep" {
+            # Nothing to do that would not cost more than it returns. Exit 3 is
+            # the same "keep your own answer" the improve contract already uses,
+            # so an agent needs no new branch.
+            Exit-Delegate 3
+        }
+        default { Run-Ask }
+    }
+}
+
 function Run-Improve {
     $improveSw = [System.Diagnostics.Stopwatch]::StartNew()
     $script:ImproveMissingContext = 0
@@ -1904,7 +2147,7 @@ $draftForReview
     # Falls over to the other backend rather than giving up: an exhausted
     # OpenCode free tier must not stop Delegator while the Google keys still
     # have quota.
-    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "verify"
     if ($checkResult.fellBack) {
         $reviewBackend = $checkResult.backend
         $reviewModel = $checkResult.model
@@ -1972,7 +2215,7 @@ $draftForReview
 
     # Same failover on the second call: the free tier can run out between the
     # review and the rewrite, and half a delegation is worth nothing.
-    $rewriteResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep"
+    $rewriteResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "improve"
     if ($rewriteResult.fellBack) {
         $reviewBackend = $rewriteResult.backend
         $reviewModel = $rewriteResult.model
@@ -2401,6 +2644,7 @@ function Run-Usage {
 # exit path including `exit` inside the Run-* handlers.
 try {
 switch ($Command) {
+    "assist" { Run-Assist }
     "ask" { Run-Ask }
     "delegate" { Run-Ask }
     "boost" { $Boost = $true; Run-Ask }

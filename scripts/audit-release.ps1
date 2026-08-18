@@ -8,7 +8,11 @@ $excludedRoots = @(
     (Join-Path $projectRoot ".git"),
     (Join-Path $projectRoot "target"),
     (Join-Path $projectRoot "dist"),
-    (Join-Path $projectRoot ".backup-pre-refactor")
+    (Join-Path $projectRoot ".backup-pre-refactor"),
+    # Agent worktrees: full checkouts of this same tree. Scanning them made the
+    # audit report 1026 "source files" for a 100-file project and multiplied
+    # every secret scan by ten.
+    (Join-Path $projectRoot ".claude")
 )
 $sourceExtensions = @(".rs", ".py", ".ps1", ".cmd", ".iss", ".toml", ".json", ".md", ".txt", ".yml", ".yaml")
 

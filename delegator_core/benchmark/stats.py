@@ -39,7 +39,38 @@ LEVEL_ORDER = {"fast": 0, "normal": 1, "deep": 2}
 # is not measuring anything and should be replaced.
 RETIRE_P_VALUE = 0.98
 
-ARMS = ("model", "delegator")
+ARMS = ("model", "delegator", "alone")
+
+# Only the MODEL arm says anything about how hard an item is. The delegator arm
+# is a byte copy of it most of the time (104 of 108 live pairs), so counting
+# both doubles every sample guard while adding no information, and the `alone`
+# arm measures Delegator's models rather than the item. Difficulty means one
+# thing: how often an ordinary IDE model fails this task.
+EVIDENCE_ARM = "model"
+
+
+def same_task_set(version: str, current: str) -> bool:
+    """True when two task-set versions may be pooled into one statistic.
+
+    Only the MAJOR part counts: 2.0 renamed classes and fixed a reference that
+    had been marking correct answers wrong, so 1.x samples of `topo-sort`
+    produce a discrimination of −0.539 for an item that is not broken any more.
+    The project already forbids comparing REPORTS across versions; item
+    statistics were pooling them anyway, and they steer the draw.
+    """
+    left = str(version or "").split(".")[0]
+    right = str(current or "").split(".")[0]
+    return bool(left) and left == right
+
+
+def for_task_set(items: list[dict], current: str) -> list[dict]:
+    """Only the items recorded under the current major task-set version."""
+    return [item for item in items if same_task_set(item.get("benchmarkVersion"), current)]
+
+
+def evidence_only(items: list[dict]) -> list[dict]:
+    """Only the rows that are independent evidence about an item's difficulty."""
+    return [item for item in items if str(item.get("arm") or "") == EVIDENCE_ARM]
 
 # The history is append-only, so it needs a ceiling: 24 lines per run means a
 # heavy user would otherwise carry every run they ever made forever.
@@ -80,6 +111,13 @@ def record_run(path: Path | str, report: dict) -> int:
                             "passed": bool(result.get("passed")),
                             "checksPassed": result.get("checksPassed"),
                             "checksTotal": result.get("checksTotal"),
+                            # True when Delegator handed the draft back
+                            # unchanged. Without it a tie cannot be told apart
+                            # from «Delegator never ran» — 11 of 12 tasks on
+                            # 2026-08-16 were byte-identical, and the report
+                            # said only «поровну».
+                            "identicalToModel": bool(result.get("identicalToModel")),
+                            "mode": result.get("mode") or "",
                             "failed": [
                                 check.get("id")
                                 for check in (result.get("checks") or [])
@@ -131,13 +169,19 @@ def load_items(path: Path | str, limit: int = MAX_LINES) -> list[dict]:
     return items
 
 
-def difficulty_map(items: list[dict]) -> dict[str, float]:
+def difficulty_map(items: list[dict], current_version: str = "") -> dict[str, float]:
     """{template id: measured pass share} for the weighted draw.
 
     Deliberately the raw mean over every recorded arm-answer, with no minimum
     sample size: one observation is weak evidence, but it is still evidence,
     and `templates._draw_weight` never lets a template's weight reach zero.
+    Items from an older major task set are dropped: they steer which tasks a
+    user is given, and a template that was graded by a broken reference in 1.6
+    must not bias the 2.x draw.
     """
+    if current_version:
+        items = for_task_set(items, current_version)
+    items = evidence_only(items)
     totals: dict[str, list[float]] = {}
     for item in items:
         totals.setdefault(str(item.get("template")), []).append(float(item.get("score") or 0.0))
@@ -165,13 +209,16 @@ def suggested_level(p_value: float) -> str:
     return "deep"
 
 
-def summarise(items: list[dict], known: dict[str, str] | None = None) -> dict:
+def summarise(items: list[dict], known: dict[str, str] | None = None, current_version: str = "") -> dict:
     """Per-template difficulty and discrimination, plus what to do about it.
 
     `known` maps template id → its current level, so the summary can also name
     the templates that have never been drawn yet: a sample that silently covers
     two thirds of the pool would read as if it covered all of it.
     """
+    if current_version:
+        items = for_task_set(items, current_version)
+    items = evidence_only(items)
     totals: dict[tuple, float] = {}
     for item in items:
         key = (item.get("runId"), item.get("arm"))
@@ -196,7 +243,10 @@ def summarise(items: list[dict], known: dict[str, str] | None = None) -> dict:
         )
         level = str(rows[-1].get("level") or (known or {}).get(template) or "")
         models = sorted({str(row.get("modelLabel") or "") for row in rows})
-        suggestion = suggested_level(p_value)
+        # Levelling on the FRACTIONAL score reads partial credit as easiness:
+        # `topo-sort` scores 0.95 on average while only 3 of 4 answers actually
+        # pass it. The level a task belongs to is about passing it.
+        suggestion = suggested_level(full_pass)
         templates.append(
             {
                 "template": template,
@@ -222,6 +272,7 @@ def summarise(items: list[dict], known: dict[str, str] | None = None) -> dict:
         "templates": templates,
         "unseen": unseen,
         "minSamplesForAdvice": MIN_SAMPLES_FOR_ADVICE,
+        "taskSet": current_version,
     }
 
 

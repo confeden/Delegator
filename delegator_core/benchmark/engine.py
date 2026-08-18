@@ -38,11 +38,26 @@ from .templates import LEVEL_POINTS, MAX_POINTS, TASKS_PER_RUN, Task, build_task
 # `topo-sort` REFERENCE was wrong for as long as it existed (DFS order instead
 # of the alphabetically-smallest-available the task demands) and marked correct
 # answers wrong. Nothing here is comparable with 1.6.
-BENCHMARK_VERSION = "2.1"
+# 2.2 — the EXTRACTOR changed, so scores can differ: a fence that merely quotes
+# the task's own material no longer counts as part of the answer. Found by
+# adversarial review, measured on a workspace draft as a correct answer scoring
+# 0.0 against a wrong one at 0.625.
+BENCHMARK_VERSION = "2.2"
 
 ARM_MODEL = "model"
 ARM_DELEGATOR = "delegator"
+# The third arm: Delegator answering the task from scratch, with no draft to
+# review. It exists because the paired arms cannot measure the product's actual
+# claim. `delegator` is improve(task, model draft), so on a correct draft the
+# only legal outcome is "keep" — the measured effect is bounded above by
+# (1 - model score), and live data agrees: 104 of 108 pairs score-identical,
+# seven runs at 28/28. `alone` is the only arm that ever exercises delegate,
+# boost, Get-StrongEnabledModel and the user's own providers, and it is not
+# bounded in either direction: it answers «is Delegator's model better than
+# mine on this class», which is the plug-in claim.
+ARM_ALONE = "alone"
 ARMS = (ARM_MODEL, ARM_DELEGATOR)
+ALL_ARMS = (ARM_MODEL, ARM_DELEGATOR, ARM_ALONE)
 
 MODE_COMPARE = "compare"
 MODE_SOLO = "solo"
@@ -64,6 +79,9 @@ class Answer:
     arm: str
     text: str
     elapsed_ms: int = 0
+    # Which mode Delegator chose for this answer (improve / delegate / boost /
+    # keep). Empty for the model arm and for any driver that does not report it.
+    mode: str = ""
 
 
 # What the run is doing right now, so the GUI can show progress instead of a
@@ -86,6 +104,23 @@ class RunState:
     stage: str = STAGE_WAITING
     current_task: int = 0
     updated_unix: int = 0
+    # How hard the model was told to think. Two runs of "the same" model at
+    # different reasoning levels are two different systems, and a report that
+    # names only the family («gpt-5») cannot be compared with anything later.
+    reasoning: str = ""
+
+    @property
+    def display_label(self) -> str:
+        """What every renderer prints: the model plus its reasoning level.
+
+        Composed here, in ONE place, so the txt, the PNG, the SVG, the GUI, the
+        verdict and items.jsonl all spell it identically — and so a level change
+        counts as a different model in the item statistics, which is exactly
+        what it is.
+        """
+        if not self.reasoning:
+            return self.model_label
+        return f"{self.model_label} · рассуждения: {self.reasoning}"
 
     def touch(self, task_index: int, stage: str) -> None:
         self.current_task = task_index
@@ -94,6 +129,14 @@ class RunState:
 
     def answered(self, arm: str) -> int:
         return sum(1 for entry in self.answers.values() if arm in entry)
+
+    def relabel(self, model_label: str, reasoning: str) -> None:
+        """Fixes the name of a run already in flight. The answers are untouched;
+        only the two strings the report prints change. Without this a run that
+        started with a wrong or missing model name had to be thrown away after
+        ten minutes of work."""
+        self.model_label = (model_label or "").strip()[:80]
+        self.reasoning = (reasoning or "").strip()[:40]
 
 
 class BenchmarkStore:
@@ -119,10 +162,52 @@ class BenchmarkStore:
         return self._runs.get(run_id)
 
     def active(self) -> RunState | None:
-        """The newest run still in flight — a machine runs one at a time."""
+        """The run somebody is actually DRIVING, or None.
+
+        Ordered by last activity, not by start time: on 2026-08-16 a Copilot
+        agent called `start` three times within minutes, drove the FIRST run to
+        task 11 and left the others empty — and the GUI, which followed the
+        newest start, showed «подготовка» for twelve minutes and then declared
+        the run dead while the chat was working fine. Whoever last submitted an
+        answer or a progress ping is the run that matters.
+        """
         if not self._runs:
             return None
-        return max(self._runs.values(), key=lambda state: state.started_unix)
+        return max(
+            self._runs.values(),
+            key=lambda state: (state.updated_unix or state.started_unix, state.started_unix),
+        )
+
+    def sweep(self) -> list[str]:
+        """Forgets abandoned EMPTY runs and returns their ids.
+
+        An agent that calls `start` twice leaves a zombie with no answers behind
+        it; those zombies are what made the app follow the wrong run. A run that
+        holds answers is never swept — that is somebody's work, and only an
+        explicit `cancel` may drop it.
+        """
+        now = int(time.time())
+        dead = [
+            state.run_id
+            for state in self._runs.values()
+            if not state.answers
+            and now - (state.updated_unix or state.started_unix) >= STALE_AFTER_SEC
+        ]
+        for run_id in dead:
+            self._runs.pop(run_id, None)
+        return dead
+
+    def busy(self, ignore_run_id: str = "") -> RunState | None:
+        """A run that is still being driven right now (touched within the stale
+        window), if any. `start` refuses while one exists: two runs at once make
+        the GUI, the answers and the report disagree about which is real."""
+        for state in self._runs.values():
+            if state.run_id == ignore_run_id:
+                continue
+            idle = int(time.time()) - (state.updated_unix or state.started_unix)
+            if idle < STALE_AFTER_SEC:
+                return state
+        return None
 
     def drop(self, run_id: str) -> None:
         self._runs.pop(run_id, None)
@@ -141,7 +226,13 @@ class BenchmarkStore:
             return None
 
 
-def generate_run(store: BenchmarkStore, mode: str, model_label: str, seed: int | None = None) -> dict:
+def generate_run(
+    store: BenchmarkStore,
+    mode: str,
+    model_label: str,
+    seed: int | None = None,
+    reasoning: str = "",
+) -> dict:
     mode = MODE_SOLO if mode == MODE_SOLO else MODE_COMPARE
     if seed is None:
         seed = uuid.uuid4().int % 10_000_000
@@ -152,7 +243,7 @@ def generate_run(store: BenchmarkStore, mode: str, model_label: str, seed: int |
     # back to the per-category priors, which is exactly what a fresh machine
     # needs. `None` would mean "uniform", and uniform is what produced 28/28.
     try:
-        difficulty = difficulty_map(load_items(store.items_path))
+        difficulty = difficulty_map(load_items(store.items_path), BENCHMARK_VERSION)
     except OSError:
         difficulty = {}
     tasks = build_tasks(seed, difficulty)
@@ -164,6 +255,7 @@ def generate_run(store: BenchmarkStore, mode: str, model_label: str, seed: int |
         started_unix=int(time.time()),
         tasks=tasks,
         updated_unix=int(time.time()),
+        reasoning=(reasoning or "").strip()[:40],
     )
     store.put(state)
     return {
@@ -174,7 +266,9 @@ def generate_run(store: BenchmarkStore, mode: str, model_label: str, seed: int |
         "delegatorVersion": APP_VERSION,
         "tasksPerRun": TASKS_PER_RUN,
         "maxPoints": MAX_POINTS,
-        "modelLabel": state.model_label,
+        "modelLabel": state.display_label,
+        "modelName": state.model_label,
+        "modelReasoning": state.reasoning,
         "tasks": [
             {
                 "index": index + 1,
@@ -190,13 +284,90 @@ def generate_run(store: BenchmarkStore, mode: str, model_label: str, seed: int |
     }
 
 
-def record_answer(state: RunState, task_index: int, arm: str, text: str, elapsed_ms: int = 0) -> None:
-    if arm not in ARMS:
+# Everything an agent types when it does not actually know what it is running.
+# Seen live on 2026-08-16: a VS Code Copilot agent started three runs, one of
+# them with -Model "unknown" -Reasoning "unknown".
+PLACEHOLDER_LABELS = {
+    "",
+    "unknown",
+    "unknown model",
+    "auto",
+    "copilot/auto",
+    "default",
+    "none",
+    "n/a",
+    "-",
+    "модель",
+    "неизвестная модель",
+    "неизвестно",
+}
+
+
+def model_label_problem(label: str) -> str | None:
+    """Why this label cannot go into a report, or None when it is usable.
+
+    A benchmark compares two systems; a report that names neither is not a
+    measurement, and it poisons items.jsonl for every later run. The agent
+    usually CAN read its own model — and when it cannot, the user always can,
+    so the answer is "ask them", not "invent a placeholder".
+    """
+    text = (label or "").strip()
+    if text.lower() in PLACEHOLDER_LABELS or len(text) < 3:
+        return (
+            "Нужно точное имя модели: спросите пользователя, какая модель и какой уровень "
+            "рассуждений выбраны в его IDE, и повторите start с -Model и -Reasoning. "
+            "Отчёт без имени модели ничего не измеряет."
+        )
+    if not any(char.isdigit() for char in text) and "-" not in text and "." not in text:
+        return (
+            f"«{text}» — это семейство, а не модель. Нужен точный идентификатор с версией "
+            "(gpt-5.4-mini, gemini-3.7-flash, claude-opus-4-8). Спросите пользователя, что "
+            "выбрано в переключателе моделей."
+        )
+    return None
+
+
+def answer_format_problem(task: Task, text: str) -> str | None:
+    """Mechanical check that the answer is the KIND of artefact this task asked
+    for, using the grader's OWN extractors — so this can never disagree with it.
+
+    Run 2026-08-15: the agent submitted the SQL task's answer under task 9 and a
+    Python function under the SQL task. Both scored 0 for «нет кода», and the
+    report announced a 6.4-point Delegator win that was pure file mix-up. The
+    grader cannot see intent; this refuses the submission while it is still
+    cheap to fix.
+    """
+    if task.checker["kind"] == "sqlite":
+        if not _extract_sql(text):
+            return (
+                f"Задача {task.title} требует SQL-запрос в блоке ```sql — в присланном файле "
+                "его нет. Проверьте, тот ли это файл: он должен решать ИМЕННО эту задачу."
+            )
+        return None
+    if not _extract_python(text):
+        return (
+            f"Задача {task.title} требует код Python в блоке ```python — в присланном файле "
+            "его нет. Проверьте, тот ли это файл: он должен решать ИМЕННО эту задачу."
+        )
+    return None
+
+
+def record_answer(
+    state: RunState,
+    task_index: int,
+    arm: str,
+    text: str,
+    elapsed_ms: int = 0,
+    mode: str = "",
+) -> None:
+    if arm not in ALL_ARMS:
         raise ValueError("unknown arm")
     if not 1 <= task_index <= len(state.tasks):
         raise ValueError("task index out of range")
     key = str(task_index)
-    state.answers.setdefault(key, {})[arm] = Answer(arm=arm, text=text or "", elapsed_ms=elapsed_ms)
+    state.answers.setdefault(key, {})[arm] = Answer(
+        arm=arm, text=text or "", elapsed_ms=elapsed_ms, mode=(mode or "").strip()[:24]
+    )
     state.touch(task_index, STAGE_MODEL if arm == ARM_MODEL else STAGE_DELEGATOR)
 
 
@@ -219,7 +390,7 @@ def run_status(state: RunState | None) -> dict | None:
         "stalledAfterSec": STALE_AFTER_SEC,
         "runId": state.run_id,
         "mode": state.mode,
-        "modelLabel": state.model_label,
+        "modelLabel": state.display_label,
         "tasksTotal": len(state.tasks),
         "answeredModel": state.answered(ARM_MODEL),
         "answeredDelegator": state.answered(ARM_DELEGATOR),
@@ -238,8 +409,34 @@ def run_status(state: RunState | None) -> dict | None:
 # ── grading ────────────────────────────────────────────────────────────────
 
 
-def _extract_python(answer: str) -> str:
-    """ALL the Python the answer gave, in order — not just the first block.
+def _quotes_given_material(block: str, task_text: str) -> bool:
+    """True when this fence just repeats code the TASK already handed over.
+
+    An answer is allowed to quote the material back — «вот это соглашение из
+    quota.py, поэтому я делаю так» is how a careful reader explains itself. But
+    the quoted module gets concatenated with the real answer and redefines
+    module-level names, and measured on a workspace draft that turned a CORRECT
+    answer into 0.0 while a WRONG one scored 0.625. The comparison is
+    whitespace-insensitive and needs three consecutive lines to match, so a
+    coincidental one-liner (`import re`) is never mistaken for a quote.
+    """
+    if not task_text:
+        return False
+    lines = [line.strip() for line in (block or "").splitlines() if line.strip()]
+    if len(lines) < 3:
+        return False
+    haystack = "\n".join(line.strip() for line in task_text.splitlines() if line.strip())
+    matched = 0
+    for index in range(len(lines) - 2):
+        window = "\n".join(lines[index:index + 3])
+        if window in haystack:
+            matched += 1
+    # More than half of the block's line windows come from the task: a quote.
+    return matched * 2 > max(1, len(lines) - 2)
+
+
+def _extract_python(answer: str, task_text: str = "") -> str:
+    """ALL the Python the answer WROTE, in order — not just the first block.
 
     Run #8: an answer put the function in one block and `import re` in a second
     with a note to move it. Taking only the first block scored a working answer
@@ -247,13 +444,16 @@ def _extract_python(answer: str) -> str:
     grader must read the code that was actually written, and Python binds a
     module-level import before any function is CALLED, so order does not matter
     here. Blocks that are pure demonstration (no import/def/class/assignment)
-    are skipped: `print(f([1,2]))` would otherwise run at grading time.
+    are skipped: `print(f([1,2]))` would otherwise run at grading time. Blocks
+    that only QUOTE the task's own material are skipped too — see
+    `_quotes_given_material`.
     """
     blocks = [match.group(1) for match in _CODE_FENCE.finditer(answer or "")]
     real = [
         block
         for block in blocks
         if re.search(r"(?m)^\s*(import\s+\w|from\s+\w|def\s+\w|class\s+\w|@\w|\w+\s*=)", block)
+        and not _quotes_given_material(block, task_text)
     ]
     if real:
         return "\n\n".join(real)
@@ -458,7 +658,7 @@ def grade_answer(task: Task, answer_text: str) -> dict:
             return _score_checks(checks, {}, "в ответе нет SQL-запроса")
         script = _sqlite_script(task, query)
     else:
-        code = _extract_python(answer_text)
+        code = _extract_python(answer_text, task.text)
         if not code:
             return _score_checks(checks, {}, "в ответе нет кода Python")
         script = _python_script(task, code)
@@ -506,6 +706,11 @@ CATEGORY_LABELS = {
 
 # Below this the difference is float noise from proportional partial credit.
 EPSILON = 1e-9
+
+# The smallest per-task difference the report is willing to call a win. All
+# three renderers round to one decimal, so anything under this prints as two
+# identical numbers next to the word «лучше».
+VISIBLE_POINT_DIFFERENCE = 0.05
 
 # Significance level for the paired test, and the smallest number of tasks that
 # could ever reach it. Printed next to every "не доказано" so the verdict says
@@ -634,7 +839,7 @@ def _profile(rows: list[dict], mode: str) -> dict:
 def finish_run(store: BenchmarkStore, state: RunState) -> dict:
     state.touch(state.current_task, STAGE_FINISHED)
     rows: list[dict] = []
-    totals = {ARM_MODEL: 0.0, ARM_DELEGATOR: 0.0}
+    totals = {ARM_MODEL: 0.0, ARM_DELEGATOR: 0.0, ARM_ALONE: 0.0}
     counts = {"better": 0, "worse": 0, "same": 0}
 
     for index, task in enumerate(state.tasks, start=1):
@@ -647,8 +852,12 @@ def finish_run(store: BenchmarkStore, state: RunState) -> dict:
             "category": task.category,
             "points": task.points,
         }
-        for arm in ARMS:
+        for arm in ALL_ARMS:
             if arm == ARM_DELEGATOR and state.mode == MODE_SOLO:
+                continue
+            if arm == ARM_ALONE and (state.mode == MODE_SOLO or ARM_ALONE not in submitted):
+                # Optional: a run that never asked Delegator to answer alone is
+                # still a valid run, and an absent arm must not be scored zero.
                 continue
             answer = submitted.get(arm)
             if answer is None:
@@ -675,13 +884,30 @@ def finish_run(store: BenchmarkStore, state: RunState) -> dict:
                 "elapsedMs": answer.elapsed_ms,
                 **verdict,
             }
+            # Which mode Delegator chose, on whichever arm it produced.
+            if answer.mode:
+                row[arm]["mode"] = answer.mode
+            if arm == ARM_DELEGATOR:
+                # A tie means one of two very different things: «Delegator
+                # looked and had nothing to fix» or «Delegator never really
+                # ran». On 2026-08-16 eleven of twelve Delegator answers were
+                # byte-identical to the model's, and the report could not say
+                # so. Now it can, and so can items.jsonl.
+                model_answer = submitted.get(ARM_MODEL)
+                row[arm]["identicalToModel"] = bool(
+                    model_answer is not None and model_answer.text == answer.text
+                )
         if state.mode == MODE_COMPARE:
+            # Points, not passes, decide the per-task winner — but a difference
+            # of 1e-9 is float noise, and the 2026-08-15 headline «лучше в 3
+            # задачах» was two protocol artefacts plus one 0.43-point fraction.
+            # A tenth of a point is the smallest difference the report prints.
             model_points = (row.get(ARM_MODEL) or {}).get("points", 0)
             delegator_points = (row.get(ARM_DELEGATOR) or {}).get("points", 0)
-            if delegator_points > model_points + EPSILON:
+            if delegator_points > model_points + VISIBLE_POINT_DIFFERENCE:
                 row["winner"] = ARM_DELEGATOR
                 counts["better"] += 1
-            elif model_points > delegator_points + EPSILON:
+            elif model_points > delegator_points + VISIBLE_POINT_DIFFERENCE:
                 row["winner"] = ARM_MODEL
                 counts["worse"] += 1
             else:
@@ -691,24 +917,37 @@ def finish_run(store: BenchmarkStore, state: RunState) -> dict:
 
     totals = {arm: round(value, 2) for arm, value in totals.items()}
     stats = _pair_stats(rows) if state.mode == MODE_COMPARE else None
+    comparability = _comparability(rows) if state.mode == MODE_COMPARE else None
     report = {
         "benchmarkVersion": BENCHMARK_VERSION,
         "delegatorVersion": APP_VERSION,
         "runId": state.run_id,
         "seed": state.seed,
         "mode": state.mode,
-        "modelLabel": state.model_label,
+        "modelLabel": state.display_label,
+        "modelName": state.model_label,
+        "modelReasoning": state.reasoning,
         "finishedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "maxPoints": MAX_POINTS,
         "tasks": rows,
         "totals": {
             ARM_MODEL: totals[ARM_MODEL],
             ARM_DELEGATOR: totals[ARM_DELEGATOR] if state.mode == MODE_COMPARE else None,
+            # None when the run never asked Delegator to answer alone.
+            ARM_ALONE: (
+                totals[ARM_ALONE]
+                if any(ARM_ALONE in (row or {}) for row in rows)
+                else None
+            ),
         },
         "counts": counts if state.mode == MODE_COMPARE else None,
+        # How many of the twelve tasks were a REAL comparison. A tie means one
+        # thing when Delegator looked and found nothing, and quite another when
+        # the provider was down — and until 0.6.0 both looked identical.
+        "comparability": comparability,
         "profile": _profile(rows, state.mode),
         "stats": stats,
-        "verdict": _verdict_text(state, totals, counts, stats),
+        "verdict": _verdict_text(state, totals, counts, stats, comparability),
     }
     store.save_last(report)
     # Item statistics outlive the run: difficulty and discrimination are what
@@ -721,11 +960,61 @@ def finish_run(store: BenchmarkStore, state: RunState) -> dict:
     return report
 
 
-def _verdict_text(state: RunState, totals: dict, counts: dict, stats: dict | None) -> str:
+def _comparability(rows: list[dict]) -> dict:
+    """How much of this run was an actual comparison.
+
+    `changed` is the number of tasks where Delegator handed back something
+    different from the draft; `identical` is where it handed the draft straight
+    back; `unavailable` is where it could not run at all. Only the first two are
+    evidence about quality, and only `changed` can move a score.
+    """
+    pairs = changed = identical = unavailable = alone = 0
+    by_mode: dict[str, int] = {}
+    alone_by_mode: dict[str, int] = {}
+    for row in rows:
+        result = row.get(ARM_DELEGATOR)
+        if not isinstance(result, dict) or not result.get("answered"):
+            continue
+        pairs += 1
+        mode = str(result.get("mode") or "")
+        if mode:
+            by_mode[mode] = by_mode.get(mode, 0) + 1
+        if mode in ("unavailable", "timeout"):
+            unavailable += 1
+        elif result.get("identicalToModel"):
+            identical += 1
+        else:
+            changed += 1
+        alone_result = row.get(ARM_ALONE)
+        if isinstance(alone_result, dict) and alone_result.get("answered"):
+            alone += 1
+            alone_mode = str(alone_result.get("mode") or "")
+            if alone_mode:
+                alone_by_mode[alone_mode] = alone_by_mode.get(alone_mode, 0) + 1
+    return {
+        "pairs": pairs,
+        "changed": changed,
+        "identical": identical,
+        "unavailable": unavailable,
+        "alone": alone,
+        "byMode": by_mode,
+        # Which modes the router picked when Delegator answered from scratch:
+        # the only place `delegate` and `boost` are ever exercised.
+        "aloneByMode": alone_by_mode,
+    }
+
+
+def _verdict_text(
+    state: RunState,
+    totals: dict,
+    counts: dict,
+    stats: dict | None,
+    comparability: dict | None = None,
+) -> str:
     model_points = totals[ARM_MODEL]
     if state.mode == MODE_SOLO:
         return (
-            f"Модель «{state.model_label}» набрала {format_points(model_points)} "
+            f"Модель «{state.display_label}» набрала {format_points(model_points)} "
             f"из {MAX_POINTS} баллов. Delegator в этом прогоне не участвовал."
         )
     delegator_points = totals[ARM_DELEGATOR]
@@ -743,7 +1032,7 @@ def _verdict_text(state: RunState, totals: dict, counts: dict, stats: dict | Non
     else:
         head = "Delegator не изменил итоговый балл."
     text = (
-        f"{head} Модель «{state.model_label}»: {format_points(model_points)} из {MAX_POINTS}, "
+        f"{head} Модель «{state.display_label}»: {format_points(model_points)} из {MAX_POINTS}, "
         f"с Delegator: {format_points(delegator_points)} из {MAX_POINTS}. "
         f"Delegator лучше в {counts['better']} "
         f"{plural(counts['better'], 'задаче', 'задачах', 'задачах')}, "
@@ -754,6 +1043,37 @@ def _verdict_text(state: RunState, totals: dict, counts: dict, stats: dict | Non
         text += (
             " Обе стороны решили всё — для этой модели набор задач оказался лёгким, "
             "и сравнение ничего не показывает. Запустите ещё раз: задачи будут другими."
+        )
+    if comparability:
+        # Until 0.6.0 «поровну в 12» covered three different worlds: Delegator
+        # looked and kept the answer, Delegator never ran, and Delegator was not
+        # asked. Each of them now has its own sentence.
+        if comparability["unavailable"]:
+            text += (
+                f" ВНИМАНИЕ: в {comparability['unavailable']} "
+                f"{plural(comparability['unavailable'], 'задаче', 'задачах', 'задачах')} "
+                "Delegator не смог ответить (провайдер недоступен) — это не ничья, "
+                "а отсутствующее сравнение."
+            )
+        if comparability["pairs"] and not comparability["changed"]:
+            text += (
+                " Delegator не изменил НИ ОДНОГО ответа: на этом классе задач вашей модели "
+                "помощь не нужна, и прогон измеряет только это."
+            )
+        elif comparability["changed"]:
+            text += (
+                f" Delegator реально вмешался в {comparability['changed']} "
+                f"{plural(comparability['changed'], 'задаче', 'задачах', 'задачах')} "
+                f"из {comparability['pairs']}."
+            )
+    alone_points = totals.get(ARM_ALONE)
+    if comparability and comparability.get("alone") and alone_points is not None:
+        # The arm that answers the owner's actual claim: how good is Delegator
+        # WITHOUT the model's draft to lean on.
+        text += (
+            f" Delegator сам, без вашего ответа: {format_points(alone_points)} из {MAX_POINTS} "
+            f"({comparability['alone']} "
+            f"{plural(comparability['alone'], 'задача', 'задачи', 'задач')})."
         )
     if stats:
         text += " " + stats["text"]
@@ -894,6 +1214,8 @@ def render_text(report: dict) -> str:
             f"Итого с Delegator: {format_points(totals.get(ARM_DELEGATOR))} "
             f"из {report.get('maxPoints')}"
         )
+    # One line, never a column: the printed table stays twelve rows wide.
+    lines.extend(alone_lines(report))
     profile_lines = _profile_lines(report)
     if profile_lines:
         lines.append("")
@@ -911,6 +1233,35 @@ def render_text(report: dict) -> str:
     )
     lines.append("Ни одна модель не оценивала ответы.")
     return "\n".join(lines) + "\n"
+
+
+def alone_lines(report: dict) -> list[str]:
+    """The two honesty lines every renderer prints, or nothing.
+
+    Shared by the txt, the SVG and (through the report) the PNG and the GUI, so
+    the four of them cannot drift into saying different things about the same
+    run — the same reason `format_points` is duplicated rather than reinvented.
+    """
+    lines: list[str] = []
+    totals = report.get("totals") or {}
+    comparability = report.get("comparability") or {}
+    alone = totals.get(ARM_ALONE)
+    if alone is not None:
+        lines.append(
+            f"Delegator сам (без вашего ответа): {format_points(alone)} "
+            f"из {report.get('maxPoints')}"
+        )
+    if comparability.get("pairs"):
+        lines.append(
+            "Сравнений по существу: {changed} из {pairs} "
+            "(вернул ваш ответ без изменений: {identical}, не смог ответить: {unavailable})".format(
+                changed=comparability.get("changed", 0),
+                pairs=comparability.get("pairs", 0),
+                identical=comparability.get("identical", 0),
+                unavailable=comparability.get("unavailable", 0),
+            )
+        )
+    return lines
 
 
 def _escape(text: str) -> str:

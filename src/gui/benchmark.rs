@@ -105,6 +105,7 @@ pub struct BenchmarkReport {
     pub tasks: Vec<BenchmarkTask>,
     pub totals: BenchmarkTotals,
     pub counts: Option<BenchmarkCounts>,
+    pub comparability: Option<BenchmarkComparability>,
     /// Score per level and per category — the answer to «где отставание».
     pub profile: Option<BenchmarkProfile>,
     /// The paired test and how much evidence a proof would still need.
@@ -194,6 +195,32 @@ pub struct CheckResult {
 pub struct BenchmarkTotals {
     pub model: Option<f64>,
     pub delegator: Option<f64>,
+    /// The third arm: Delegator answering the task with no draft to lean on.
+    /// None for a run that did not ask for it (and for every pre-0.6.0 report).
+    pub alone: Option<f64>,
+}
+
+/// How much of the run was a real comparison. A tie means one thing when
+/// Delegator looked and kept the answer, and quite another when the provider
+/// was down — before 0.6.0 both printed as «поровну».
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BenchmarkComparability {
+    pub pairs: u32,
+    pub changed: u32,
+    pub identical: u32,
+    pub unavailable: u32,
+    pub alone: u32,
+}
+
+impl BenchmarkComparability {
+    /// «Сравнений по существу: 1 из 12 (вернул ваш ответ: 11, не смог: 0)».
+    pub fn line(&self) -> String {
+        format!(
+            "Сравнений по существу: {} из {} (вернул ваш ответ без изменений: {}, не смог ответить: {})",
+            self.changed, self.pairs, self.identical, self.unavailable
+        )
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

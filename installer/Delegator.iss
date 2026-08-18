@@ -1,5 +1,5 @@
-﻿#define MyAppName "Delegator"
-#define MyAppVersion "0.5.18"
+#define MyAppName "Delegator"
+#define MyAppVersion "0.6.3"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -64,6 +64,8 @@ Source: "..\scripts\ai-delegate-plan.ps1"; DestDir: "{app}\runtime"; Flags: igno
 Source: "..\scripts\ai-delegate-parallel.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate-parallel.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\delegator-common.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\scripts\cursor-hook.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\scripts\cursor-hook.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\gemini-delegate.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\gemini-delegate.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\opencode-delegate.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion

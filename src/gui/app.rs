@@ -1881,9 +1881,6 @@ impl eframe::App for DelegatorApp {
                             });
                         ui.add_space(8.0);
                     }
-                    if let Some(run_id) = cancel_request {
-                        self.cancel_benchmark(run_id);
-                    }
 
                     if let Some(status) = self.benchmark_status.clone().filter(|s| !s.stalled) {
                         let status = &status;
@@ -1919,12 +1916,33 @@ impl eframe::App for DelegatorApp {
                                         format!("Сейчас: {}", status.current_title),
                                     );
                                 }
-                                ui.colored_label(
-                                    self.theme.weak_text_color(),
-                                    "Окно можно закрыть — прогон идёт в чате IDE.",
-                                );
+                                // The chat can die without the core noticing for
+                                // ten minutes (a rate limit, a closed session),
+                                // and until then the tab kept saying «идёт» with
+                                // no way out. Stopping it by hand is that way.
+                                ui.horizontal(|ui| {
+                                    ui.colored_label(
+                                        self.theme.weak_text_color(),
+                                        "Окно можно закрыть — прогон идёт в чате IDE.",
+                                    );
+                                    if ui
+                                        .small_button("Прекратить")
+                                        .on_hover_text(
+                                            "Если чат IDE упал или вы остановили прогон вручную: \
+                                             Delegator забудет его и перестанет ждать. Отчёта по \
+                                             этому прогону не будет.",
+                                        )
+                                        .clicked()
+                                    {
+                                        cancel_request = Some(status.run_id.clone());
+                                    }
+                                });
                             });
                         ui.add_space(8.0);
+                    }
+
+                    if let Some(run_id) = cancel_request {
+                        self.cancel_benchmark(run_id);
                     }
 
                     if let Some(error) = &self.benchmark_error {
@@ -2071,6 +2089,32 @@ impl eframe::App for DelegatorApp {
                                 }
                                 ui.end_row();
                             });
+
+                        // Two sentences that used to be invisible: what
+                        // Delegator scores WITHOUT the model's answer to lean
+                        // on, and how many of the twelve tasks were a real
+                        // comparison at all.
+                        if let Some(alone) = report.totals.alone {
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Delegator сам, без вашего ответа: {}/{}",
+                                    format_points(alone),
+                                    report.max_points
+                                ))
+                                .strong(),
+                            )
+                            .on_hover_text(
+                                "Единственное плечо, которое проверяет саму идею: модели \
+                                 Delegator решают ту же задачу с нуля. Проверка вашего ответа \
+                                 не может поднять балл, если ответ уже верный.",
+                            );
+                        }
+                        if let Some(comparability) = &report.comparability {
+                            if comparability.pairs > 0 {
+                                ui.colored_label(weak, comparability.line());
+                            }
+                        }
 
                         // Where the lead or the lag is. A single total answers
                         // «помог ли Delegator» and never answers «на чём».

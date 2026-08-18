@@ -60,6 +60,29 @@ jobs:
             exit 1
           }
 
+      - name: Check .ps1 files carry no control characters
+        shell: pwsh
+        run: |
+          # A real BACKSPACE character sat inside a word-boundary regex in
+          # ai-delegate.ps1 from the day it was written: the match never fired,
+          # so every Pro model was ranked one tier too low and nothing failed
+          # loudly. Parsing cannot catch it - the file is valid PowerShell.
+          $bad = @()
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            $found = $bytes | Where-Object { $_ -lt 9 -or $_ -eq 11 -or $_ -eq 12 -or ($_ -ge 14 -and $_ -le 31) }
+            if ($found) { $bad += "$($_.Name): $(@($found | Select-Object -Unique) -join ',')" }
+            # A BARE carriage return - one not followed by a newline - is the
+            # same trap wearing a legal byte: an escape that became a literal.
+            # It has now produced three separate defects (a regex that never
+            # matched, a path that did not exist, a comment cut in half).
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+            if ($text -replace "`r`n", '' -match "`r") { $bad += "$($_.Name): bare CR" }
+          }
+          if ($bad) {
+            $bad | ForEach-Object { Write-Output "Control character in a script (an escape that became a literal): $_" }
+            exit 1
+          }
       - name: Audit source package
         shell: pwsh
         run: .\scripts\audit-release.ps1

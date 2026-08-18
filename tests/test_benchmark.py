@@ -143,6 +143,100 @@ def test_full_run_scores_and_reports(tmp_path):
     assert stored["runId"] == report["runId"]
 
 
+def test_reasoning_level_travels_into_every_renderer(tmp_path):
+    # «gpt-5» says nothing: the same family at two thinking levels is two
+    # different systems, and the report has to name which one ran.
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(
+        store, mode="compare", model_label="gpt-5.4-mini", seed=4242, reasoning="лёгкий"
+    )
+    assert started["modelLabel"] == "gpt-5.4-mini · рассуждения: лёгкий"
+    assert started["modelName"] == "gpt-5.4-mini"
+    assert started["modelReasoning"] == "лёгкий"
+
+    state = store.get(started["runId"])
+    status = engine.run_status(state)
+    assert status["modelLabel"] == "gpt-5.4-mini · рассуждения: лёгкий"
+
+    report = engine.finish_run(store, state)
+    assert report["modelName"] == "gpt-5.4-mini"
+    assert report["modelReasoning"] == "лёгкий"
+    for rendered in (report["modelLabel"], report["verdict"], engine.render_text(report),
+                     engine.render_svg(report)):
+        assert "gpt-5.4-mini · рассуждения: лёгкий" in rendered
+
+    # Nothing said about the level → nothing invented.
+    plain = engine.generate_run(store, mode="solo", model_label="gpt-5.4-mini", seed=4243)
+    assert plain["modelLabel"] == "gpt-5.4-mini"
+    assert plain["modelReasoning"] == ""
+
+
+def test_a_run_must_name_the_model_it_measures():
+    # Prose asked twice and was ignored twice: «gpt-5» (a family, not a model)
+    # and -Model "unknown". A report that names neither system it compares is
+    # not a measurement, so the refusal is mechanical.
+    for bad in ("", "unknown", "неизвестная модель", "auto", "copilot/auto", "мо"):
+        assert engine.model_label_problem(bad), bad
+    assert "спросите" in engine.model_label_problem("gpt").lower()
+    for good in ("gpt-5.4-mini", "gemini-3.7-flash", "claude-opus-4-8", "big-pickle"):
+        assert engine.model_label_problem(good) is None, good
+
+
+def test_the_wrong_answer_file_is_refused_not_scored_zero(tmp_path):
+    # 2026-08-15: the SQL task got a Python function and task 9 got the SQL
+    # query. Both scored 0 for «нет кода», and the report announced a 6.4-point
+    # Delegator win that was pure file mix-up.
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(store, mode="compare", model_label="gpt-5.4-mini", seed=2026)
+    state = store.get(started["runId"])
+
+    sql_task = next((t for t in state.tasks if t.checker["kind"] == "sqlite"), None)
+    code_task = next(t for t in state.tasks if t.checker["kind"] != "sqlite")
+
+    python_answer = "```python\ndef longest_streak(days):\n    return 0\n```"
+    sql_answer = "```sql\nSELECT user_id FROM logins;\n```"
+
+    if sql_task is not None:
+        assert engine.answer_format_problem(sql_task, python_answer)
+        assert engine.answer_format_problem(sql_task, sql_answer) is None
+    assert engine.answer_format_problem(code_task, sql_answer)
+    assert engine.answer_format_problem(code_task, python_answer) is None
+    # Prose that solves nothing is still refused — the grader would read it as 0.
+    assert engine.answer_format_problem(code_task, "Я не знаю ответа.")
+
+
+def test_the_active_run_is_the_one_being_driven(tmp_path):
+    # 2026-08-16: three runs were started within minutes, the FIRST was driven
+    # to task 11, and the app followed the newest start — so it showed
+    # «подготовка» and then «прогон прерван» while the chat was working.
+    store = engine.BenchmarkStore(tmp_path)
+    driven = store.get(engine.generate_run(store, mode="compare", model_label="m-1", seed=5)["runId"])
+    abandoned = store.get(engine.generate_run(store, mode="compare", model_label="m-2", seed=6)["runId"])
+    abandoned.started_unix = driven.started_unix + 5  # started later, never touched
+    abandoned.updated_unix = abandoned.started_unix
+    driven.touch(7, engine.STAGE_MODEL)  # somebody is actually answering here
+    driven.updated_unix = abandoned.started_unix + 700  # twelve minutes of real work
+
+    assert store.active().run_id == driven.run_id
+    # And a second `start` is refusable while that run is alive.
+    assert store.busy() is not None
+    assert store.busy(ignore_run_id=driven.run_id).run_id == abandoned.run_id
+
+
+def test_a_run_can_be_renamed_while_it_is_in_flight(tmp_path):
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(store, mode="solo", model_label="gpt-5.4-mini", seed=9)
+    state = store.get(started["runId"])
+    engine.record_answer(state, 1, engine.ARM_MODEL, "```python\ndef f():\n    return 1\n```")
+
+    state.relabel("gemini-3.7-flash", "high")
+    assert state.display_label == "gemini-3.7-flash · рассуждения: high"
+    assert len(state.answers) == 1, "renaming must not touch the answers"
+    report = engine.finish_run(store, state)
+    assert report["modelName"] == "gemini-3.7-flash"
+    assert "gemini-3.7-flash" in report["verdict"]
+
+
 def test_solo_mode_has_no_delegator_column(tmp_path):
     store = engine.BenchmarkStore(tmp_path)
     started = engine.generate_run(store, mode="solo", model_label="solo-model", seed=11)
@@ -626,11 +720,16 @@ def test_a_run_never_asks_the_same_template_twice():
 
 
 def test_difficulty_map_is_the_measured_pass_share():
+    # Only the MODEL arm is evidence about an item: the delegator arm is a byte
+    # copy of it in 104 of 108 live pairs, and the `alone` arm measures
+    # Delegator's own models rather than the task.
     items = [
-        {"template": "hard", "score": 0.0},
-        {"template": "hard", "score": 0.5},
-        {"template": "easy", "score": 1.0},
-        {"template": "easy", "score": 1.0},
+        {"template": "hard", "arm": "model", "score": 0.0},
+        {"template": "hard", "arm": "model", "score": 0.5},
+        {"template": "hard", "arm": "delegator", "score": 1.0},
+        {"template": "easy", "arm": "model", "score": 1.0},
+        {"template": "easy", "arm": "model", "score": 1.0},
+        {"template": "easy", "arm": "alone", "score": 0.0},
     ]
     assert stats.difficulty_map(items) == {"hard": 0.25, "easy": 1.0}
 
@@ -704,3 +803,117 @@ def test_the_whole_template_pool_is_enumerable():
     # or `build_tasks` starts handing out the same task twice in one run.
     for level, count in LEVEL_MIX.items():
         assert len(TEMPLATES[level]) >= count, level
+
+
+def test_the_third_arm_measures_delegator_without_a_draft(tmp_path):
+    # `delegator` is improve(task, model draft): on a correct draft it can only
+    # keep it, so the measured effect is bounded above by zero — seven runs in a
+    # row came back 28/28 vs 28/28. The `alone` arm has no such ceiling.
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(store, mode="compare", model_label="gpt-5.4-mini", seed=2026)
+    state = store.get(started["runId"])
+    index, task = next(
+        (i, t) for i, t in enumerate(state.tasks, start=1) if t.template_id in CORRECT_ANSWERS
+    )
+    answer = CORRECT_ANSWERS[task.template_id]
+    engine.record_answer(state, index, engine.ARM_MODEL, answer)
+    engine.record_answer(state, index, engine.ARM_DELEGATOR, answer, mode="keep")
+    engine.record_answer(state, index, engine.ARM_ALONE, answer, mode="delegate")
+
+    report = engine.finish_run(store, state)
+    row = report["tasks"][index - 1]
+    assert row[engine.ARM_ALONE]["points"] == task.points
+    assert report["totals"]["alone"] == task.points
+    # The pair is still a tie, and the report now says WHY it is a tie.
+    assert row[engine.ARM_DELEGATOR]["identicalToModel"] is True
+    comparability = report["comparability"]
+    assert comparability["pairs"] == 1 and comparability["identical"] == 1
+    assert comparability["changed"] == 0 and comparability["alone"] == 1
+    assert comparability["byMode"] == {"keep": 1}
+    assert "не изменил НИ ОДНОГО ответа" in report["verdict"]
+    assert "Delegator сам" in report["verdict"]
+    assert any("Delegator сам" in line for line in engine.alone_lines(report))
+
+
+def test_a_dead_provider_is_not_reported_as_a_tie(tmp_path):
+    # Every way `improve` could fail used to collapse into "kept the draft",
+    # so a provider outage was byte-indistinguishable from an honest keep.
+    store = engine.BenchmarkStore(tmp_path)
+    started = engine.generate_run(store, mode="compare", model_label="gpt-5.4-mini", seed=2026)
+    state = store.get(started["runId"])
+    index, task = next(
+        (i, t) for i, t in enumerate(state.tasks, start=1) if t.template_id in CORRECT_ANSWERS
+    )
+    answer = CORRECT_ANSWERS[task.template_id]
+    engine.record_answer(state, index, engine.ARM_MODEL, answer)
+    engine.record_answer(state, index, engine.ARM_DELEGATOR, answer, mode="unavailable")
+
+    report = engine.finish_run(store, state)
+    assert report["comparability"]["unavailable"] == 1
+    assert report["comparability"]["changed"] == 0
+    assert "не смог ответить" in report["verdict"]
+    assert report["totals"]["alone"] is None, "an arm nobody ran must not be scored"
+
+
+def test_item_statistics_count_only_the_model_arm():
+    # 104 of 108 recorded pairs are byte copies: counting both arms doubles
+    # every sample guard while adding no information about the ITEM.
+    rows = [
+        {"template": "t", "arm": "model", "score": 0.0, "points": 0, "passed": False,
+         "runId": "r1", "benchmarkVersion": "2.1", "level": "deep", "modelLabel": "m"},
+        {"template": "t", "arm": "delegator", "score": 0.0, "points": 0, "passed": False,
+         "runId": "r1", "benchmarkVersion": "2.1", "level": "deep", "modelLabel": "m"},
+        {"template": "t", "arm": "alone", "score": 1.0, "points": 3, "passed": True,
+         "runId": "r1", "benchmarkVersion": "2.1", "level": "deep", "modelLabel": "m"},
+        # An older task set: the same template was graded by a broken reference.
+        {"template": "t", "arm": "model", "score": 1.0, "points": 3, "passed": True,
+         "runId": "r0", "benchmarkVersion": "1.6", "level": "deep", "modelLabel": "m"},
+    ]
+    summary = stats.summarise(rows, {"t": "deep"}, "2.1")
+    assert summary["samples"] == 1, "one model-arm row from the current task set"
+    assert summary["templates"][0]["pValue"] == 0.0
+    assert stats.difficulty_map(rows, "2.1") == {"t": 0.0}
+
+
+def test_an_answer_that_quotes_the_task_is_not_punished_for_it():
+    """Found by adversarial review of the workspace class, 2026-08-16.
+
+    A CORRECT answer that quotes the decisive snippet back («вот это правило,
+    поэтому я делаю так») had the quoted code concatenated with its own
+    solution: measured 0.0 for the correct answer against 0.625 for one that
+    misread the rule. Quoting is how a careful reader explains itself, and the
+    grader must read what the answer WROTE.
+    """
+    task = _task_of("safe-div")
+    quoting = (
+        "В задании уже дана вспомогательная функция, вот она:\n\n"
+        "```python\n"
+        "def safe_div(a, b):\n"
+        "    # ЭТО ЦИТАТА ИЗ УСЛОВИЯ, не мой ответ\n"
+        "    return a / b\n"
+        "```\n\n"
+        "Мой ответ:\n\n"
+        "```python\n"
+        "def safe_div(a, b):\n"
+        "    return None if b == 0 else a / b\n"
+        "```\n"
+    )
+    # The quoted block is not in the task text, so it is the answer's own code:
+    # both blocks count, the last definition wins, and the answer passes.
+    assert engine.grade_answer(task, quoting)["passed"]
+
+    # Now the same shape where the quoted block REALLY comes from the task.
+    quoted_from_task = "\n".join(task.text.splitlines()[:6])
+    if len([line for line in quoted_from_task.splitlines() if line.strip()]) >= 3:
+        answer = (
+            "Из условия:\n\n```python\n" + quoted_from_task + "\n```\n\n"
+            "Ответ:\n\n```python\ndef safe_div(a, b):\n    return None if b == 0 else a / b\n```\n"
+        )
+        assert engine.grade_answer(task, answer)["passed"]
+
+    # And a block that is a verbatim quote of given material is dropped.
+    given = "def helper(x):\n    return x + 1\n\n\nclass Store:\n    pass\n"
+    assert engine._quotes_given_material(given, "Дано:\n" + given)
+    assert not engine._quotes_given_material(given, "Ничего общего с этим текстом.")
+    # Two lines are never enough to call something a quote.
+    assert not engine._quotes_given_material("import re\nimport os\n", "import re\nimport os\n")

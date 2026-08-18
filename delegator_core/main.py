@@ -24,12 +24,14 @@ from .benchmark import (
     ARM_MODEL,
     BENCHMARK_VERSION,
     BenchmarkStore,
+    answer_format_problem,
     export_report,
     finish_run,
     generate_run,
     known_template_ids,
     load_items,
     missing_answers,
+    model_label_problem,
     record_answer,
     run_status,
     summarise,
@@ -1139,11 +1141,44 @@ def create_app() -> FastAPI:
         mode = str(payload.get("mode") or "compare")
         model = str(payload.get("model") or "")
         seed = payload.get("seed")
+        forced = bool(payload.get("force"))
+
+        # Prose in BENCHMARK.md asked for the model name twice and was ignored
+        # twice (2026-08-15 «gpt-5», 2026-08-16 «unknown»). Mechanical refusal.
+        problem = model_label_problem(model)
+        if problem and not forced:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "model_unnamed", "message": problem},
+            )
+
+        # One machine drives one run. Three at once is what made the app show
+        # «подготовка» while the chat was already on task 11. Abandoned EMPTY
+        # runs are forgotten first, so a zombie can never block a fresh start.
+        core.benchmark.sweep()
+        busy = core.benchmark.busy()
+        if busy is not None and not forced:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "run_in_flight",
+                    "message": (
+                        f"Прогон {busy.run_id} ещё идёт (решено задач "
+                        f"{busy.answered(ARM_MODEL)} из {len(busy.tasks)}). Продолжите его или "
+                        f"прекратите: benchmark.ps1 cancel -RunId {busy.run_id}"
+                    ),
+                    "runId": busy.run_id,
+                },
+            )
         return generate_run(
             core.benchmark,
             mode=mode,
             model_label=model,
             seed=int(seed) if seed not in (None, "") else None,
+            # Which thinking level the IDE was set to. «gpt-5» at minimal effort
+            # and the same model at high effort are two different systems, and a
+            # report that does not say which one ran cannot be compared later.
+            reasoning=str(payload.get("reasoning") or ""),
         )
 
     @app.post("/api/benchmark/answer")
@@ -1152,17 +1187,59 @@ def create_app() -> FastAPI:
         state = core.benchmark.get(str(payload.get("runId") or ""))
         if state is None:
             raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
+        task_index = int(payload.get("task") or 0)
+        arm = str(payload.get("arm") or "")
+        text = str(payload.get("answer") or "")
+
+        # The model arm is what a human or an agent hands in, and a hand-in can
+        # be the wrong file. Refuse while it is still cheap: the Delegator arm is
+        # produced by `improve` and is recorded as-is, because a bad rewrite is
+        # evidence, not a protocol error.
+        if (
+            arm == ARM_MODEL
+            and not bool(payload.get("force"))
+            and 1 <= task_index <= len(state.tasks)
+        ):
+            problem = answer_format_problem(state.tasks[task_index - 1], text)
+            if problem:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "wrong_artefact", "message": problem, "task": task_index},
+                )
         try:
             record_answer(
                 state,
-                task_index=int(payload.get("task") or 0),
-                arm=str(payload.get("arm") or ""),
-                text=str(payload.get("answer") or ""),
+                task_index=task_index,
+                arm=arm,
+                text=text,
                 elapsed_ms=int(payload.get("elapsedMs") or 0),
+                mode=str(payload.get("mode") or ""),
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return {"ok": True, "accepted": len(state.answers)}
+
+    @app.post("/api/benchmark/label")
+    def benchmark_label(payload: dict[str, Any]) -> dict[str, Any]:
+        """Fixes the model name of a run already in flight.
+
+        A run that started unnamed used to be worth throwing away: the label is
+        printed in the report and grouped on in items.jsonl, and the answers
+        cannot be moved to another run. Renaming touches nothing else.
+        """
+        core: AppState = app.state.core
+        run_id = str(payload.get("runId") or "")
+        state = core.benchmark.get(run_id) if run_id else core.benchmark.active()
+        if state is None:
+            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
+        model = str(payload.get("model") or "")
+        problem = model_label_problem(model)
+        if problem and not bool(payload.get("force")):
+            raise HTTPException(
+                status_code=422, detail={"error": "model_unnamed", "message": problem}
+            )
+        state.relabel(model, str(payload.get("reasoning") or ""))
+        return {"ok": True, "runId": state.run_id, "modelLabel": state.display_label}
 
     @app.post("/api/benchmark/finish")
     def benchmark_finish(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1230,15 +1307,20 @@ def create_app() -> FastAPI:
         """
         core: AppState = app.state.core
         run_id = str(payload.get("runId") or "")
+        # Without an id this drops the run being DRIVEN (what `active` means
+        # since 0.6.0), because that is what both callers mean by "stop it":
+        # the tab shows that run and the agent is working on that run.
         state = core.benchmark.get(run_id) if run_id else core.benchmark.active()
+        swept = core.benchmark.sweep()
         if state is None:
-            return {"ok": True, "cancelled": None}
+            return {"ok": True, "cancelled": None, "swept": swept}
         core.benchmark.drop(state.run_id)
         return {
             "ok": True,
             "cancelled": state.run_id,
             "answeredModel": state.answered(ARM_MODEL),
             "tasksTotal": len(state.tasks),
+            "swept": [run for run in swept if run != state.run_id],
         }
 
     @app.get("/api/benchmark/items")
@@ -1253,7 +1335,7 @@ def create_app() -> FastAPI:
         """
         core: AppState = app.state.core
         items = load_items(core.benchmark.items_path)
-        summary = summarise(items, known_template_ids())
+        summary = summarise(items, known_template_ids(), BENCHMARK_VERSION)
         return {"ok": True, "benchmarkVersion": BENCHMARK_VERSION, **summary}
 
     @app.post("/api/benchmark/export")

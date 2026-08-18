@@ -64,7 +64,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Rust release build failed." }
 
     $staticDir = Join-Path $projectRoot "delegator_core\static"
-    & $pyinstaller --noconfirm --clean --onefile --noconsole --name delegator-core `
+    # --noupx on purpose: PyInstaller silently uses UPX whenever it happens to be
+    # on PATH, and one appeared here via winget between two releases. The payload
+    # is identical either way (probed: PIL renders a PNG, sqlite runs), but the
+    # artefact then shrinks by 5.5 MB and every byte of it is packed - which is a
+    # textbook antivirus heuristic for an unsigned installer, and it makes the
+    # build depend on what is installed on the machine rather than on this file.
+    & $pyinstaller --noconfirm --clean --onefile --noconsole --noupx --name delegator-core `
         --add-data "$staticDir;delegator_core\static" `
         --distpath "target\release" --workpath "target\pyinstaller\work" `
         --specpath "target\pyinstaller" "run_server.py"
@@ -81,4 +87,4 @@ try {
     }
 }
 
-Get-Item (Join-Path $projectRoot "dist\DelegatorSetup-0.5.18.exe")
+Get-Item (Join-Path $projectRoot "dist\DelegatorSetup-0.6.3.exe")

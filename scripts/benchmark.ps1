@@ -13,22 +13,31 @@
     start   - ask the core for 12 randomised tasks, write them next to each other
     answer  - submit YOUR answer for one task (the Delegator arm follows here)
     finish  - grade everything, print the verdict, write the report to the Desktop
+    cancel  - drop a run you cannot finish, so the app stops waiting for it
+    relabel - fix the model name of a run already in flight
     last    - print the report of the previous run
 
 .EXAMPLE
-    .\benchmark.ps1 start -Mode compare -Model "gemini-3.6-flash"
+    .\benchmark.ps1 start -Mode compare -Model "gpt-5.4-mini" -Reasoning "лёгкий"
     .\benchmark.ps1 answer -RunId ab12cd34 -Task 1 -File C:\...\answer-01.md
     .\benchmark.ps1 finish -RunId ab12cd34
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("start", "answer", "finish", "last")]
+    [ValidateSet("start", "answer", "finish", "cancel", "relabel", "last")]
     [string]$Command = "start",
 
     [ValidateSet("compare", "solo")]
     [string]$Mode = "compare",
 
     [string]$Model = "",
+
+    # Reasoning / thinking level the IDE is set to ("минимальный", "low",
+    # "extended"...). Free text on purpose: every vendor names it differently,
+    # and a report that says only «gpt-5» cannot be compared with a later run of
+    # the same family at a different level.
+    [string]$Reasoning = "",
+
     [string]$RunId = "",
     [int]$Task = 0,
     [string]$File = "",
@@ -37,7 +46,13 @@ param(
 
     # Publish a run with answers missing. Those tasks score zero for the arm
     # that never answered, so this is for a run that cannot be completed.
-    [switch]$Force
+    [switch]$Force,
+
+    # Skip the third arm (Delegator answering the task from scratch, with no
+    # draft). It roughly doubles the wall-clock of a run, and it is the only
+    # arm that measures the product's actual claim — so it is ON by default and
+    # this switch exists for a quick smoke run, not for a real measurement.
+    [switch]$NoAlone
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,21 +140,39 @@ function Read-RunMeta([string]$Id) {
 }
 
 function Start-Run {
-    $payload = @{ mode = $Mode; model = $Model }
+    $payload = @{ mode = $Mode; model = $Model; reasoning = $Reasoning; force = [bool]$Force }
     if ($Seed -gt 0) { $payload.seed = $Seed }
-    $run = Get-CoreData -Path "/api/benchmark/start" -Body $payload
+    # 422 = the model was not named, 409 = another run is still being driven.
+    # Both are protocol errors with a fix the agent can carry out, so they come
+    # back as instructions instead of "the core is down".
+    $started = Invoke-Core -Path "/api/benchmark/start" -Body $payload
+    if (-not $started.ok) {
+        if ($started.status -eq 422 -or $started.status -eq 409) {
+            [Console]::Error.WriteLine([string]$started.data.detail.message)
+            exit 4
+        }
+        throw "Delegator Core вернул ошибку HTTP $($started.status). $($started.raw)"
+    }
+    $run = $started.data
 
     $runDir = Get-RunDir $run.runId
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
     $meta = [pscustomobject]@{
         runId = $run.runId; mode = $run.mode; seed = $run.seed
         benchmarkVersion = $run.benchmarkVersion; delegatorVersion = $run.delegatorVersion
-        modelLabel = $run.modelLabel; dir = $runDir
+        modelLabel = $run.modelLabel; modelName = $run.modelName
+        modelReasoning = $run.modelReasoning; dir = $runDir
     }
     Write-Utf8 (Join-Path $runDir "run.json") ($meta | ConvertTo-Json -Depth 5)
 
     Write-Output ("RUN {0}" -f $run.runId)
     Write-Output ("MODE {0}" -f $run.mode)
+    # Printed back so a wrong label is caught NOW and not after ten minutes: the
+    # report is worthless if it names the wrong model or the wrong thinking level.
+    Write-Output ("МОДЕЛЬ В ОТЧЁТЕ: {0}" -f $run.modelLabel)
+    if ([string]::IsNullOrWhiteSpace($Reasoning)) {
+        Write-Output "  уровень рассуждений не указан — добавьте -Reasoning ""<уровень в вашей IDE>"""
+    }
     Write-Output ("TASKS {0} (максимум {1} баллов, набор задач v{2})" -f $run.tasksPerRun, $run.maxPoints, $run.benchmarkVersion)
     Write-Output ("DIR {0}" -f $runDir)
     Write-Output ""
@@ -154,10 +187,22 @@ function Start-Run {
     Write-Output ("  benchmark.ps1 answer -RunId {0} -Task <N> -File <путь к вашему ответу>" -f $run.runId)
 }
 
-function Get-ImprovedAnswer {
+function Get-DelegatorAnswer {
     # Runs the Delegator arm for one task: the SAME task plus the agent's own
-    # draft. Exit 0 means the answer was rewritten (its first line is the marker
-    # ##DELEGATOR_IMPROVE##); anything else means "keep the draft".
+    # draft, through `assist` — so what is measured is THE PRODUCT (Delegator
+    # deciding what to do), not one hard-coded mode.
+    #
+    # Until 0.6.0 this called `improve` directly, which made the arm
+    # delegator = f(model draft): on a correct draft the only legal outcome is
+    # "keep", so the measured effect was bounded above by zero for exactly the
+    # strong models the product is for. Seven runs ended 28/28 vs 28/28, and on
+    # 2026-08-16 eleven of twelve Delegator answers were byte-identical.
+    #
+    # Outcomes, all of which the report must be able to tell apart:
+    #   exit 0 + ##DELEGATOR_IMPROVE## -> the corrected answer follows the marker
+    #   exit 0, no marker              -> Delegator answered the task itself
+    #   exit 3                         -> keep the draft (a real decision)
+    #   anything else                  -> Delegator was UNAVAILABLE (not a tie)
     param([string]$TaskFile, [string]$DraftFile)
     $dispatcher = Join-Path $script:DelegateBinHome "ai-delegate.ps1"
     $outFile = [System.IO.Path]::GetTempFileName()
@@ -165,18 +210,39 @@ function Get-ImprovedAnswer {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $dispatcher,
-            "improve", "-PromptFile", $TaskFile, "-DraftFile", $DraftFile)
+            "assist", "-PromptFile", $TaskFile)
+        # No draft = the third arm: Delegator answers the task itself.
+        if (-not [string]::IsNullOrWhiteSpace($DraftFile)) { $arguments += @("-DraftFile", $DraftFile) }
         $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -NoNewWindow -PassThru `
             -RedirectStandardOutput $outFile -RedirectStandardError $errFile
         # Caching the handle is required, or ExitCode stays $null after a timed wait.
         $null = $proc.Handle
         if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
             try { $proc.Kill() } catch {}
-            return [pscustomobject]@{ text = (Read-Utf8 $DraftFile); changed = $false; ms = [int]$sw.ElapsedMilliseconds }
+            return [pscustomobject]@{ text = $(if ($DraftFile -and (Test-Path -LiteralPath $DraftFile)) { Read-Utf8 $DraftFile } else { "" }); changed = $false; mode = "timeout"
+                                      unavailable = $true; ms = [int]$sw.ElapsedMilliseconds }
         }
         $stdout = if (Test-Path $outFile) { Read-Utf8 $outFile } else { "" }
+        # `assist` reports its decision on stderr: «[Delegator] режим: improve (...)».
+        # The report needs it, because "poровну" means one thing when Delegator
+        # looked and found nothing and another when it never ran.
+        $mode = ""
+        if (Test-Path $errFile) {
+            $stderrText = Read-Utf8 $errFile
+            $match = [regex]::Match($stderrText, "режим:\s*([a-z]+)")
+            if ($match.Success) { $mode = $match.Groups[1].Value }
+        }
+        if ($proc.ExitCode -eq 3) {
+            # A real decision: Delegator looked and kept the draft.
+            return [pscustomobject]@{ text = $(if ($DraftFile -and (Test-Path -LiteralPath $DraftFile)) { Read-Utf8 $DraftFile } else { "" }); changed = $false
+                                      mode = $(if ($mode) { $mode } else { "keep" })
+                                      unavailable = $false; ms = [int]$sw.ElapsedMilliseconds }
+        }
         if ($proc.ExitCode -ne 0) {
-            return [pscustomobject]@{ text = (Read-Utf8 $DraftFile); changed = $false; ms = [int]$sw.ElapsedMilliseconds }
+            # Not a tie: Delegator could not run at all (quota, dead provider).
+            return [pscustomobject]@{ text = $(if ($DraftFile -and (Test-Path -LiteralPath $DraftFile)) { Read-Utf8 $DraftFile } else { "" }); changed = $false
+                                      mode = $(if ($mode) { $mode } else { "unavailable" })
+                                      unavailable = $true; ms = [int]$sw.ElapsedMilliseconds }
         }
         # Strip the marker line and anything from the next ##DELEGATOR_ line on
         # (the usage marker is appended last when the core asks for it).
@@ -192,10 +258,18 @@ function Get-ImprovedAnswer {
             $body += $line
         }
         $text = ($body -join "`n").Trim()
-        if ([string]::IsNullOrWhiteSpace($text)) {
-            return [pscustomobject]@{ text = (Read-Utf8 $DraftFile); changed = $false; ms = [int]$sw.ElapsedMilliseconds }
+        if (-not $started) {
+            # No marker: Delegator answered the task itself (delegate / boost).
+            $text = ($stdout -replace "`r`n", "`n").Trim()
         }
-        return [pscustomobject]@{ text = $text; changed = $true; ms = [int]$sw.ElapsedMilliseconds }
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            return [pscustomobject]@{ text = $(if ($DraftFile -and (Test-Path -LiteralPath $DraftFile)) { Read-Utf8 $DraftFile } else { "" }); changed = $false
+                                      mode = $(if ($mode) { $mode } else { "keep" })
+                                      unavailable = $false; ms = [int]$sw.ElapsedMilliseconds }
+        }
+        return [pscustomobject]@{ text = $text; changed = $true
+                                  mode = $(if ($mode) { $mode } else { "improve" })
+                                  unavailable = $false; ms = [int]$sw.ElapsedMilliseconds }
     } finally {
         Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
     }
@@ -212,20 +286,59 @@ function Submit-Answer {
     $answer = Read-Utf8 $File
     $ownCopy = Join-Path $runDir ("answer-{0:d2}-model.md" -f $Task)
     Write-Utf8 $ownCopy $answer
-    [void](Get-CoreData -Path "/api/benchmark/answer" -Body @{ runId = $RunId; task = $Task; arm = "model"; answer = $answer })
+    $accepted = Invoke-Core -Path "/api/benchmark/answer" -Body @{
+        runId = $RunId; task = $Task; arm = "model"; answer = $answer; force = [bool]$Force
+    }
+    if (-not $accepted.ok) {
+        if ($accepted.status -eq 422) {
+            # Almost always the wrong file for this task number (seen live).
+            [Console]::Error.WriteLine([string]$accepted.data.detail.message)
+            [Console]::Error.WriteLine("Если ответ действительно без кода — повторите с -Force.")
+            exit 5
+        }
+        if ($accepted.status -eq 404) {
+            throw "Прогон не найден: он уже завершён или Delegator перезапускался. Начните заново: benchmark.ps1 start"
+        }
+        throw "Delegator Core вернул ошибку HTTP $($accepted.status). $($accepted.raw)"
+    }
     Write-Output ("Задача {0}: ваш ответ принят." -f $Task)
 
     if ($meta.mode -ne "compare") { return }
 
     $taskFile = Join-Path $runDir ("task-{0:d2}.txt" -f $Task)
     Send-Progress -Id $RunId -TaskIndex $Task -Stage "delegator"
-    $improved = Get-ImprovedAnswer -TaskFile $taskFile -DraftFile $ownCopy
+    $improved = Get-DelegatorAnswer -TaskFile $taskFile -DraftFile $ownCopy
     $delegatorCopy = Join-Path $runDir ("answer-{0:d2}-delegator.md" -f $Task)
     Write-Utf8 $delegatorCopy $improved.text
     [void](Get-CoreData -Path "/api/benchmark/answer" -Body @{
-        runId = $RunId; task = $Task; arm = "delegator"; answer = $improved.text; elapsedMs = $improved.ms
+        runId = $RunId; task = $Task; arm = "delegator"; answer = $improved.text
+        elapsedMs = $improved.ms; mode = [string]$improved.mode; force = $true
     })
-    $state = if ($improved.changed) { "переписал ответ" } else { "оставил ваш ответ" }
+    if (-not $NoAlone) {
+        # THE THIRD ARM. `delegator` is Delegator reviewing YOUR answer, so on a
+        # correct draft it can only keep it — the measured effect is bounded
+        # above by zero, which is why seven runs in a row ended 28/28 vs 28/28.
+        # This arm hands Delegator the task with NO draft: it is the only one
+        # that exercises delegate/boost/custom providers, and the only one that
+        # answers «а модели Delegator сами решают это лучше или хуже моей?».
+        Send-Progress -Id $RunId -TaskIndex $Task -Stage "delegator"
+        $alone = Get-DelegatorAnswer -TaskFile $taskFile -DraftFile ""
+        if (-not $alone.unavailable -and -not [string]::IsNullOrWhiteSpace($alone.text)) {
+            $aloneCopy = Join-Path $runDir ("answer-{0:d2}-alone.md" -f $Task)
+            Write-Utf8 $aloneCopy $alone.text
+            [void](Get-CoreData -Path "/api/benchmark/answer" -Body @{
+                runId = $RunId; task = $Task; arm = "alone"; answer = $alone.text
+                elapsedMs = $alone.ms; mode = [string]$alone.mode; force = $true
+            })
+            Write-Output ("Задача {0}: Delegator сам ответил через {1} ({2:N1} с)." -f $Task, $alone.mode, ($alone.ms / 1000))
+        } else {
+            Write-Output ("Задача {0}: Delegator сам ответить не смог — это плечо пропущено." -f $Task)
+        }
+    }
+
+    $state = if ($improved.unavailable) { "не смог ответить (провайдер недоступен)" }
+             elseif ($improved.changed) { "ответил сам ($($improved.mode))" }
+             else { "оставил ваш ответ ($($improved.mode))" }
     Write-Output ("Задача {0}: Delegator {1} ({2:N1} с)." -f $Task, $state, ($improved.ms / 1000))
     Send-Progress -Id $RunId -TaskIndex $Task -Stage "waiting"
 }
@@ -253,6 +366,40 @@ function Complete-Run {
         throw "Delegator Core вернул ошибку HTTP $($result.status). $($result.raw)"
     }
     Show-Report $result.data
+}
+
+function Rename-Run {
+    # Renames a run already in flight: the answers stay, only what the report
+    # prints changes. This is the repair path for a run started without -Model.
+    if ([string]::IsNullOrWhiteSpace($Model)) { throw "Нужен -Model с точным именем модели" }
+    $payload = @{ model = $Model; reasoning = $Reasoning }
+    if (-not [string]::IsNullOrWhiteSpace($RunId)) { $payload.runId = $RunId }
+    $result = Invoke-Core -Path "/api/benchmark/label" -Body $payload
+    if (-not $result.ok) {
+        if ($result.status -eq 422) { throw ([string]$result.data.detail.message) }
+        if ($result.status -eq 404) { throw "Прогон не найден: начните заново (benchmark.ps1 start)" }
+        throw "Delegator Core вернул ошибку HTTP $($result.status). $($result.raw)"
+    }
+    Write-Output ("Прогон {0}: модель в отчёте теперь «{1}»." -f $result.data.runId, $result.data.modelLabel)
+}
+
+function Stop-Run {
+    # A run lives in the core's memory, and the app shows «Бенчмарк идёт» until
+    # it is finished or dropped. When the agent cannot go on - a rate limit, an
+    # overloaded backend, the user stopping the run - this is what ends it. The
+    # core notices a silent chat by itself, but only after ten minutes.
+    $payload = @{}
+    if (-not [string]::IsNullOrWhiteSpace($RunId)) { $payload.runId = $RunId }
+    $result = Invoke-Core -Path "/api/benchmark/cancel" -Body $payload
+    if (-not $result.ok) {
+        throw "Delegator Core вернул ошибку HTTP $($result.status). $($result.raw)"
+    }
+    if ($null -eq $result.data.cancelled) {
+        Write-Output "Активных прогонов нет — прекращать нечего."
+        return
+    }
+    Write-Output ("Прогон {0} прекращён: решено задач {1} из {2}. Отчёта по нему не будет." -f `
+        $result.data.cancelled, $result.data.answeredModel, $result.data.tasksTotal)
 }
 
 function Show-Last {
@@ -334,5 +481,7 @@ switch ($Command) {
     "start" { Start-Run }
     "answer" { Submit-Answer }
     "finish" { Complete-Run }
+    "cancel" { Stop-Run }
+    "relabel" { Rename-Run }
     "last" { Show-Last }
 }
