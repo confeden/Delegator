@@ -249,7 +249,15 @@ def test_solo_mode_has_no_delegator_column(tmp_path):
     assert all("delegator" not in row for row in report["tasks"])
 
 
+def _require_pillow():
+    """The PNG path needs Pillow. It is a build dependency, not a test one, so a
+    machine without it must say the check was SKIPPED rather than quietly assert
+    the SVG fallback — the fallback is a safety net, never the contract."""
+    pytest.importorskip("PIL", reason="Pillow is a build dependency of the core")
+
+
 def test_export_writes_both_files(tmp_path, monkeypatch):
+    _require_pillow()
     store = engine.BenchmarkStore(tmp_path)
     started = engine.generate_run(store, mode="solo", model_label="m", seed=3)
     report = engine.finish_run(store, store.get(started["runId"]))
@@ -309,6 +317,7 @@ def test_export_writes_a_png_that_chats_accept(tmp_path, monkeypatch):
     """The shared picture must be a raster image: Telegram warns about .svg
     ("the sender may learn your IP"), which is the last thing a report meant for
     sharing should do."""
+    _require_pillow()
     store = engine.BenchmarkStore(tmp_path)
     started = engine.generate_run(store, mode="compare", model_label="png-model", seed=17)
     report = engine.finish_run(store, store.get(started["runId"]))

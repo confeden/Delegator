@@ -38,7 +38,11 @@ jobs:
 
       - name: Run Python tests
         run: |
-          python -m pip install --disable-pip-version-check pytest
+          # Pillow too: the PNG report is a shipped feature (the frozen core
+          # always bundles it), and without it the export tests only ever see
+          # the SVG fallback. The runner image used to happen to have Pillow;
+          # when it stopped, two tests started failing on a green product.
+          python -m pip install --disable-pip-version-check pytest pillow
           python -m pytest tests -q
 
       - name: Parse PowerShell scripts
