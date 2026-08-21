@@ -15,7 +15,7 @@ eframe = "0.29.1"
 # Same version eframe already depends on: needed to read the HWND.
 raw-window-handle = "0.6"
 egui = "0.29.1"
-tray-icon = "0.19.0"
+tray-icon = "0.24.2"
 
 # Async and Networking
 tokio = { version = "1.40", features = ["full"] }
