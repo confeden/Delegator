@@ -38,6 +38,23 @@ $ModelSettingsFile = Join-Path $DelegateHome "delegate-model-settings.json"
 $OpenCodeConfigDir = Join-Path $DelegateHome "opencode-config"
 $OpenCodeWorkDir = Join-Path $DelegateHome "opencode-workdir"
 $OpenCodeGuiModelStateFile = Join-Path $env:USERPROFILE ".local\state\opencode\model.json"
+
+# ── Benchmark isolation ───────────────────────────────────────────────────────
+# A benchmark run must never reach the usage numbers: it burns tokens on tasks
+# the user never asked for, so counting it inflates both "spent" and "saved".
+# benchmark.ps1 holds <RT>\benchmark-active.json between `start` and
+# `finish`/`cancel`; a stale flag is ignored so a dead agent cannot switch
+# accounting off forever. ONE OF THREE COPIES - see delegator-common.ps1.
+$BenchmarkFlagFile = Join-Path $DelegateHome "benchmark-active.json"
+$BenchmarkStaleHours = 6
+
+function Test-DelegatorBenchmarkActive {
+    try {
+        if (-not (Test-Path -LiteralPath $BenchmarkFlagFile)) { return $false }
+        $age = [DateTime]::UtcNow - ([IO.File]::GetLastWriteTimeUtc($BenchmarkFlagFile))
+        return ($age.TotalHours -lt $BenchmarkStaleHours)
+    } catch { return $false }
+}
 $DelegatorAppConfigFile = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
 $OpenCodeBigPickleModel = if ($env:CODEX_OPENCODE_BIG_PICKLE_MODEL) { $env:CODEX_OPENCODE_BIG_PICKLE_MODEL } else { "opencode/big-pickle" }
 $OpenCodeNemotronModel = if ($env:CODEX_OPENCODE_NEMOTRON_MODEL) { $env:CODEX_OPENCODE_NEMOTRON_MODEL } else { "opencode/nemotron-3-ultra-free" }
@@ -504,36 +521,39 @@ Do not use tools or inspect local files unless the TASK explicitly requires it.
 $ZenCatalogMaxAgeHours = 24
 
 function Get-ZenModelStrength {
-    # Heuristic strength score from the alias NAME (Zen publishes no benchmark or
-    # size metadata for its free aliases). Keep in sync with the copy in
-    # update-free-models.ps1. Scoring: base 50; strongest matching positive
-    # qualifier only: ultra +40, pro/max +30, large/big +20, flash/standard +10;
-    # cumulative negatives: mini -20, tiny/nano/lite -30; plus the major version
-    # digit (1-9) as a small recency bump when trivially parseable from the name
-    # ("v2.5" -> +2, "-3.0-" -> +3).
+    # DPR of a Zen alias, for the inline catalog refresh below.
+    #
+    # This used to be a SECOND copy of the alias-name heuristic, and leaving it
+    # here after the table landed was a real defect, not a tidiness issue: the
+    # inline refresh rewrites the catalog, so every regeneration silently put the
+    # old numbers back. Measured right after the 0.7 install — the cache was
+    # correctly invalidated, immediately rebuilt, and `nemotron-3-ultra` came
+    # back as 93 (deep tier) instead of the 99 the table gives it.
+    #
+    # Unrated aliases (stealth names like big-pickle, x-preview-f) get the
+    # neutral normal-tier score so they stay reachable without being trusted.
     param([string]$ModelId)
-    $name = [string]$ModelId
-    if ($name.StartsWith("opencode/", [StringComparison]::OrdinalIgnoreCase)) {
-        $name = $name.Substring("opencode/".Length)
-    }
-    $score = 50
-    if ($name -match '(?i)(^|[-_.])ultra([-_.]|$)') { $score += 40 }
-    elseif ($name -match '(?i)(^|[-_.])(pro|max)([-_.]|$)') { $score += 30 }
-    elseif ($name -match '(?i)(^|[-_.])(large|big)([-_.]|$)') { $score += 20 }
-    elseif ($name -match '(?i)(^|[-_.])(flash|standard)([-_.]|$)') { $score += 10 }
-    if ($name -match '(?i)(^|[-_.])mini([-_.]|$)') { $score -= 20 }
-    if ($name -match '(?i)(^|[-_.])(tiny|nano|lite)([-_.]|$)') { $score -= 30 }
-    if ($name -match '(?i)(^|[-_.])v?([1-9])(\.\d+)?([-_.]|$)') { $score += [int]$Matches[2] }
-    return [int]$score
+    $rating = Get-DelegatorModelRating $ModelId
+    if ($null -ne $rating) { return [int]$rating }
+    return [int]$script:DelegateUnratedDpr
 }
 
 function Read-ZenCatalog {
     # Returns a map: zen model id -> strength. Empty map when the catalog is
-    # missing/corrupt - callers then fall back to the hardcoded pools.
+    # missing/corrupt - callers then fall back to the ratings table directly.
+    #
+    # A catalog whose `ratingsVersion` does not match the shipped table is
+    # REJECTED, not used. The catalog is a cache of model-ratings.json, and it is
+    # only rewritten when it ages past 24 h - so without this check an upgrade
+    # that changes the ratings would keep routing on yesterday's numbers for a
+    # whole day. Measured on the 0.7 upgrade: the catalog still scored
+    # `nemotron-3-ultra` 93 (top of the deep tier) hours after the table that
+    # scores it 99/fast had shipped.
     $map = @{}
     if (-not (Test-Path -LiteralPath $ZenCatalogFile)) { return $map }
     try {
         $catalog = Get-Content -LiteralPath $ZenCatalogFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$catalog.ratingsVersion -ne (Get-DelegatorRatingsVersion)) { return @{} }
         foreach ($row in @($catalog.models)) {
             $id = ([string]$row.id).Trim()
             if ($id -match '^opencode/[0-9A-Za-z._-]+$') { $map[$id] = [int]$row.strength }
@@ -542,15 +562,79 @@ function Read-ZenCatalog {
     return $map
 }
 
-function Get-ModelStrength {
-    # Catalog strength for try-sequence ordering; ids missing from the catalog
-    # (openrouter/*, catalog absent) get the neutral 50.
+# ── Model ratings (DPR) ───────────────────────────────────────────────────────
+# DPR = Delegator Programming Rating from the SHIPPED model-ratings.json next to
+# this script. 0 means "cannot program at all" (whisper, orpheus, prompt-guard,
+# embeddings) and the scale has NO upper bound; the 2026-08 snapshot tops at 156.
+# A row matches by the LONGEST substring of the lowercased id, so one row serves
+# every provider prefix and glm-5.2 beats glm-5. Unknown id -> $null, never 0.
+#
+# ONE OF FOUR COPIES - delegator-common.ps1, opencode-delegate.ps1 (here),
+# update-free-models.ps1 and src\gui\opencode_setup.rs. Change them together.
+$script:DelegateModelRatingsFile = Join-Path $PSScriptRoot "model-ratings.json"
+$script:DelegateDprDeep = 130
+$script:DelegateDprNormal = 100
+$script:DelegateUnratedDpr = 100
+$script:DelegateRatingRows = $null
+$script:DelegateRatingsVersion = $null
+
+# `version` of the shipped table. The Zen catalog stamps it, so a table that
+# changed invalidates every cached score instead of waiting out the 24 h TTL.
+# BUMP IT whenever a dpr value changes, or the cache will not notice.
+function Get-DelegatorRatingsVersion {
+    if ($null -ne $script:DelegateRatingsVersion) { return $script:DelegateRatingsVersion }
+    $null = Get-DelegatorRatingRows
+    return $script:DelegateRatingsVersion
+}
+
+function Get-DelegatorRatingRows {
+    if ($null -ne $script:DelegateRatingRows) { return $script:DelegateRatingRows }
+    $rows = @()
+    $script:DelegateRatingsVersion = 0
+    try {
+        if (Test-Path -LiteralPath $script:DelegateModelRatingsFile) {
+            $raw = Get-Content -LiteralPath $script:DelegateModelRatingsFile -Raw -Encoding UTF8
+            if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) { $raw = $raw.Substring(1) }
+            $parsed = $raw | ConvertFrom-Json
+            $script:DelegateRatingsVersion = [int]$parsed.version
+            foreach ($entry in @($parsed.models)) {
+                if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
+                if ($null -eq $entry.dpr) { continue }
+                $rows += [pscustomobject]@{
+                    match = ([string]$entry.match).ToLowerInvariant()
+                    dpr   = [int]$entry.dpr
+                }
+            }
+        }
+    } catch { $rows = @() }
+    $script:DelegateRatingRows = @($rows | Sort-Object @{ Expression = { $_.match.Length }; Descending = $true })
+    return $script:DelegateRatingRows
+}
+
+function Get-DelegatorModelRating {
     param([string]$ModelId)
-    if ([string]::IsNullOrWhiteSpace($ModelId)) { return 50 }
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
+    $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
+    foreach ($row in (Get-DelegatorRatingRows)) {
+        if ($name.Contains($row.match)) { return [int]$row.dpr }
+    }
+    return $null
+}
+
+function Get-ModelStrength {
+    # DPR for try-sequence ordering. The Zen catalog wins when it carries the id
+    # (it is generated from the same table); everything else - and that is every
+    # non-Zen provider, including the user's strongest models - resolves through
+    # the ratings table. Unknown ids get DelegateUnratedDpr, not 0: an unmeasured
+    # model must stay reachable, it just must not be trusted with hard work.
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return [int]$script:DelegateUnratedDpr }
     if ($script:ZenStrengthMap -and $script:ZenStrengthMap.ContainsKey($ModelId)) {
         return [int]$script:ZenStrengthMap[$ModelId]
     }
-    return 50
+    $rating = Get-DelegatorModelRating $ModelId
+    if ($null -ne $rating) { return [int]$rating }
+    return [int]$script:DelegateUnratedDpr
 }
 
 function Update-ZenCatalogIfStale {
@@ -559,7 +643,10 @@ function Update-ZenCatalogIfStale {
     # A refresh failure must never break a request: swallow everything and keep
     # routing on the stale/absent file.
     try {
-        if (Test-Path -LiteralPath $ZenCatalogFile) {
+        # A catalog built from a DIFFERENT ratings table is stale no matter how
+        # young it is: Read-ZenCatalog already refuses it, and leaving it in
+        # place would keep the router on the fallback for 24 h after an upgrade.
+        if ((Test-Path -LiteralPath $ZenCatalogFile) -and (Read-ZenCatalog).Count -gt 0) {
             $ageHours = ([DateTime]::UtcNow - (Get-Item -LiteralPath $ZenCatalogFile).LastWriteTimeUtc).TotalHours
             if ($ageHours -lt $ZenCatalogMaxAgeHours) { return }
         }
@@ -570,7 +657,7 @@ function Update-ZenCatalogIfStale {
         try {
             $locked = $mutex.WaitOne(5000)
             if (-not $locked) { return }
-            if (Test-Path -LiteralPath $ZenCatalogFile) {
+            if ((Test-Path -LiteralPath $ZenCatalogFile) -and (Read-ZenCatalog).Count -gt 0) {
                 # Another process may have refreshed while this one waited.
                 $ageHours = ([DateTime]::UtcNow - (Get-Item -LiteralPath $ZenCatalogFile).LastWriteTimeUtc).TotalHours
                 if ($ageHours -lt $ZenCatalogMaxAgeHours) { return }
@@ -583,6 +670,7 @@ function Update-ZenCatalogIfStale {
             } | Sort-Object @{ Expression = { -[int]$_.strength } }, @{ Expression = { [string]$_.id } })
             $catalog = [pscustomobject]@{
                 version = 1
+                ratingsVersion = (Get-DelegatorRatingsVersion)
                 updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
                 models = $models
             }
@@ -621,14 +709,15 @@ if ($MyInvocation.InvocationName -ne ".") { Update-ZenCatalogIfStale }
 $script:ZenStrengthMap = Read-ZenCatalog
 
 if ($script:ZenStrengthMap.Count -gt 0) {
-    # Pool membership derives from strength tiers of the LIVE catalog instead of
-    # the hardcoded id lists above (kept only as the no-catalog fallback):
-    # deep = strong tier (>=60), normal = strong+mid (>=40), fast = weak tier
-    # (<40, the cheap aliases). An empty tier widens to the next one / whole set.
+    # Pool membership derives from DPR tiers of the LIVE catalog instead of the
+    # hardcoded id lists above (kept only as the no-catalog fallback):
+    # deep = strong tier (>=DelegateDprDeep), normal = strong+mid
+    # (>=DelegateDprNormal), fast = weak tier (below it, the cheap aliases).
+    # An empty tier widens to the next one / the whole set.
     $zenCatalogIds = @($script:ZenStrengthMap.Keys | Sort-Object)
-    $zenStrong = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -ge 60 })
-    $zenMid = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -ge 40 -and [int]$script:ZenStrengthMap[$_] -lt 60 })
-    $zenWeak = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -lt 40 })
+    $zenStrong = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -ge $script:DelegateDprDeep })
+    $zenMid = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -ge $script:DelegateDprNormal -and [int]$script:ZenStrengthMap[$_] -lt $script:DelegateDprDeep })
+    $zenWeak = @($zenCatalogIds | Where-Object { [int]$script:ZenStrengthMap[$_] -lt $script:DelegateDprNormal })
     $OpenCodeDeepModels = if ($zenStrong.Count -gt 0) { @($zenStrong) } else { @($zenCatalogIds) }
     $OpenCodeNormalModels = if (($zenStrong.Count + $zenMid.Count) -gt 0) { @($zenStrong + $zenMid) } else { @($zenCatalogIds) }
     $OpenCodeFastModels = if ($zenWeak.Count -gt 0) { @($zenWeak) } elseif ($zenMid.Count -gt 0) { @($zenMid) } else { @($zenCatalogIds) }
@@ -750,6 +839,7 @@ function Write-DelegateUsageRecord {
         elapsedMs = $ElapsedMs
         ok = $Ok
         accountId = $AccountId
+        bench = (Test-DelegatorBenchmarkActive)
     }
     $line = ($record | ConvertTo-Json -Depth 6 -Compress) + [Environment]::NewLine
     try {

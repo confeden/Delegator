@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 #[cfg(target_os = "windows")]
@@ -31,8 +32,24 @@ const ZEN_CATALOG_FILE: &str = "opencode-zen-catalog.json";
 /// `<RT>\opencode-zen-catalog.json`: `{version, updatedAt, models:[{id,strength}]}`.
 #[derive(Debug, Deserialize)]
 struct ZenCatalogFile {
+    /// `version` of the ratings table this cache was built from. Absent in
+    /// pre-0.7 catalogs, which is exactly why it defaults to 0 and mismatches.
+    #[serde(default, rename = "ratingsVersion")]
+    ratings_version: i64,
     #[serde(default)]
     models: Vec<ZenCatalogEntry>,
+}
+
+/// `version` of the embedded ratings table. Bump it in model-ratings.json
+/// whenever a `dpr` changes, or caches built from the old numbers stay valid.
+fn ratings_version() -> i64 {
+    static VERSION: OnceLock<i64> = OnceLock::new();
+    *VERSION.get_or_init(|| {
+        serde_json::from_str::<serde_json::Value>(MODEL_RATINGS_JSON)
+            .ok()
+            .and_then(|value| value.get("version").and_then(serde_json::Value::as_i64))
+            .unwrap_or(0)
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,11 +71,21 @@ fn load_zen_strengths_from(runtime_home: &Path) -> HashMap<String, i32> {
         return HashMap::new();
     };
     match serde_json::from_str::<ZenCatalogFile>(&content) {
-        Ok(catalog) => catalog
-            .models
-            .into_iter()
-            .filter_map(|entry| Some((entry.id, entry.strength?)))
-            .collect(),
+        Ok(catalog) => {
+            // A cache built from a different ratings table is not "slightly
+            // old", it is wrong: the runtime only rewrites it once per 24 h, so
+            // an upgrade that changes the scores would otherwise order the tab
+            // by yesterday's numbers for a whole day. Reject it and let the
+            // embedded table answer instead.
+            if catalog.ratings_version != ratings_version() {
+                return HashMap::new();
+            }
+            catalog
+                .models
+                .into_iter()
+                .filter_map(|entry| Some((entry.id, entry.strength?)))
+                .collect()
+        }
         Err(error) => {
             eprintln!("Failed to parse {}: {error}", path.display());
             HashMap::new()
@@ -66,74 +93,102 @@ fn load_zen_strengths_from(runtime_home: &Path) -> HashMap<String, i32> {
     }
 }
 
-/// Heuristic strength score of a Zen alias, mirroring `Get-ZenModelStrength`
-/// in scripts/update-free-models.ps1 and scripts/opencode-delegate.ps1 (Zen
-/// publishes no size or benchmark metadata for its free aliases).
-///
-/// DUPLICATION IS DELIBERATE: the runtime scores in PowerShell, the GUI needs
-/// the same order before the runtime has ever written its catalog file. Keep
-/// all three copies (and the ROADMAP description) in sync.
-///
-/// Scoring: base 50; the strongest matching positive qualifier ONLY —
-/// ultra +40, pro/max +30, large/big +20, flash/standard +10; cumulative
-/// negatives mini −20, tiny/nano/lite −30; plus the major version digit 1-9
-/// when it appears as its own name part ("v2.5" → +2, "-3.0-" → +3).
-/// Qualifiers count only as whole `-`/`_`/`.`-separated parts of the alias.
-pub fn zen_strength(id: &str) -> i32 {
-    let slug = match id.get(..9) {
-        Some(prefix) if prefix.eq_ignore_ascii_case("opencode/") => &id[9..],
-        _ => id,
-    };
-    let parts: Vec<String> = slug
-        .split(['-', '_', '.'])
-        .filter(|part| !part.is_empty())
-        .map(|part| part.to_ascii_lowercase())
-        .collect();
-    let has = |word: &str| parts.iter().any(|part| part == word);
+/// The shipped rating table, embedded so the GUI can order models before the
+/// runtime has ever written its catalog — and so it can never be missing.
+/// The PowerShell runtime reads the very same file from `{app}\runtime\`.
+const MODEL_RATINGS_JSON: &str = include_str!("../../scripts/model-ratings.json");
 
-    let mut score = 50;
-    if has("ultra") {
-        score += 40;
-    } else if has("pro") || has("max") {
-        score += 30;
-    } else if has("large") || has("big") {
-        score += 20;
-    } else if has("flash") || has("standard") {
-        score += 10;
+/// DPR handed to a model with no row in the table. NOT zero: an unrated model
+/// (a stealth alias, an auto-route, anything released after the snapshot) has to
+/// stay reachable — it just must not be trusted with deep work until measured.
+pub const UNRATED_DPR: i32 = 100;
+
+/// Tier floors on the DPR scale, mirrored in scripts/opencode-delegate.ps1.
+pub const DPR_DEEP: i32 = 130;
+pub const DPR_NORMAL: i32 = 100;
+
+/// One Russian line describing what a model may be trusted with, for the tab.
+/// A rating of 0 is called out on its own: those models do not write code at
+/// all (speech, safety classifiers, embeddings) and must never be delegated to.
+pub fn dpr_hint(id: &str) -> String {
+    match model_rating(id) {
+        None => "Рейтинг неизвестен — модель используется как обычная, \
+                 приоритет решает измеренная скорость и надёжность."
+            .to_string(),
+        Some(0) => "Рейтинг 0: не пишет код вообще (распознавание речи, \
+                    классификатор, эмбеддинги). Не делегируйте ей задачи."
+            .to_string(),
+        Some(dpr) if dpr >= DPR_DEEP => {
+            format!("Рейтинг {dpr} — глубокий тир: сложные задачи и проверки.")
+        }
+        Some(dpr) if dpr >= DPR_NORMAL => {
+            format!("Рейтинг {dpr} — обычный тир: рядовые задачи.")
+        }
+        Some(dpr) => format!("Рейтинг {dpr} — быстрый тир: только простые задачи."),
     }
-    if has("mini") {
-        score -= 20;
-    }
-    if has("tiny") || has("nano") || has("lite") {
-        score -= 30;
-    }
-    if let Some(major) = parts.iter().find_map(|part| major_version_digit(part)) {
-        score += major;
-    }
-    score
 }
 
-/// `"v4"`/`"3"` → Some(4)/Some(3); anything longer than one digit (with the
-/// optional `v`) is a build number, not a major version — mirrors the
-/// PowerShell regex `(^|[-_.])v?([1-9])(\.\d+)?([-_.]|$)`.
-fn major_version_digit(part: &str) -> Option<i32> {
-    let digits = part.strip_prefix('v').unwrap_or(part);
-    let mut chars = digits.chars();
-    let first = chars.next()?;
-    if chars.next().is_some() {
-        return None;
-    }
-    first
-        .to_digit(10)
-        .filter(|digit| (1..=9).contains(digit))
-        .map(|digit| digit as i32)
+#[derive(Debug, Deserialize)]
+struct RatingsFile {
+    #[serde(default)]
+    models: Vec<RatingRow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RatingRow {
+    #[serde(rename = "match")]
+    pattern: String,
+    #[serde(default)]
+    dpr: Option<i32>,
+}
+
+/// Rows sorted longest-pattern-first, so the FIRST substring hit is already the
+/// most specific one (`glm-5.2` before `glm-5`, `gpt-5.4-mini` before `gpt-5`).
+fn rating_rows() -> &'static [(String, i32)] {
+    static ROWS: OnceLock<Vec<(String, i32)>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let mut rows: Vec<(String, i32)> =
+            match serde_json::from_str::<RatingsFile>(MODEL_RATINGS_JSON) {
+                Ok(file) => file
+                    .models
+                    .into_iter()
+                    .filter_map(|row| Some((row.pattern.to_ascii_lowercase(), row.dpr?)))
+                    .collect(),
+                Err(error) => {
+                    eprintln!("Failed to parse the embedded model ratings: {error}");
+                    Vec::new()
+                }
+            };
+        rows.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
+        rows
+    })
+}
+
+/// DPR (Delegator Programming Rating) of a model id: 0 means it cannot program
+/// at all, and the scale has no upper bound. `None` means the model is unrated,
+/// which is NOT the same as 0 — see [`UNRATED_DPR`].
+///
+/// DUPLICATION IS DELIBERATE: the runtime scores in PowerShell, the GUI needs
+/// the same order in-process. One of four copies — the others are in
+/// scripts/delegator-common.ps1, scripts/opencode-delegate.ps1 and
+/// scripts/update-free-models.ps1. Keep them (and ROADMAP) in sync.
+pub fn model_rating(id: &str) -> Option<i32> {
+    let name = id.to_ascii_lowercase().replace(['_', ' '], "-");
+    rating_rows()
+        .iter()
+        .find(|(pattern, _)| name.contains(pattern.as_str()))
+        .map(|(_, dpr)| *dpr)
 }
 
 /// Score used for ordering: the runtime catalog wins (it is what the router
-/// actually routes by), the name heuristic covers ids the catalog lacks —
+/// actually routes by), the shipped table covers every id the catalog lacks —
 /// including the case where the runtime has never written the file at all.
 fn strength_of(id: &str, catalog: &HashMap<String, i32>) -> i32 {
-    catalog.get(id).copied().unwrap_or_else(|| zen_strength(id))
+    catalog
+        .get(id)
+        .copied()
+        .or_else(|| model_rating(id))
+        .unwrap_or(UNRATED_DPR)
 }
 
 /// Orders the model list for the tab: the `opencode/*` Zen block first, by
@@ -409,17 +464,16 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// The live Zen lineup of OpenCode CLI v1.18.15 with the scores the
-    /// PowerShell runtime wrote into `<RT>\opencode-zen-catalog.json`.
+    /// Zen aliases seen in the wild, with the DPR the shipped table gives them.
     const LIVE_ZEN: [(&str, i32); 8] = [
-        ("opencode/nemotron-3-ultra-free", 93),
-        ("opencode/big-pickle", 70),
-        ("opencode/deepseek-v4-flash-free", 64),
-        ("opencode/laguna-s-2.1-free", 52),
-        ("opencode/longcat-2.0-free", 52),
-        ("opencode/mimo-v2.5-free", 52),
-        ("opencode/north-mini-code-free", 30),
-        ("opencode/ling-3.0-tiny-free", 23),
+        ("opencode/muse-spark-1.2-contributor-free", 144),
+        ("opencode/deepseek-v4-flash-free", 129),
+        ("opencode/hy3-free", 118),
+        ("opencode/mimo-v2.5-free", 110),
+        ("opencode/laguna-s-2.1-free", 100),
+        ("opencode/nemotron-3-ultra-free", 99),
+        ("opencode/north-mini-code-free", 70),
+        ("opencode/nemotron-3.5-lightning-free", 54),
     ];
 
     fn model(id: &str) -> ModelInfo {
@@ -432,41 +486,85 @@ mod tests {
     }
 
     #[test]
-    fn strength_matches_the_powershell_heuristic_for_the_live_lineup() {
+    fn ratings_table_parses_and_covers_the_live_zen_lineup() {
+        assert!(
+            rating_rows().len() > 150,
+            "the embedded table failed to parse: {} rows",
+            rating_rows().len()
+        );
         for (id, expected) in LIVE_ZEN {
-            assert_eq!(zen_strength(id), expected, "{id}");
+            assert_eq!(model_rating(id), Some(expected), "{id}");
         }
     }
 
     #[test]
-    fn strength_applies_only_the_strongest_qualifier_and_all_penalties() {
-        // Only the strongest positive qualifier counts (ultra, not flash).
+    fn a_row_covers_every_provider_prefix_and_the_longest_match_wins() {
+        // One row, every route the same user can reach it by.
+        for id in [
+            "claude-opus-5",
+            "agentrouter/claude-opus-5",
+            "aerolink/claude-opus-5",
+            "Aerolink/Claude-Opus-5",
+        ] {
+            assert_eq!(model_rating(id), Some(156), "{id}");
+        }
+        // Specificity: the longer pattern must win over the shorter prefix.
+        assert_eq!(model_rating("huggingface/zai-org/GLM-5.2"), Some(138));
+        assert_eq!(model_rating("orcarouter/z-ai/glm-5"), Some(102));
+        assert_eq!(model_rating("orcarouter/openai/gpt-5.4-mini"), Some(112));
+        assert_eq!(model_rating("orcarouter/openai/gpt-5"), Some(76));
+        // `-fast` and dated suffixes are the same model.
         assert_eq!(
-            zen_strength("opencode/x-ultra-flash-free"),
-            50 + 40 + 10 - 10
+            model_rating("orcarouter/anthropic/claude-opus-4.6-fast"),
+            Some(140)
         );
-        assert_eq!(zen_strength("opencode/x-pro-free"), 80);
-        assert_eq!(zen_strength("opencode/x-max-free"), 80);
-        assert_eq!(zen_strength("opencode/x-large-free"), 70);
-        assert_eq!(zen_strength("opencode/x-standard-free"), 60);
-        // Penalties are cumulative.
-        assert_eq!(zen_strength("opencode/x-mini-lite-free"), 50 - 20 - 30);
-        assert_eq!(zen_strength("opencode/x-nano-free"), 20);
-        // Qualifiers must be whole name parts, not substrings.
-        assert_eq!(zen_strength("opencode/ultramarine-free"), 50);
-        assert_eq!(zen_strength("opencode/administrator-free"), 50);
-        // Version bump: single leading digit only, `v` optional.
-        assert_eq!(zen_strength("opencode/x-v9-free"), 59);
-        assert_eq!(zen_strength("opencode/x-70b-free"), 50);
-        assert_eq!(zen_strength("opencode/x-v10-free"), 50);
-        // The prefix is optional and matched case-insensitively.
-        assert_eq!(zen_strength("big-pickle"), 70);
-        assert_eq!(zen_strength("OpenCode/big-pickle"), 70);
+    }
+
+    #[test]
+    fn zero_means_cannot_program_and_unknown_means_unrated_not_zero() {
+        // The anchor of the scale: these are not weak coders, they are not
+        // coders. They must never be picked for code, at any tier.
+        for id in [
+            "groq/whisper-large-v3",
+            "groq/canopylabs/orpheus-v1-english",
+            "groq/meta-llama/llama-prompt-guard-2-86m",
+            "huggingface/Qwen/Qwen3-Embedding-8B",
+        ] {
+            assert_eq!(model_rating(id), Some(0), "{id}");
+        }
+        // An unrated model is NOT zero — it stays reachable at the neutral tier.
+        assert_eq!(model_rating("opencode/big-pickle"), None);
+        assert_eq!(model_rating("opencode/x-preview-f-free"), None);
+        assert_eq!(
+            strength_of("opencode/big-pickle", &HashMap::new()),
+            UNRATED_DPR
+        );
+    }
+
+    /// Regression for the whole point of the table. The alias-name heuristic
+    /// this replaced scored `nemotron-3-ultra` 93 of 100 — the top of its deep
+    /// tier — because the word "ultra" was worth +40. The published coding index
+    /// puts it at 49, and that model is on record for spending 175 s on a
+    /// trivial question and failing 6 of its last 10 calls. It must sit BELOW
+    /// the deep floor, and below the flash model that actually outperforms it.
+    #[test]
+    fn the_heuristic_had_it_backwards_and_the_table_does_not() {
+        let ultra = model_rating("opencode/nemotron-3-ultra-free").expect("rated");
+        let flash = model_rating("opencode/deepseek-v4-flash-free").expect("rated");
+        assert!(
+            ultra < DPR_DEEP,
+            "ultra {ultra} must not reach the deep tier"
+        );
+        assert!(
+            flash >= DPR_NORMAL,
+            "flash {flash} must clear the normal floor"
+        );
+        assert!(flash > ultra, "flash {flash} must outrank ultra {ultra}");
     }
 
     #[test]
     fn ordering_sorts_zen_by_strength_and_keeps_openrouter_after_it() {
-        // Deliberately scrambled input, incl. two entries that tie at 52.
+        // Deliberately scrambled input, incl. two ties (100 and 70).
         let models: Vec<ModelInfo> = [
             "opencode/ling-3.0-tiny-free",
             "openrouter/qwen/qwen-2.5:free",
@@ -483,19 +581,21 @@ mod tests {
         .map(model)
         .collect();
 
-        // No catalog file → the heuristic alone must reproduce the live order.
+        // No catalog file → the shipped table alone must produce the order.
+        // Note where `nemotron-3-ultra` lands: fifth, not first.
         let ordered = order_opencode_models(models.clone(), &HashMap::new());
         let ids: Vec<&str> = ordered.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
             ids,
             vec![
-                "opencode/nemotron-3-ultra-free",
-                "opencode/big-pickle",
                 "opencode/deepseek-v4-flash-free",
-                // 52-way tie broken by id.
-                "opencode/laguna-s-2.1-free",
-                "opencode/longcat-2.0-free",
                 "opencode/mimo-v2.5-free",
+                // 100-way tie (one rated, one unrated) broken by id.
+                "opencode/big-pickle",
+                "opencode/laguna-s-2.1-free",
+                "opencode/nemotron-3-ultra-free",
+                // 70-way tie broken by id.
+                "opencode/longcat-2.0-free",
                 "opencode/north-mini-code-free",
                 "opencode/ling-3.0-tiny-free",
                 // openrouter/* keeps its own relative order, after the block.
@@ -504,16 +604,16 @@ mod tests {
             ]
         );
 
-        // A catalog file overrides the heuristic for the ids it lists.
+        // A catalog file overrides the table for the ids it lists.
         let catalog: HashMap<String, i32> =
             HashMap::from([("opencode/ling-3.0-tiny-free".to_string(), 999)]);
         let ordered = order_opencode_models(models, &catalog);
         assert_eq!(ordered[0].id, "opencode/ling-3.0-tiny-free");
-        assert_eq!(ordered[1].id, "opencode/nemotron-3-ultra-free");
+        assert_eq!(ordered[1].id, "opencode/deepseek-v4-flash-free");
     }
 
     #[test]
-    fn catalog_file_is_read_and_bad_input_degrades_to_the_heuristic() {
+    fn catalog_file_is_read_and_bad_input_degrades_to_the_table() {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock before unix epoch")
@@ -524,20 +624,52 @@ mod tests {
         ));
         fs::create_dir_all(&dir).expect("create temp runtime home");
 
-        // Missing file → empty map (callers then use the heuristic).
+        // Missing file → empty map (callers then use the shipped table).
         assert!(load_zen_strengths_from(&dir).is_empty());
 
-        let real_shape = r#"{"version":1,"updatedAt":"2026-08-10T16:45:38Z","models":[
-            {"id":"opencode/nemotron-3-ultra-free","strength":93},
-            {"id":"opencode/big-pickle","strength":70},
-            {"id":"opencode/no-score-here"}]}"#;
-        fs::write(dir.join(ZEN_CATALOG_FILE), real_shape).expect("write catalog");
+        let real_shape = format!(
+            r#"{{"version":1,"ratingsVersion":{},"updatedAt":"2026-08-10T16:45:38Z","models":[
+            {{"id":"opencode/nemotron-3-ultra-free","strength":99}},
+            {{"id":"opencode/big-pickle","strength":70}},
+            {{"id":"opencode/no-score-here"}}]}}"#,
+            ratings_version()
+        );
+        fs::write(dir.join(ZEN_CATALOG_FILE), &real_shape).expect("write catalog");
         let strengths = load_zen_strengths_from(&dir);
         assert_eq!(strengths.len(), 2);
-        assert_eq!(strengths["opencode/nemotron-3-ultra-free"], 93);
-        // An entry without a score falls back to the heuristic.
-        assert_eq!(strength_of("opencode/no-score-here", &strengths), 50);
+        assert_eq!(strengths["opencode/nemotron-3-ultra-free"], 99);
+        // An id the catalog does not score falls through to the table, and an
+        // id neither of them knows lands on the neutral unrated score.
+        assert_eq!(
+            strength_of("opencode/no-score-here", &strengths),
+            UNRATED_DPR
+        );
+        assert_eq!(strength_of("opencode/hy3-free", &strengths), 118);
+        // The catalog still wins where it does carry a score.
         assert_eq!(strength_of("opencode/big-pickle", &strengths), 70);
+
+        // A cache built from a DIFFERENT ratings table must be refused whole.
+        // Measured on the 0.7 upgrade: the runtime rewrites this file only once
+        // per 24 h, so a surviving pre-0.7 catalog kept scoring
+        // `nemotron-3-ultra` 93 — top of the deep tier — against the 99 the new
+        // table gives it. A pre-0.7 catalog has no stamp at all, hence 0.
+        let stale = real_shape.replace(
+            &format!(r#""ratingsVersion":{}"#, ratings_version()),
+            r#""ratingsVersion":0"#,
+        );
+        fs::write(dir.join(ZEN_CATALOG_FILE), stale).expect("write stale catalog");
+        assert!(
+            load_zen_strengths_from(&dir).is_empty(),
+            "a catalog from another ratings table must be rejected, not trusted"
+        );
+        // Rejected means the shipped table answers instead — the whole point.
+        assert_eq!(
+            strength_of(
+                "opencode/nemotron-3-ultra-free",
+                &load_zen_strengths_from(&dir)
+            ),
+            99
+        );
 
         fs::write(dir.join(ZEN_CATALOG_FILE), "{ not json").expect("write corrupt catalog");
         assert!(load_zen_strengths_from(&dir).is_empty());

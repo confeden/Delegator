@@ -125,28 +125,75 @@ function Invoke-CurlJsonRequest {
     }
 }
 
-function Get-ZenModelStrength {
-    # Heuristic strength score from the alias NAME (Zen publishes no benchmark or
-    # size metadata for its free aliases). Keep in sync with the copy in
-    # opencode-delegate.ps1. Scoring: base 50; strongest matching positive
-    # qualifier only: ultra +40, pro/max +30, large/big +20, flash/standard +10;
-    # cumulative negatives: mini -20, tiny/nano/lite -30; plus the major version
-    # digit (1-9) as a small recency bump when trivially parseable from the name
-    # ("v2.5" -> +2, "-3.0-" -> +3).
+# ── Model ratings (DPR) ───────────────────────────────────────────────────────
+# The catalog this script writes is the strength channel every consumer reads, so
+# this is where the SHIPPED model-ratings.json enters the runtime. DPR: 0 means
+# "cannot program at all", no upper bound, 2026-08 snapshot tops at 156. Longest
+# substring of the lowercased id wins, so one row covers every provider prefix.
+#
+# The alias-NAME heuristic this replaced is deliberately GONE, not kept as a
+# fallback: it did not merely guess, it guessed BACKWARDS on the models that
+# matter. It scored nemotron-3-ultra 93 of 100 - top of the deep tier - while the
+# published coding index puts it at 49, and that model is the one already on
+# record for burning 175 s on a trivial question and failing 6 of its last 10
+# calls. A wrong number is worse than no number, so an unrated alias now gets
+# DelegateUnratedDpr and has to earn trust through measured health.
+#
+# ONE OF FOUR COPIES - delegator-common.ps1, opencode-delegate.ps1,
+# update-free-models.ps1 (here) and src\gui\opencode_setup.rs.
+$script:DelegateModelRatingsFile = Join-Path $PSScriptRoot "model-ratings.json"
+$script:DelegateUnratedDpr = 100
+$script:DelegateRatingRows = $null
+$script:DelegateRatingsVersion = $null
+
+function Get-DelegatorRatingsVersion {
+    if ($null -ne $script:DelegateRatingsVersion) { return $script:DelegateRatingsVersion }
+    $null = Get-DelegatorRatingRows
+    return $script:DelegateRatingsVersion
+}
+
+function Get-DelegatorRatingRows {
+    if ($null -ne $script:DelegateRatingRows) { return $script:DelegateRatingRows }
+    $rows = @()
+    $script:DelegateRatingsVersion = 0
+    try {
+        if (Test-Path -LiteralPath $script:DelegateModelRatingsFile) {
+            $raw = Get-Content -LiteralPath $script:DelegateModelRatingsFile -Raw -Encoding UTF8
+            if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) { $raw = $raw.Substring(1) }
+            $parsed = $raw | ConvertFrom-Json
+            $script:DelegateRatingsVersion = [int]$parsed.version
+            foreach ($entry in @($parsed.models)) {
+                if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
+                if ($null -eq $entry.dpr) { continue }
+                $rows += [pscustomobject]@{
+                    match = ([string]$entry.match).ToLowerInvariant()
+                    dpr   = [int]$entry.dpr
+                }
+            }
+        }
+    } catch { $rows = @() }
+    $script:DelegateRatingRows = @($rows | Sort-Object @{ Expression = { $_.match.Length }; Descending = $true })
+    return $script:DelegateRatingRows
+}
+
+function Get-DelegatorModelRating {
     param([string]$ModelId)
-    $name = [string]$ModelId
-    if ($name.StartsWith("opencode/", [StringComparison]::OrdinalIgnoreCase)) {
-        $name = $name.Substring("opencode/".Length)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
+    $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
+    foreach ($row in (Get-DelegatorRatingRows)) {
+        if ($name.Contains($row.match)) { return [int]$row.dpr }
     }
-    $score = 50
-    if ($name -match '(?i)(^|[-_.])ultra([-_.]|$)') { $score += 40 }
-    elseif ($name -match '(?i)(^|[-_.])(pro|max)([-_.]|$)') { $score += 30 }
-    elseif ($name -match '(?i)(^|[-_.])(large|big)([-_.]|$)') { $score += 20 }
-    elseif ($name -match '(?i)(^|[-_.])(flash|standard)([-_.]|$)') { $score += 10 }
-    if ($name -match '(?i)(^|[-_.])mini([-_.]|$)') { $score -= 20 }
-    if ($name -match '(?i)(^|[-_.])(tiny|nano|lite)([-_.]|$)') { $score -= 30 }
-    if ($name -match '(?i)(^|[-_.])v?([1-9])(\.\d+)?([-_.]|$)') { $score += [int]$Matches[2] }
-    return [int]$score
+    return $null
+}
+
+function Get-ZenModelStrength {
+    # DPR of a Zen alias for the catalog. Unrated aliases (stealth names like
+    # big-pickle or x-preview-f) get the neutral normal-tier score so they stay
+    # reachable without being handed deep work.
+    param([string]$ModelId)
+    $rating = Get-DelegatorModelRating $ModelId
+    if ($null -ne $rating) { return [int]$rating }
+    return [int]$script:DelegateUnratedDpr
 }
 
 # The Zen free set changes with every OpenCode release, so the live
@@ -183,6 +230,10 @@ $catalogModels = @($liveZenIds | ForEach-Object {
 } | Sort-Object @{ Expression = { -[int]$_.strength } }, @{ Expression = { [string]$_.id } })
 $zenCatalog = [pscustomobject]@{
     version = 1
+    # Stamp of the ratings table this cache was built from. A consumer that
+    # reads a different table must reject the cache instead of routing on
+    # yesterday's scores until the 24 h TTL expires.
+    ratingsVersion = (Get-DelegatorRatingsVersion)
     updatedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     models = $catalogModels
 }

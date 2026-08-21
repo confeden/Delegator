@@ -38,6 +38,23 @@ $CooldownsFile = Join-Path $DelegateHome "cooldowns.json"
 $AppConfigFile = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
 $Today = Get-Date -Format "yyyy-MM-dd"
 
+# ── Benchmark isolation ───────────────────────────────────────────────────────
+# A benchmark run must never reach the usage numbers: it burns tokens on tasks
+# the user never asked for, so counting it inflates both "spent" and "saved".
+# benchmark.ps1 holds <RT>\benchmark-active.json between `start` and
+# `finish`/`cancel`; a stale flag is ignored so a dead agent cannot switch
+# accounting off forever. ONE OF THREE COPIES - see delegator-common.ps1.
+$BenchmarkFlagFile = Join-Path $DelegateHome "benchmark-active.json"
+$BenchmarkStaleHours = 6
+
+function Test-DelegatorBenchmarkActive {
+    try {
+        if (-not (Test-Path -LiteralPath $BenchmarkFlagFile)) { return $false }
+        $age = [DateTime]::UtcNow - ([IO.File]::GetLastWriteTimeUtc($BenchmarkFlagFile))
+        return ($age.TotalHours -lt $BenchmarkStaleHours)
+    } catch { return $false }
+}
+
 $ProPreference = @("gemini-pro-latest")
 $FlashPreference = @("gemini-flash-latest")
 $LitePreference = @("gemini-flash-lite-latest")
@@ -152,6 +169,7 @@ function Write-DelegateUsageRecord {
         elapsedMs = $ElapsedMs
         ok = $Ok
         accountId = $AccountId
+        bench = (Test-DelegatorBenchmarkActive)
     }
     $line = ($record | ConvertTo-Json -Depth 6 -Compress) + [Environment]::NewLine
     try {

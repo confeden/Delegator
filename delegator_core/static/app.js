@@ -708,21 +708,32 @@ function renderUsagePanel(data) {
   body.innerHTML = "";
 
   const today = data?.today || {};
-  const savedTokens = usageNumber(data?.savedTokensTotal, data?.saved_tokens_total);
-  const todayRequests = usageNumber(today.requests);
+  const savedTokens = usageNumber(data?.savedOutputTokens, data?.savedTokensTotal, data?.saved_tokens_total);
+  const handledTokens = usageNumber(data?.handledTokens, data?.handled_tokens);
+  const spentTokens = usageNumber(data?.spentTokensTotal, data?.spent_tokens_total);
+  const delegations = usageNumber(data?.delegations);
   const todayTokens = usageNumber(today.totalTokens, today.total_tokens);
   const todayCost = formatUsageCost(usageNumber(today.cost));
+
+  const savedHint =
+    "Оценка: выходные токены, которые дорогой модели IDE не пришлось генерировать — " +
+    `Делегатор отдал ${formatTokenCount(delegations)} готовых ответов и перемолол ` +
+    `${formatTokenCount(handledTokens)} ток. контекста вместо неё. Бенчмарки не учитываются.`;
 
   const summary = document.createElement("div");
   summary.className = "usage-summary";
   summary.innerHTML = `
-    <div class="usage-card" data-accent="true" title="Токены, которые не потратила дорогая модель IDE">
+    <div class="usage-card" data-accent="true" title="${escapeHtml(savedHint)}">
       <div class="usage-card-value">${escapeHtml(formatTokenCount(savedTokens))}</div>
-      <div class="usage-card-label">Сэкономлено токенов</div>
+      <div class="usage-card-label">Сэкономлено основной модели</div>
     </div>
-    <div class="usage-card">
-      <div class="usage-card-value">${escapeHtml(formatTokenCount(todayRequests))}</div>
-      <div class="usage-card-label">Запросов сегодня</div>
+    <div class="usage-card" title="Токены бесплатных моделей Делегатора: внутренние стадии и неудачные попытки тоже здесь">
+      <div class="usage-card-value">${escapeHtml(formatTokenCount(spentTokens))}</div>
+      <div class="usage-card-label">Потрачено Делегатором</div>
+    </div>
+    <div class="usage-card" title="Сколько раз задача реально ушла в Делегатор за период">
+      <div class="usage-card-value">${escapeHtml(formatTokenCount(delegations))}</div>
+      <div class="usage-card-label">Делегирований</div>
     </div>
     <div class="usage-card">
       <div class="usage-card-value">${escapeHtml(formatTokenCount(todayTokens))}${todayCost ? ` <span class="usage-card-extra">${escapeHtml(todayCost)}</span>` : ""}</div>

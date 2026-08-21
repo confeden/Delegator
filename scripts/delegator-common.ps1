@@ -33,6 +33,63 @@ $script:DelegateCooldownsFile = Join-Path $script:DelegateHome "cooldowns.json"
 $script:DelegatePolicyFile = Join-Path $PSScriptRoot "DELEGATOR.md"
 $script:DelegatorAppConfigFile = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
 $script:DelegateProxyFile = Join-Path $script:DelegateHome "proxy.json"
+$script:DelegateModelRatingsFile = Join-Path $PSScriptRoot "model-ratings.json"
+
+# ── Model ratings (DPR) ───────────────────────────────────────────────────────
+# DPR = Delegator Programming Rating, read from the SHIPPED model-ratings.json
+# that sits next to these scripts. 0 means "cannot program at all" - whisper,
+# orpheus, prompt-guard and embedding models are literal zeros - and the scale
+# has NO upper bound; the top of the 2026-08 snapshot is 156.
+#
+# A row matches by the LONGEST substring of the lowercased id, so one row covers
+# every provider prefix at once: agentrouter/claude-opus-5,
+# aerolink/claude-opus-5 and orcarouter/anthropic/claude-opus-4.6-fast all hit
+# the same entry, and glm-5.2 wins over glm-5 because it is longer.
+#
+# An unknown model returns $null, which is NOT the same as 0. Scoring an unknown
+# model 0 would ban it forever; scoring it high would hand it hard work nobody
+# measured. Callers substitute DelegateUnratedDpr and let health/latency decide.
+#
+# ONE OF FOUR COPIES - delegator-common.ps1 (here), opencode-delegate.ps1,
+# update-free-models.ps1 and src\gui\opencode_setup.rs. Change them together.
+$script:DelegateDprDeep = 130
+$script:DelegateDprNormal = 100
+$script:DelegateUnratedDpr = 100
+$script:DelegateRatingRows = $null
+
+function Get-DelegatorRatingRows {
+    if ($null -ne $script:DelegateRatingRows) { return $script:DelegateRatingRows }
+    $rows = @()
+    try {
+        if (Test-Path -LiteralPath $script:DelegateModelRatingsFile) {
+            $raw = Get-Content -LiteralPath $script:DelegateModelRatingsFile -Raw -Encoding UTF8
+            # PS 5.1 ConvertFrom-Json refuses a leading BOM the same way serde does.
+            if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) { $raw = $raw.Substring(1) }
+            $parsed = $raw | ConvertFrom-Json
+            foreach ($entry in @($parsed.models)) {
+                if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
+                if ($null -eq $entry.dpr) { continue }
+                $rows += [pscustomobject]@{
+                    match = ([string]$entry.match).ToLowerInvariant()
+                    dpr   = [int]$entry.dpr
+                }
+            }
+        }
+    } catch { $rows = @() }
+    # Longest match first, so the FIRST hit is already the most specific one.
+    $script:DelegateRatingRows = @($rows | Sort-Object @{ Expression = { $_.match.Length }; Descending = $true })
+    return $script:DelegateRatingRows
+}
+
+function Get-DelegatorModelRating {
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
+    $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
+    foreach ($row in (Get-DelegatorRatingRows)) {
+        if ($name.Contains($row.match)) { return [int]$row.dpr }
+    }
+    return $null
+}
 
 # ── Outbound Proxy (DEV_CONTRACTS section 7a) ──
 # Returns the effective outbound proxy url for MODEL traffic, or $null when no
@@ -329,6 +386,31 @@ function Write-DelegateMetric {
     } catch {}
 }
 
+# ── Benchmark isolation ───────────────────────────────────────────────────────
+# A benchmark run must NEVER reach the usage numbers. It deliberately burns
+# tokens on twelve tasks the user never asked for, so counting it inflates
+# "spent" by the cost of the measurement AND "saved" by work nobody wanted done
+# - the counter would then reward running the benchmark, which is nonsense.
+#
+# benchmark.ps1 writes <RT>\benchmark-active.json between `start` and
+# `finish`/`cancel`. A flag older than the stale window is ignored on purpose: an
+# agent that dies mid-run must not switch accounting off forever, and the engine
+# already calls a run stalled long before that.
+#
+# ONE OF THREE COPIES - delegator-common.ps1 (here), gemini-delegate.ps1 and
+# opencode-delegate.ps1 each write usage records of their own.
+$script:DelegateBenchmarkFlagFile = Join-Path $script:DelegateHome "benchmark-active.json"
+$script:DelegateBenchmarkStaleHours = 6
+
+function Test-DelegatorBenchmarkActive {
+    try {
+        if (-not (Test-Path -LiteralPath $script:DelegateBenchmarkFlagFile)) { return $false }
+        $written = [IO.File]::GetLastWriteTimeUtc($script:DelegateBenchmarkFlagFile)
+        $age = [DateTime]::UtcNow - $written
+        return ($age.TotalHours -lt $script:DelegateBenchmarkStaleHours)
+    } catch { return $false }
+}
+
 # ── Usage Accounting (DEV_CONTRACTS section 2) ──
 # Appends one usage record to the global usage.jsonl (mutex Global\DelegatorUsageLog)
 # and, when DELEGATOR_USAGE_FILE is set, to the per-request file so the dispatcher
@@ -365,6 +447,7 @@ function Write-DelegateUsageRecord {
             elapsedMs        = $ElapsedMs
             ok               = $Ok
             accountId        = $AccountId
+            bench            = (Test-DelegatorBenchmarkActive)
         }
         $line = ($entry | ConvertTo-Json -Depth 4 -Compress) + [Environment]::NewLine
 

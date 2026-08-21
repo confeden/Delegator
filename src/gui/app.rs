@@ -84,6 +84,7 @@ enum SelectedTab {
     GeminiModels,
     OpenCodeModels,
     Stats,
+    Thinking,
     Benchmark,
     Proxies,
 }
@@ -138,6 +139,10 @@ pub struct DelegatorApp {
     /// Zen strength scores from `<RT>\opencode-zen-catalog.json`; drives the
     /// "strongest first" order of the `opencode/*` block in the tab.
     zen_strengths: HashMap<String, i32>,
+
+    /// «Мышление»: reads the runtime's own event logs and animates the
+    /// pipeline. Holds no state of its own beyond how far it has read.
+    thinking: crate::gui::thinking::ThinkingView,
 
     // Background OpenCode CLI jobs («Установить» / «Обновить CLI»).
     opencode_install: Option<InstallState>,
@@ -260,6 +265,7 @@ impl DelegatorApp {
             gemini_search: String::new(),
             opencode_search: String::new(),
             zen_strengths: load_zen_strengths(),
+            thinking: crate::gui::thinking::ThinkingView::default(),
             opencode_install: None,
             opencode_upgrade: None,
             usage_report: None,
@@ -1121,6 +1127,14 @@ impl eframe::App for DelegatorApp {
                 tab_button(
                     ui,
                     &mut self.active_tab,
+                    SelectedTab::Thinking,
+                    "Мышление",
+                    TabAccent::None,
+                    &self.theme,
+                );
+                tab_button(
+                    ui,
+                    &mut self.active_tab,
                     SelectedTab::Benchmark,
                     "Бенчмарк",
                     benchmark_accent,
@@ -1698,7 +1712,12 @@ impl eframe::App for DelegatorApp {
                             let mut checked =
                                 self.config.enabled_opencode_models.contains(&model.id);
                             ui.horizontal(|ui| {
-                                if ui.checkbox(&mut checked, &model.name).changed() {
+                                let row = ui
+                                    .checkbox(&mut checked, &model.name)
+                                    .on_hover_text(crate::gui::opencode_setup::dpr_hint(
+                                        &model.id,
+                                    ));
+                                if row.changed() {
                                     if checked {
                                         self.config.enabled_opencode_models.push(model.id.clone());
                                     } else {
@@ -1761,10 +1780,25 @@ impl eframe::App for DelegatorApp {
 
                             ui.heading(
                                 egui::RichText::new(format!(
-                                    "Сэкономлено токенов (делегировано): {}",
-                                    format_count(report.saved_tokens_total)
+                                    "Сэкономлено основной модели: {}",
+                                    format_count(report.saved())
                                 ))
                                 .color(self.theme.success_color()),
+                            )
+                            .on_hover_text(
+                                "Оценка: выходные токены, которые дорогой модели IDE \
+                                 не пришлось генерировать — Делегатор отдал готовый \
+                                 ответ. Бенчмарки в расчёт не входят.",
+                            );
+                            ui.label(format!(
+                                "Делегирований: {} | обработано вместо неё: {} | потрачено Делегатором: {}",
+                                format_count(report.delegations),
+                                format_count(report.handled_tokens),
+                                format_count(report.spent_tokens_total)
+                            ))
+                            .on_hover_text(
+                                "«Потрачено Делегатором» — токены бесплатных моделей, \
+                                 включая внутренние стадии и неудачные попытки.",
                             );
                             ui.add_space(12.0);
 
@@ -1824,6 +1858,17 @@ impl eframe::App for DelegatorApp {
                             ui.label("Нет данных. Нажмите «Обновить».");
                         }
                     });
+                }
+                SelectedTab::Thinking => {
+                    ui.horizontal(|ui| {
+                        ui.label("Живая карта работы Delegator: кто просит, что решил роутер, куда ушла задача.");
+                    });
+                    ui.colored_label(
+                        self.theme.weak_text_color(),
+                        "Прототип. Показываются только процессы — содержимого задач и ответов здесь нет и быть не может.",
+                    );
+                    ui.separator();
+                    self.thinking.ui(ui, &self.theme);
                 }
                 SelectedTab::Benchmark => {
                     ui.horizontal(|ui| {

@@ -1,0 +1,1295 @@
+{
+  "version": 1,
+  "scale": {
+    "name": "DPR",
+    "title": "Delegator Programming Rating",
+    "zero": "0 = the model cannot program at all and must never be delegated code work",
+    "unbounded": true,
+    "formula": "DPR = round(2 * AA_Coding_Index_percent). No ceiling: a hypothetical 100% model is 200, and a harder future index pushes the top higher.",
+    "tiers": {
+      "deep": 130,
+      "normal": 100,
+      "fast": 0
+    },
+    "unrated_default": 100,
+    "primary_source": "Artificial Analysis Coding Index v1.1 (Terminal-Bench Hard + SciCode), snapshot 2026-08-18",
+    "secondary_source": "SWE-bench Verified aggregate, snapshot 2026-08",
+    "confidence": {
+      "measured": "the model itself has a published index score",
+      "derived": "score taken from a same-family sibling or a second benchmark, mapped across",
+      "unrated": "no public benchmark result exists (stealth / auto-route); router falls back to measured latency and health"
+    }
+  },
+  "models": [
+    {
+      "match": "claude-opus-5",
+      "dpr": 156,
+      "aa": 78.0,
+      "swe_verified": 96.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.6-sol",
+      "dpr": 155,
+      "aa": 77.4,
+      "swe_verified": 96.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-mythos-5",
+      "dpr": 154,
+      "aa": 76.9,
+      "confidence": "derived",
+      "note": "SWE-bench Verified 95.5 / Pro 80.3; no index entry"
+    },
+    {
+      "match": "grok-4.6",
+      "dpr": 154,
+      "aa": 76.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-fable-5",
+      "dpr": 153,
+      "aa": 76.5,
+      "swe_verified": 95.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.6-terra",
+      "dpr": 153,
+      "aa": 76.7,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-3.7-flash",
+      "dpr": 152,
+      "aa": 76.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "kimi-k3",
+      "dpr": 152,
+      "aa": 76.2,
+      "swe_verified": 93.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "glm-5.3",
+      "dpr": 150,
+      "aa": 74.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.5",
+      "dpr": 150,
+      "aa": 74.9,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4-8",
+      "dpr": 149,
+      "aa": 74.3,
+      "swe_verified": 88.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4-7",
+      "dpr": 147,
+      "aa": 73.6,
+      "swe_verified": 87.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4.7",
+      "dpr": 147,
+      "aa": 73.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "grok-4.5",
+      "dpr": 145,
+      "aa": 72.5,
+      "swe_verified": 86.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "muse-spark-1.2",
+      "dpr": 144,
+      "aa": 72.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3.8-2.4t-a95b",
+      "dpr": 144,
+      "aa": 71.8,
+      "confidence": "derived",
+      "note": "Qwen3.8 Max Preview weights"
+    },
+    {
+      "match": "qwen3.8-max",
+      "dpr": 144,
+      "aa": 71.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-sonnet-5",
+      "dpr": 143,
+      "aa": 71.5,
+      "swe_verified": 85.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.6-luna",
+      "dpr": 143,
+      "aa": 71.5,
+      "swe_verified": 93.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "muse-spark-1.1",
+      "dpr": 143,
+      "aa": 71.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.4",
+      "dpr": 142,
+      "aa": 71.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4-6",
+      "dpr": 140,
+      "aa": 70.0,
+      "confidence": "derived",
+      "note": "SWE-V 80.8, between Opus 4.5 and 4.7"
+    },
+    {
+      "match": "claude-opus-4.6",
+      "dpr": 140,
+      "aa": 70.0,
+      "confidence": "derived",
+      "note": "SWE-V 80.8"
+    },
+    {
+      "match": "gemini-3.5-flash",
+      "dpr": 140,
+      "aa": 70.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-v4-flash-0731",
+      "dpr": 138,
+      "aa": 69.1,
+      "swe_verified": 79.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-v4-pro-0813",
+      "dpr": 138,
+      "aa": 68.8,
+      "swe_verified": 80.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-3.1-pro",
+      "dpr": 138,
+      "aa": 68.8,
+      "swe_verified": 80.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-3.6-flash",
+      "dpr": 138,
+      "aa": 69.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-flash-latest",
+      "dpr": 138,
+      "aa": 69.2,
+      "confidence": "derived",
+      "note": "alias: newest flash; re-check whenever Google moves it"
+    },
+    {
+      "match": "gemini-pro-latest",
+      "dpr": 138,
+      "aa": 68.8,
+      "confidence": "derived",
+      "note": "alias: still resolves to Gemini 3.1 Pro (verified in ROADMAP)"
+    },
+    {
+      "match": "glm-5.2",
+      "dpr": 138,
+      "aa": 68.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4.5",
+      "dpr": 136,
+      "aa": 68.0,
+      "confidence": "derived",
+      "note": "SWE-V 80.9"
+    },
+    {
+      "match": "qwen3.8-27b",
+      "dpr": 136,
+      "aa": 68.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.3-codex",
+      "dpr": 132,
+      "aa": 66.0,
+      "confidence": "derived",
+      "note": "SWE-V 85.0"
+    },
+    {
+      "match": "qwen3.7-max",
+      "dpr": 132,
+      "aa": 66.0,
+      "swe_verified": 80.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-v4-flash",
+      "dpr": 129,
+      "aa": 64.5,
+      "swe_verified": 73.7,
+      "confidence": "derived",
+      "note": "base Flash, scaled down from the 0731 refresh"
+    },
+    {
+      "match": "gemini-3-pro",
+      "dpr": 128,
+      "aa": 64.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-5.2-pro",
+      "dpr": 128,
+      "aa": 64.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "claude-sonnet-4-6",
+      "dpr": 126,
+      "aa": 63.0,
+      "confidence": "derived",
+      "note": "SWE-V 79.6"
+    },
+    {
+      "match": "claude-sonnet-4.6",
+      "dpr": 126,
+      "aa": 63.0,
+      "confidence": "derived",
+      "note": "SWE-V 79.6"
+    },
+    {
+      "match": "gpt-5.2-codex",
+      "dpr": 124,
+      "aa": 62.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "kimi-k2.6",
+      "dpr": 124,
+      "aa": 61.8,
+      "swe_verified": 80.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "kimi-k2.7-code",
+      "dpr": 122,
+      "aa": 60.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "dots-3-note",
+      "dpr": 120,
+      "aa": 60.0,
+      "confidence": "derived",
+      "note": "SWE-V 78.4"
+    },
+    {
+      "match": "gemini-3-flash",
+      "dpr": 120,
+      "aa": 60.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "mimo-v2.5-pro",
+      "dpr": 120,
+      "aa": 60.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "btl-4",
+      "dpr": 118,
+      "aa": 59.0,
+      "confidence": "derived",
+      "note": "SWE-V 78.4"
+    },
+    {
+      "match": "hy3",
+      "dpr": 118,
+      "aa": 58.8,
+      "swe_verified": 74.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-v4-pro",
+      "dpr": 117,
+      "aa": 58.7,
+      "swe_verified": 79.4,
+      "confidence": "measured",
+      "note": "base/High Pro; the 0813 refresh scores 138"
+    },
+    {
+      "match": "minimax-m3",
+      "dpr": 117,
+      "aa": 58.6,
+      "swe_verified": 80.5,
+      "confidence": "measured"
+    },
+    {
+      "match": "muse-spark",
+      "dpr": 117,
+      "aa": 58.6,
+      "swe_verified": 77.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.2",
+      "dpr": 116,
+      "aa": 58.0,
+      "confidence": "derived",
+      "note": "SWE-V 80.0; index has 5.1 at 49.4 and 5.4 at 71.0"
+    },
+    {
+      "match": "claude-sonnet-4.5",
+      "dpr": 114,
+      "aa": 57.0,
+      "confidence": "derived",
+      "note": "SWE-V 77.2"
+    },
+    {
+      "match": "glm-5.1",
+      "dpr": 112,
+      "aa": 55.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.4-mini",
+      "dpr": 112,
+      "aa": 56.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5.4-nano",
+      "dpr": 112,
+      "aa": 56.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "ornith-1.5-397b",
+      "dpr": 112,
+      "aa": 56.0,
+      "confidence": "derived",
+      "note": "SWE-V 86.0"
+    },
+    {
+      "match": "qwen3.7-plus",
+      "dpr": 112,
+      "aa": 55.9,
+      "swe_verified": 77.7,
+      "confidence": "measured"
+    },
+    {
+      "match": "mimo-v2.5",
+      "dpr": 110,
+      "aa": 55.0,
+      "confidence": "derived",
+      "note": "between MiMo-V2.5-Pro 60.2 and MiMo-V2-Flash 49.8"
+    },
+    {
+      "match": "qwen3.6-plus",
+      "dpr": 109,
+      "aa": 54.5,
+      "swe_verified": 78.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3.6-27b",
+      "dpr": 107,
+      "aa": 53.7,
+      "swe_verified": 77.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "inkling-small",
+      "dpr": 106,
+      "aa": 53.0,
+      "swe_verified": 80.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "minimax-m2.7",
+      "dpr": 105,
+      "aa": 52.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "inkling",
+      "dpr": 104,
+      "aa": 52.1,
+      "swe_verified": 77.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "ornith-1.0-397b",
+      "dpr": 104,
+      "aa": 52.0,
+      "confidence": "derived",
+      "note": "SWE-V 82.4"
+    },
+    {
+      "match": "glm-5",
+      "dpr": 102,
+      "aa": 51.0,
+      "confidence": "derived",
+      "note": "SWE-V 77.8; index has 5.1 at 55.8"
+    },
+    {
+      "match": "ling-3.0",
+      "dpr": 101,
+      "aa": 50.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "ling-3.0-flash",
+      "dpr": 101,
+      "aa": 50.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "grok-4.20",
+      "dpr": 100,
+      "aa": 50.0,
+      "confidence": "derived",
+      "note": "SWE-V 76.7"
+    },
+    {
+      "match": "laguna-s-2.1",
+      "dpr": 100,
+      "aa": 50.0,
+      "swe_verified": 72.0,
+      "confidence": "derived",
+      "note": "between Laguna XS.2 69.9 and Laguna M.1 74.6 on SWE-V; no index entry"
+    },
+    {
+      "match": "mimo-v2-flash",
+      "dpr": 100,
+      "aa": 49.8,
+      "swe_verified": 73.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-3.5-flash-lite",
+      "dpr": 99,
+      "aa": 49.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-flash-lite-latest",
+      "dpr": 99,
+      "aa": 49.3,
+      "confidence": "derived",
+      "note": "alias: Gemini 3.5 Flash-Lite"
+    },
+    {
+      "match": "gpt-5.1",
+      "dpr": 99,
+      "aa": 49.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "nemotron-3-ultra",
+      "dpr": 99,
+      "aa": 49.3,
+      "swe_verified": 71.9,
+      "confidence": "measured",
+      "note": "the keyword heuristic scored this 93 and made it a deep-tier pick; it is a fast-tier model"
+    },
+    {
+      "match": "muse-glimmer-30b",
+      "dpr": 98,
+      "aa": 49.0,
+      "swe_verified": 76.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "laguna-m.1",
+      "dpr": 96,
+      "aa": 48.0,
+      "confidence": "derived",
+      "note": "SWE-V 74.6"
+    },
+    {
+      "match": "minimax-m2.5",
+      "dpr": 96,
+      "aa": 48.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "ornith-1.5-35b",
+      "dpr": 96,
+      "aa": 48.0,
+      "confidence": "derived",
+      "note": "SWE-V 79.0"
+    },
+    {
+      "match": "qwen3.5-397b",
+      "dpr": 96,
+      "aa": 48.2,
+      "swe_verified": 76.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "kimi-k2.5",
+      "dpr": 94,
+      "aa": 46.8,
+      "swe_verified": 76.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "mistral-medium-3.5",
+      "dpr": 94,
+      "aa": 46.9,
+      "swe_verified": 77.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3.5-plus",
+      "dpr": 92,
+      "aa": 46.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "glm-4.7",
+      "dpr": 91,
+      "aa": 45.3,
+      "swe_verified": 73.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3.5-122b-a10b",
+      "dpr": 91,
+      "aa": 45.7,
+      "swe_verified": 72.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-haiku-4-5",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 73.3"
+    },
+    {
+      "match": "claude-haiku-4.5",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 73.3"
+    },
+    {
+      "match": "claude-opus-4.1",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 74.5"
+    },
+    {
+      "match": "gemini-3.1-flash-lite",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-5-pro",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "laguna-xs",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 69.9"
+    },
+    {
+      "match": "laguna-xs-2.1",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 69.9 for Laguna XS.2"
+    },
+    {
+      "match": "mai-thinking-1",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "SWE-V 73.5"
+    },
+    {
+      "match": "qwen3-coder-next",
+      "dpr": 90,
+      "aa": 45.0,
+      "confidence": "derived",
+      "note": "Qwen3-Coder line, no index entry; placed just under Qwen3.5-122B"
+    },
+    {
+      "match": "claude-sonnet-4",
+      "dpr": 88,
+      "aa": 44.0,
+      "confidence": "derived",
+      "note": "SWE-V 72.7"
+    },
+    {
+      "match": "ornith-1.0-35b",
+      "dpr": 88,
+      "aa": 44.0,
+      "confidence": "derived",
+      "note": "SWE-V 75.6"
+    },
+    {
+      "match": "gemma-4-31b",
+      "dpr": 87,
+      "aa": 43.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "grok-4.3",
+      "dpr": 85,
+      "aa": 42.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-opus-4",
+      "dpr": 84,
+      "aa": 42.0,
+      "confidence": "derived",
+      "note": "SWE-V ~72"
+    },
+    {
+      "match": "gpt-5-codex",
+      "dpr": 84,
+      "aa": 42.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "grok-code-fast",
+      "dpr": 84,
+      "aa": 42.0,
+      "confidence": "derived",
+      "note": "SWE-V 70.8"
+    },
+    {
+      "match": "qwen3.6-35b-a3b",
+      "dpr": 84,
+      "aa": 41.9,
+      "swe_verified": 73.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3-max",
+      "dpr": 80,
+      "aa": 40.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3.5-27b",
+      "dpr": 80,
+      "aa": 40.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gemma-4-26b",
+      "dpr": 79,
+      "aa": 39.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "step-3.7-flash",
+      "dpr": 79,
+      "aa": 39.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "glm-4.6",
+      "dpr": 76,
+      "aa": 38.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-5",
+      "dpr": 76,
+      "aa": 37.8,
+      "confidence": "measured",
+      "note": "GPT-5 (high)"
+    },
+    {
+      "match": "kimi-k2-thinking",
+      "dpr": 76,
+      "aa": 38.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3.5-35b-a3b",
+      "dpr": 76,
+      "aa": 38.0,
+      "confidence": "derived",
+      "note": "SWE-V 69.2"
+    },
+    {
+      "match": "nemotron-3-super",
+      "dpr": 75,
+      "aa": 37.7,
+      "confidence": "measured"
+    },
+    {
+      "match": "ornith-1.5-9b",
+      "dpr": 72,
+      "aa": 36.0,
+      "confidence": "derived",
+      "note": "SWE-V 70.6"
+    },
+    {
+      "match": "longcat-2.0",
+      "dpr": 70,
+      "aa": 35.0,
+      "confidence": "derived",
+      "note": "no index entry"
+    },
+    {
+      "match": "north-mini-code",
+      "dpr": 70,
+      "aa": 35.0,
+      "confidence": "derived",
+      "note": "Cohere code model, no public index entry"
+    },
+    {
+      "match": "qwen3-coder-480b",
+      "dpr": 70,
+      "aa": 35.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "o1-preview",
+      "dpr": 68,
+      "aa": 34.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "ornith-1.0-9b",
+      "dpr": 68,
+      "aa": 34.0,
+      "confidence": "derived",
+      "note": "SWE-V 69.4"
+    },
+    {
+      "match": "step-3.5-flash",
+      "dpr": 68,
+      "aa": 34.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gemini-2.5-pro",
+      "dpr": 67,
+      "aa": 33.3,
+      "swe_verified": 63.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "k-exaone",
+      "dpr": 64,
+      "aa": 32.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemma-4-12b",
+      "dpr": 62,
+      "aa": 31.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "mercury-2",
+      "dpr": 62,
+      "aa": 31.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "minimax-m2.1",
+      "dpr": 62,
+      "aa": 31.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-oss-120b",
+      "dpr": 61,
+      "aa": 30.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "kimi-k2-instruct",
+      "dpr": 60,
+      "aa": 30.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "ling-3.0-tiny",
+      "dpr": 60,
+      "aa": 30.0,
+      "confidence": "derived",
+      "note": "tiny variant of Ling 3.0 Flash (50.6)"
+    },
+    {
+      "match": "minimax-m2",
+      "dpr": 60,
+      "aa": 30.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3-235b-a22b",
+      "dpr": 60,
+      "aa": 30.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "command-a",
+      "dpr": 56,
+      "aa": 27.9,
+      "confidence": "measured"
+    },
+    {
+      "match": "glm-4.5",
+      "dpr": 56,
+      "aa": 28.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3-vl-235b",
+      "dpr": 56,
+      "aa": 28.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3.5-9b",
+      "dpr": 56,
+      "aa": 28.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "nemotron-3.5-lightning",
+      "dpr": 54,
+      "aa": 26.8,
+      "swe_verified": 52.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "mistral-small-4",
+      "dpr": 53,
+      "aa": 26.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-reasoner",
+      "dpr": 52,
+      "aa": 26.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-4.1",
+      "dpr": 52,
+      "aa": 26.0,
+      "confidence": "derived",
+      "note": "SWE-V 54.6"
+    },
+    {
+      "match": "qwen3-next-80b",
+      "dpr": 52,
+      "aa": 26.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "trinity-large",
+      "dpr": 52,
+      "aa": 25.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "ling-2.6-flash",
+      "dpr": 51,
+      "aa": 25.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3-coder-30b",
+      "dpr": 50,
+      "aa": 25.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "zaya1-74b",
+      "dpr": 50,
+      "aa": 25.0,
+      "confidence": "derived",
+      "note": "SWE-V 53.2"
+    },
+    {
+      "match": "gemini-1.5-pro",
+      "dpr": 47,
+      "aa": 23.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-chat",
+      "dpr": 46,
+      "aa": 23.0,
+      "confidence": "derived",
+      "note": "DeepSeek V3 line"
+    },
+    {
+      "match": "deepseek-v3",
+      "dpr": 46,
+      "aa": 23.0,
+      "swe_verified": 42.0,
+      "confidence": "measured"
+    },
+    {
+      "match": "glm-4.5v",
+      "dpr": 44,
+      "aa": 22.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "o3-mini",
+      "dpr": 44,
+      "aa": 22.0,
+      "confidence": "derived",
+      "note": "SWE-V 49.3"
+    },
+    {
+      "match": "gpt-4-turbo",
+      "dpr": 43,
+      "aa": 21.5,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-oss-20b",
+      "dpr": 41,
+      "aa": 20.7,
+      "confidence": "measured"
+    },
+    {
+      "match": "deepseek-r1",
+      "dpr": 40,
+      "aa": 20.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gemini-2.5-flash",
+      "dpr": 40,
+      "aa": 20.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "glm-4.5-air",
+      "dpr": 40,
+      "aa": 20.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-4.1-mini",
+      "dpr": 40,
+      "aa": 20.2,
+      "swe_verified": 23.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "mistral-large-3",
+      "dpr": 40,
+      "aa": 20.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "qwen3-30b-a3b",
+      "dpr": 40,
+      "aa": 20.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen3-32b",
+      "dpr": 40,
+      "aa": 20.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "claude-3-opus",
+      "dpr": 39,
+      "aa": 19.5,
+      "confidence": "measured"
+    },
+    {
+      "match": "llama-4-maverick",
+      "dpr": 33,
+      "aa": 16.3,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-5-mini",
+      "dpr": 31,
+      "aa": 15.6,
+      "confidence": "measured"
+    },
+    {
+      "match": "claude-3.5-sonnet",
+      "dpr": 30,
+      "aa": 15.0,
+      "confidence": "derived",
+      "note": "SWE-V 49.0"
+    },
+    {
+      "match": "groq/compound",
+      "dpr": 30,
+      "aa": 15.0,
+      "confidence": "derived",
+      "note": "agentic wrapper over Llama"
+    },
+    {
+      "match": "celeris-1",
+      "dpr": 29,
+      "aa": 14.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "ministral-3-14b",
+      "dpr": 29,
+      "aa": 14.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "nemotron-3-nano",
+      "dpr": 29,
+      "aa": 14.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "nemotron-3-nano-omni",
+      "dpr": 28,
+      "aa": 13.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemini-2.5-flash-lite",
+      "dpr": 24,
+      "aa": 12.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-5-nano",
+      "dpr": 24,
+      "aa": 12.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "llama-3.3-70b",
+      "dpr": 24,
+      "aa": 11.9,
+      "confidence": "derived",
+      "note": "Ultravox v0.6 Llama 3.3 70B index entry"
+    },
+    {
+      "match": "llama-3.3-70b-instruct",
+      "dpr": 24,
+      "aa": 11.9,
+      "confidence": "derived"
+    },
+    {
+      "match": "qwen-2.5",
+      "dpr": 24,
+      "aa": 12.0,
+      "confidence": "derived",
+      "note": "2024 line"
+    },
+    {
+      "match": "qwen2.5-coder-32b",
+      "dpr": 24,
+      "aa": 12.0,
+      "confidence": "derived",
+      "note": "2024 model"
+    },
+    {
+      "match": "gpt-4o-mini",
+      "dpr": 23,
+      "aa": 11.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-4.1-nano",
+      "dpr": 22,
+      "aa": 11.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemma-3-27b",
+      "dpr": 20,
+      "aa": 10.1,
+      "confidence": "measured"
+    },
+    {
+      "match": "groq/compound-mini",
+      "dpr": 20,
+      "aa": 10.0,
+      "confidence": "derived",
+      "note": "agentic wrapper over a small Llama"
+    },
+    {
+      "match": "gemma-4-e4b",
+      "dpr": 19,
+      "aa": 9.4,
+      "confidence": "measured"
+    },
+    {
+      "match": "ministral-3-8b",
+      "dpr": 19,
+      "aa": 9.7,
+      "confidence": "measured"
+    },
+    {
+      "match": "gpt-4o",
+      "dpr": 18,
+      "aa": 9.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "gpt-4",
+      "dpr": 16,
+      "aa": 8.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "llama-4-scout",
+      "dpr": 16,
+      "aa": 8.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "gemma-4-e2b",
+      "dpr": 14,
+      "aa": 7.2,
+      "confidence": "measured"
+    },
+    {
+      "match": "ministral-3-3b",
+      "dpr": 10,
+      "aa": 4.8,
+      "confidence": "measured"
+    },
+    {
+      "match": "llama-3.1-8b",
+      "dpr": 8,
+      "aa": 4.0,
+      "confidence": "derived"
+    },
+    {
+      "match": "allam-2-7b",
+      "dpr": 6,
+      "aa": 3.0,
+      "confidence": "derived",
+      "note": "Arabic-focused, not a coding model"
+    },
+    {
+      "match": "gpt-3.5-turbo",
+      "dpr": 4,
+      "aa": 2.0,
+      "confidence": "derived",
+      "note": "cannot be trusted with code"
+    },
+    {
+      "match": "content-safety",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "safety classifier, cannot program"
+    },
+    {
+      "match": "gpt-oss-safeguard",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "safety classifier, cannot program"
+    },
+    {
+      "match": "llama-prompt-guard",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "safety classifier, cannot program"
+    },
+    {
+      "match": "orpheus",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "text-to-speech, cannot program"
+    },
+    {
+      "match": "qwen3-embedding",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "embedding model, cannot program"
+    },
+    {
+      "match": "whisper-large-v3",
+      "dpr": 0,
+      "confidence": "measured",
+      "note": "speech-to-text, cannot program"
+    },
+    {
+      "match": "big-pickle",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OpenCode Zen stealth alias; no public benchmark"
+    },
+    {
+      "match": "openrouter/free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "auto-route: the served model varies per call"
+    },
+    {
+      "match": "orcarouter/auto",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "auto-route"
+    },
+    {
+      "match": "orcarouter/free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "auto-route"
+    },
+    {
+      "match": "ox-alpha",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OpenRouter stealth window; vendor claims frontier coding, unverified"
+    },
+    {
+      "match": "x-preview-f",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OpenCode Zen stealth alias"
+    }
+  ]
+}

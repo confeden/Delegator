@@ -33,8 +33,18 @@ Appended under named mutex `Global\DelegatorUsageLog`, one compact JSON per line
  "stage":"answer|triage|advisor|synthesis|verify|micro|plan|parallel",
  "mode":"ask|micro|verify|boost|parallel|plan","provider":"gemini|opencode-cli|openrouter|zen",
  "model":"...","promptTokens":123,"completionTokens":456,"totalTokens":579,
- "cost":0.0,"elapsedMs":1234,"ok":true,"accountId":"..."}
+ "cost":0.0,"elapsedMs":1234,"ok":true,"accountId":"...","bench":false}
 ```
+
+**`bench` (0.7)** is true for every record written while a benchmark run is in flight, and the
+core drops those records from EVERY figure it reports. A run solves twelve tasks twice on
+purpose: counting it inflates spend by the price of the measurement and "saved" by work nobody
+asked for, so the counter would end up rewarding the act of benchmarking. The flag is carried by
+`<RT>\benchmark-active.json`, written by `benchmark.ps1 start` and removed by `finish`/`cancel`
+(also on a cancel that found nothing, so a crashed run cannot leave it behind). A flag older than
+6 h is ignored — a dead agent must not switch accounting off forever. An environment variable
+cannot do this job: the agent runs each arm through `ai-delegate.cmd` in a separate process.
+Three copies of the check, one per usage writer. `router-decisions.jsonl` carries the same flag.
 
 Token fields may be null when the provider did not report them. Written by
 `gemini-delegate.ps1` / `opencode-delegate.ps1` on every completed provider call (success or
@@ -74,13 +84,36 @@ line starting with `##DELEGATOR_USAGE##` from the user-visible answer.
  "daily":[{"date":"2026-08-10","requests":12,"totalTokens":3000,"cost":0.0}],
  "byModel":[{"model":"gemini-flash-latest","provider":"gemini","requests":9,
              "promptTokens":800,"completionTokens":1500,"totalTokens":2300,"cost":0.0}],
- "savedTokensTotal":123456}
+ "savedTokensTotal":123456,"savedOutputTokens":123456,"handledTokens":400000,
+ "spentTokensTotal":450000,"delegations":37,"benchmarkRecordsExcluded":0}
 ```
 
-`savedTokensTotal` = sum of `totalTokens` over the window — tokens the expensive IDE model did
-not have to spend (delegated work). Source: `usage.jsonl` (covers IDE-invoked calls too) with
-`stage=="answer"|"micro"|"verify"` counted in savedTokens; all stages counted in totals.
-DB message rows are NOT the source (they only cover core-initiated chats).
+Source: `usage.jsonl` (covers IDE-invoked calls too); DB message rows are NOT the source, they
+only cover core-initiated chats. **Every record with `bench:true` is dropped first** (§2.1).
+
+- **`savedOutputTokens`** — the headline, and the only figure that claims to be a saving:
+  `completionTokens` summed over SUCCESSFUL user-facing stages
+  (`answer|micro|verify|plan|parallel|improve`). That is output the caller's own model did not
+  have to generate. It still pays to read the answer back, but generation is the constrained
+  resource, so the input half is deliberately not claimed.
+- **`handledTokens`** — gross throughput moved off the main model, input context included. This
+  is where a long `-ContextFile` shows up.
+- **`spentTokensTotal`** — everything Delegator's own models burned, including internal stages
+  (`triage|advisor|synthesis|extract`) and failed calls.
+- **`delegations`** — distinct `requestId`s that produced user-facing output.
+- **`savedTokensTotal`** — legacy key, equal to `savedOutputTokens` since 0.7. Before 0.7 it was
+  gross `totalTokens`, i.e. Delegator's own SPEND presented as a SAVING.
+
+**The 0.7 cut-off.** Config migration v11→v12 writes `<RT>\usage-counted-from.txt` (ISO-8601 UTC)
+and this report ignores anything older; `days=N` may only be NARROWED by it, never widened. The
+log is deliberately NOT moved or deleted, because `Get-ModelHealth` (§9) reads the same file to
+learn which models are slow or failing. The first design renamed it aside and did both kinds of
+damage: a racing double migration destroyed 180 KB of history outright, and the empty log left
+every model looking untested, so the strength floor picked the highest-DPR id it could find and
+spent 92 s timing out on it. Reset the COUNTER, never the EVIDENCE.
+
+A failed call is `spent` and never `saved`. Internal stages are `spent` and never `saved` —
+they replace no work the caller would otherwise have done.
 
 ## 4. HTTP body encoding (PS 5.1)
 
@@ -209,10 +242,45 @@ install and the backend then answers with its own flash-class default — a weak
 delegating to an equally weak model. `Get-StrongEnabledModel` is the floor under that: the
 **`enabled_opencode_models` list only** (Gemini ids never compete here — callers that need a
 non-OpenCode answer fall back themselves, e.g. `improve` → `gemini-pro-latest`), sorted by
-strength DESC and filtered by measured health. Strength comes from
-`<RT>\opencode-zen-catalog.json`; when that file does not exist yet (cold install)
-`Get-ModelStrengthScore` recomputes it from the id with the same heuristic — a flat default
-would make the tie-break alphabetical.
+strength DESC and filtered by measured health.
+
+### 9.1 DPR — the strength scale (0.7)
+
+Strength is **DPR (Delegator Programming Rating)**, defined in the SHIPPED
+`{app}\runtime\model-ratings.json`: `round(2 × Artificial Analysis Coding Index %)`, snapshot
+2026-08-18, cross-checked against SWE-bench Verified. **0 means the model cannot program at
+all** — speech, TTS, safety classifiers and embedding models are literal zeros and must never
+be delegated code — and the scale has **no ceiling** (today's top is 156).
+
+Lookup is the LONGEST substring of the lowercased id, so one row covers every route to the same
+model (`agentrouter/claude-opus-5`, `aerolink/claude-opus-5`, `orcarouter/anthropic/claude-opus-4.6-fast`)
+and `glm-5.2` wins over `glm-5`. An id with no row is **unrated**, which is NOT zero: it scores
+`DelegateUnratedDpr` (100) and measured health decides from there. Zeroing an unknown model
+would ban it; guessing high would hand it hard work nobody measured.
+
+Tier floors: **deep ≥130, normal ≥100, fast below**. `<RT>\opencode-zen-catalog.json` still
+carries the per-id numbers to the router and still wins where it has an entry — it is now
+GENERATED from this table by `update-free-models.ps1`, so the file is a cache, not a second
+opinion.
+
+**The cache carries `ratingsVersion`, and a mismatch invalidates it whole** (PowerShell
+`Read-ZenCatalog`, Rust `load_zen_strengths`). The catalog is only rewritten when it ages past
+24 h, so without this an upgrade that changes the scores keeps routing on the old ones for a
+full day — measured on the 0.7 upgrade itself, where a surviving pre-0.7 catalog still scored
+`nemotron-3-ultra` 93 (top of the deep tier) hours after the table scoring it 99 had shipped.
+A pre-0.7 catalog has no stamp at all, so it reads as 0 and is rejected, which is the intent.
+**Bump `version` in model-ratings.json whenever any `dpr` changes**, or every cache built from
+the old numbers stays valid.
+
+Four copies of the reader, deliberately: `delegator-common.ps1`, `opencode-delegate.ps1`,
+`update-free-models.ps1`, `src/gui/opencode_setup.rs` (which embeds the table with
+`include_str!` so the GUI can order models before the runtime has written anything).
+
+The alias-NAME heuristic this replaced is **gone, not kept as a fallback**. It did not merely
+guess, it guessed backwards where it mattered: "ultra" was worth +40, so `nemotron-3-ultra`
+scored 93/100 and led the deep tier, while the published index puts it at 49 — and that is the
+model already on record for 175 s on a trivial question and 6 failures in its last 10 calls.
+Re-snapshot the index; never hand-edit a row.
 
 Health comes from `<RT>\usage.jsonl` (last 400 records, per model the last 12): a model is
 skipped when ≥4 samples show a failure rate ≥40 %, or when the p75 of its successful calls

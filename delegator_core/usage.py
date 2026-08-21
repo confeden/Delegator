@@ -6,10 +6,32 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-# Stages that represent user-facing delegated work (tokens the expensive IDE model
-# did not have to spend). Internal overhead stages (triage, advisor, synthesis)
-# count toward totals but not toward "saved".
-SAVED_STAGES = {"answer", "micro", "verify", "plan", "parallel"}
+# Stages that produced something the IDE's own model would otherwise have had to
+# produce. Internal overhead stages (triage, advisor, synthesis, extract) are
+# real spend but replace nothing, so they count toward totals and never toward
+# "saved".
+SAVED_STAGES = {"answer", "micro", "verify", "plan", "parallel", "improve"}
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def is_benchmark_record(record: dict[str, Any]) -> bool:
+    """A benchmark run must never reach any figure this module reports.
+
+    It deliberately solves twelve tasks twice, so counting it would inflate
+    "spent" by the price of the measurement and "saved" by work the user never
+    asked for -- the counter would end up rewarding running the benchmark.
+    `benchmark.ps1` marks these records via `<RT>\\benchmark-active.json`; records
+    written before 0.7 carry no flag at all and are simply not benchmarks as far
+    as this function can tell, which is why 0.7 resets the log.
+    """
+    return _as_bool(record.get("bench"))
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -65,10 +87,38 @@ def iter_usage_records(usage_file: Path, *, since: datetime) -> list[dict[str, A
     return records
 
 
+COUNT_FROM_FILE = "usage-counted-from.txt"
+
+
+def read_counted_from(runtime_home: Path) -> datetime | None:
+    """Timestamp before which records exist but must not be COUNTED.
+
+    0.7 changes what «сэкономлено» means, and pre-0.7 lines carry no `bench`
+    flag, so mixing them into the new figures would produce one number with two
+    meanings. The first design deleted the log to solve that — and took the
+    health history with it, because `Get-ModelHealth` reads the very same file
+    to learn which models are slow. Wiping it left every model looking untested,
+    so the strength floor reached for the strongest one it had and spent 92 s
+    timing out on it.
+
+    A cut-off line keeps both consumers whole: the counter starts at zero, the
+    router keeps every latency sample it had.
+    """
+    marker = runtime_home / COUNT_FROM_FILE
+    try:
+        raw = marker.read_text(encoding="utf-8-sig").strip()
+    except OSError:
+        return None
+    return _parse_ts(raw)
+
+
 def build_usage_report(usage_file: Path, *, days: int = 7) -> dict[str, Any]:
     days = max(1, min(int(days or 7), 90))
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
+    counted_from = read_counted_from(usage_file.parent)
+    if counted_from is not None and counted_from > since:
+        since = counted_from
     today_key = now.date().isoformat()
     records = iter_usage_records(usage_file, since=since)
 
@@ -88,9 +138,16 @@ def build_usage_report(usage_file: Path, *, days: int = 7) -> dict[str, Any]:
     by_model: dict[tuple[str, str], dict[str, Any]] = defaultdict(_bucket)
     request_ids_by_day: dict[str, set[str]] = defaultdict(set)
     request_ids_today: set[str] = set()
-    saved_tokens_total = 0
+    spent_tokens_total = 0
+    saved_output_tokens = 0
+    handled_tokens = 0
+    delegation_ids: set[str] = set()
+    benchmark_records = 0
 
     for record in records:
+        if is_benchmark_record(record):
+            benchmark_records += 1
+            continue
         ts: datetime = record["_ts"]
         day_key = ts.date().isoformat()
         provider = str(record.get("provider") or "unknown")
@@ -119,8 +176,23 @@ def build_usage_report(usage_file: Path, *, days: int = 7) -> dict[str, Any]:
         model_bucket = by_model[(model, provider)]
         _add(model_bucket)
         model_bucket["requests"] += 1
-        if stage in SAVED_STAGES:
-            saved_tokens_total += total_tokens
+        spent_tokens_total += total_tokens
+
+        # What the delegation actually saved the caller. A failed call saved
+        # nothing (its tokens still count as spent), and an internal stage
+        # replaces no work at all.
+        ok = record.get("ok")
+        succeeded = True if ok is None else _as_bool(ok)
+        if stage in SAVED_STAGES and succeeded:
+            # The conservative, defensible figure: OUTPUT the IDE's model did
+            # not have to generate. It still pays to read the answer back, but
+            # generation is the constrained resource, so this is the saving.
+            saved_output_tokens += completion_tokens
+            # Gross: everything the free model chewed through instead -- input
+            # context included, which is where a long -ContextFile pays off.
+            handled_tokens += total_tokens
+            if request_id:
+                delegation_ids.add(request_id)
         if day_key == today_key:
             _add(today)
             if request_id:
@@ -157,5 +229,18 @@ def build_usage_report(usage_file: Path, *, days: int = 7) -> dict[str, Any]:
         },
         "daily": daily_rows,
         "byModel": model_rows,
-        "savedTokensTotal": saved_tokens_total,
+        # Headline: output tokens the IDE's own model never had to generate.
+        # `savedTokensTotal` keeps the old key so an older GUI still renders,
+        # but it now carries this honest number instead of gross throughput.
+        "savedTokensTotal": saved_output_tokens,
+        "savedOutputTokens": saved_output_tokens,
+        # Everything the free models processed in place of the main model,
+        # input context included.
+        "handledTokens": handled_tokens,
+        # Everything Delegator's own models burned, overhead and failures too.
+        "spentTokensTotal": spent_tokens_total,
+        "delegations": len(delegation_ids),
+        # Reported so the number is auditable: a run that looks low right after
+        # a benchmark should show why.
+        "benchmarkRecordsExcluded": benchmark_records,
     }

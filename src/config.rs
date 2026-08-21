@@ -50,6 +50,38 @@ pub struct ProxyEntry {
 /// How often the GUI may run `opencode upgrade` in the background.
 pub const OPENCODE_UPGRADE_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
+/// Unix seconds → `YYYY-MM-DDTHH:MM:SSZ`.
+///
+/// Hand-rolled on purpose: this crate carries no date dependency (the quota
+/// ledger parsing is hand-rolled for the same reason), and one timestamp is not
+/// worth one. Civil-from-days is Howard Hinnant's algorithm, valid for any date
+/// after 1970 — the only range that can occur here.
+pub fn unix_to_iso8601(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let time_of_day = seconds % 86_400;
+    // Shift the epoch to 0000-03-01 so leap days land at the end of the cycle.
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * shifted_month + 2) / 5 + 1) as u32;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    } as u32;
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        time_of_day / 3_600,
+        (time_of_day % 3_600) / 60,
+        time_of_day % 60
+    )
+}
+
 /// Current wall clock in unix seconds (0 if the clock predates the epoch).
 pub fn unix_now() -> u64 {
     SystemTime::now()
@@ -111,7 +143,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 11,
+            config_version: 12,
             google_api_key_enc: String::new(),
             google_accounts: Vec::new(),
             opencode_api_key_enc: String::new(),
@@ -254,6 +286,53 @@ impl AppConfig {
         if self.config_version < 11 {
             self.migrate_current_gemini_models();
         }
+        if self.config_version < 12 {
+            self.migrate_reset_usage_counter(&runtime_home_dir());
+        }
+    }
+
+    /// v11→v12 (0.7): the usage log starts over.
+    ///
+    /// Before 0.7 «Сэкономлено» reported gross throughput of the free models and
+    /// nothing marked benchmark traffic, so every historical line is either
+    /// measured against a different definition or is a benchmark run nobody can
+    /// identify after the fact (`bench` simply did not exist as a field). Adding
+    /// the new figures on top of that history would produce one number that
+    /// silently mixes two meanings.
+    ///
+    /// Nothing is moved or deleted: a CUT-OFF is written to
+    /// `<RT>\usage-counted-from.txt` and the core stops counting anything older.
+    ///
+    /// The first design renamed the log aside, and that was wrong twice over.
+    /// It lost data — `migrate()` is reachable from THREE `AppConfig::load()`
+    /// sites (`gui/app.rs` twice, `gui/background.rs` once) across two threads,
+    /// two loaders both read a v11 file before either wrote v12, the migration
+    /// ran twice, and the second run deleted the first run's archive: 180 KB of
+    /// the owner's history, unrecoverable. And it broke routing — `usage.jsonl`
+    /// is ALSO where `Get-ModelHealth` learns which models are slow, so an empty
+    /// log left every model looking untested and the strength floor spent 92 s
+    /// timing out on the strongest id it could find.
+    ///
+    /// A timestamp fixes both: the counter starts at zero, the router keeps
+    /// every latency sample, and a migration that runs twice writes the same
+    /// kind of file twice instead of destroying anything.
+    fn migrate_reset_usage_counter(&mut self, runtime_home: &Path) {
+        if self.config_version >= 12 {
+            return;
+        }
+        let marker = runtime_home.join("usage-counted-from.txt");
+        // Never re-stamp: a second (racing) migration must not move the cut-off
+        // forward and silently discard whatever was counted in between.
+        if !marker.exists() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            if let Err(error) = std::fs::write(&marker, unix_to_iso8601(now)) {
+                eprintln!("Could not write {}: {error}", marker.display());
+            }
+        }
+        self.config_version = 12;
     }
 
     /// v10→v11 (owner request 2026-08-13): the newest Gemini generations join
@@ -834,7 +913,7 @@ mod tests {
     #[test]
     fn defaults_enable_current_opencode_free_models() {
         let config = AppConfig::default();
-        assert_eq!(config.config_version, 11);
+        assert_eq!(config.config_version, 12);
         assert!(config.proxies.is_empty());
         assert_eq!(config.enabled_opencode_models, default_opencode_models());
         // Since v9 every known free Zen model ships enabled, big-pickle too.
@@ -937,7 +1016,7 @@ mod tests {
         fs::write(&path, legacy).expect("write legacy config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 11);
+        assert_eq!(cfg.config_version, 12);
         assert_eq!(cfg.google_accounts.len(), 1);
         assert_eq!(cfg.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert!(cfg.google_accounts[0].enabled);
@@ -967,7 +1046,7 @@ mod tests {
 
         // The migrated config is persisted and loads back cleanly.
         let reloaded = AppConfig::load_from_path(&path);
-        assert_eq!(reloaded.config_version, 11);
+        assert_eq!(reloaded.config_version, 12);
         assert_eq!(reloaded.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert_eq!(reloaded.proxies.len(), 1);
         cleanup(&path);
@@ -980,7 +1059,7 @@ mod tests {
         fs::write(&path, garbage).expect("write corrupt config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 11);
+        assert_eq!(cfg.config_version, 12);
         assert!(cfg.google_accounts.is_empty());
 
         let dir = path.parent().expect("temp dir");
@@ -1000,7 +1079,7 @@ mod tests {
         // A fresh default config took the original path.
         let fresh = fs::read_to_string(&path).expect("read fresh config");
         let fresh: AppConfig = serde_json::from_str(&fresh).expect("fresh config parses");
-        assert_eq!(fresh.config_version, 11);
+        assert_eq!(fresh.config_version, 12);
         cleanup(&path);
     }
 
@@ -1050,7 +1129,7 @@ mod tests {
         config.migrate();
 
         // migrate() chains through v7/v8 up to the current version 9.
-        assert_eq!(config.config_version, 11);
+        assert_eq!(config.config_version, 12);
         assert_eq!(config.proxies.len(), 1);
         // v7 seeded known = enabled opencode/* ∪ built-in catalog; v9 then
         // enabled every one of them, the user's own alias included.
@@ -1098,6 +1177,7 @@ mod tests {
         };
         config.config_version = 10;
         config.migrate_current_gemini_models();
+        // This step alone lands on 11; the 0.7 usage reset takes it to 12.
         assert_eq!(config.config_version, 11);
         assert!(config
             .enabled_gemini_models
@@ -1158,7 +1238,7 @@ mod tests {
         // migrations at all. Found the hard way: config v10 on a fresh file with
         // the model missing, because only the v9→v10 path added it.
         let config = AppConfig::default();
-        assert_eq!(config.config_version, 11);
+        assert_eq!(config.config_version, 12);
         assert!(config
             .enabled_opencode_models
             .contains(&UNIVERSAL_FREE_MODEL.to_string()));
@@ -1222,7 +1302,7 @@ mod tests {
 
         config.migrate();
 
-        assert_eq!(config.config_version, 11);
+        assert_eq!(config.config_version, 12);
         for model in [
             "opencode/big-pickle",
             "opencode/nemotron-3-ultra-free",
@@ -1403,6 +1483,91 @@ mod tests {
         let config_json =
             serde_json::to_string(&AppConfig::default()).expect("default config serializes");
         assert!(config_json.contains("\"proxies\""));
+    }
+
+    /// v11→v12 (0.7). Pre-0.7 lines measured «сэкономлено» as gross throughput
+    /// and carried no `bench` flag, so they cannot be mixed into the new
+    /// figures. The counter therefore starts at a CUT-OFF — and the log itself
+    /// is left alone, because `Get-ModelHealth` reads the same file to learn
+    /// which models are slow.
+    #[test]
+    fn migration_v11_to_v12_stamps_a_cut_off_and_leaves_the_log_alone() {
+        let config_path = temp_config_path("usage-reset");
+        let runtime_home = config_path.parent().expect("temp dir").to_path_buf();
+        let log = runtime_home.join("usage.jsonl");
+        fs::write(
+            &log,
+            "{\"ts\":\"2026-08-01T00:00:00Z\"}
+",
+        )
+        .expect("write usage log");
+
+        let mut config = AppConfig {
+            config_version: 11,
+            ..AppConfig::default()
+        };
+        config.migrate_reset_usage_counter(&runtime_home);
+
+        assert_eq!(config.config_version, 12);
+        assert!(
+            log.exists(),
+            "the log carries the health history and must survive"
+        );
+        let marker = runtime_home.join("usage-counted-from.txt");
+        let stamp = fs::read_to_string(&marker).expect("read cut-off");
+        assert!(stamp.ends_with('Z') && stamp.starts_with("20"), "{stamp}");
+
+        // THE REGRESSION. `migrate()` is reachable from three `AppConfig::load()`
+        // call sites across two threads, so two loaders can both read a v11 file
+        // before either writes v12 and the migration runs TWICE. The first
+        // design renamed the log aside and deleted any previous archive, and the
+        // second run destroyed the first run's history for good — 180 KB, gone.
+        // A second run must now be inert.
+        let mut stale = AppConfig {
+            config_version: 11,
+            ..AppConfig::default()
+        };
+        stale.migrate_reset_usage_counter(&runtime_home);
+        assert_eq!(stale.config_version, 12);
+        assert_eq!(
+            fs::read_to_string(&marker).expect("re-read cut-off"),
+            stamp,
+            "a racing second migration must not move the cut-off forward"
+        );
+        assert!(log.exists(), "and must still not touch the log");
+
+        let _ = fs::remove_dir_all(&runtime_home);
+    }
+
+    /// A fresh install has nothing to stamp against and must not fail over it —
+    /// the «fresh config runs NO migrations» trap in reverse.
+    #[test]
+    fn the_usage_reset_is_a_no_op_on_a_fresh_config() {
+        let config_path = temp_config_path("usage-reset-empty");
+        let runtime_home = config_path.parent().expect("temp dir").to_path_buf();
+
+        let mut config = AppConfig {
+            config_version: 11,
+            ..AppConfig::default()
+        };
+        config.migrate_reset_usage_counter(&runtime_home);
+
+        assert_eq!(config.config_version, 12);
+        assert!(runtime_home.join("usage-counted-from.txt").exists());
+        // And a brand-new config is already past it, so nothing runs at all.
+        assert_eq!(AppConfig::default().config_version, 12);
+
+        let _ = fs::remove_dir_all(&runtime_home);
+    }
+
+    /// The cut-off is written by hand (no date crate), so it has to be right.
+    #[test]
+    fn unix_seconds_render_as_iso8601() {
+        assert_eq!(unix_to_iso8601(0), "1970-01-01T00:00:00Z");
+        assert_eq!(unix_to_iso8601(1_000_000_000), "2001-09-09T01:46:40Z");
+        // A leap day, which is where a hand-rolled calendar usually breaks.
+        assert_eq!(unix_to_iso8601(1_709_164_800), "2024-02-29T00:00:00Z");
+        assert_eq!(unix_to_iso8601(1_787_308_800), "2026-08-21T10:40:00Z");
     }
 
     #[test]

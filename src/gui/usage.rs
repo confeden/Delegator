@@ -12,7 +12,27 @@ pub struct UsageReport {
     pub today: UsageTotals,
     pub daily: Vec<UsageDay>,
     pub by_model: Vec<UsageModelRow>,
+    /// Legacy key, kept so an older core still renders; 0.7 makes it equal to
+    /// `saved_output_tokens`.
     pub saved_tokens_total: Option<u64>,
+    /// Output tokens the IDE's own model never had to generate — the headline.
+    pub saved_output_tokens: Option<u64>,
+    /// Gross: everything the free models processed in its place, input included.
+    pub handled_tokens: Option<u64>,
+    /// Everything Delegator's models burned, internal stages and failures too.
+    pub spent_tokens_total: Option<u64>,
+    /// Requests that actually reached a model and produced user-facing output.
+    pub delegations: Option<u64>,
+    /// Records dropped as benchmark traffic, so a low number is auditable.
+    pub benchmark_records_excluded: Option<u64>,
+}
+
+impl UsageReport {
+    /// The saving to show. Falls back to the legacy key when talking to a core
+    /// older than 0.7.
+    pub fn saved(&self) -> Option<u64> {
+        self.saved_output_tokens.or(self.saved_tokens_total)
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

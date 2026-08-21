@@ -298,28 +298,20 @@ function Get-LatencyBudgetMs {
 }
 
 function Get-ModelStrengthScore {
-    # Strength of one model id: the Zen catalog when it exists, otherwise the
-    # same name heuristic the catalog itself is built from. The catalog is only
-    # written on the first non-dot-sourced run of opencode-delegate.ps1, so on a
-    # cold install it is missing - and without this fallback every candidate
-    # scored a flat 50 and the tie-break picked ALPHABETICALLY (big-pickle before
-    # nemotron-3-ultra), which is exactly the case this floor exists for.
+    # Strength of one model id on the DPR scale: the Zen catalog when it carries
+    # the id (it is written from the same ratings table), otherwise the shipped
+    # model-ratings.json directly. The catalog only ever holds `opencode/*` Zen
+    # aliases, so WITHOUT the ratings lookup every other provider - including
+    # agentrouter/claude-opus-5, the strongest model the user owns - fell back to
+    # a flat neutral score and could never reach the deep pool.
     #
-    # FOURTH copy of the heuristic (update-free-models.ps1, opencode-delegate.ps1,
-    # src/gui/opencode_setup.rs are the others) - change them together.
+    # An unrated model gets DelegateUnratedDpr (normal tier) rather than 0 or a
+    # guess: measured health then decides whether it is worth trying.
     param([string]$ModelId, [hashtable]$Catalog)
     if ($Catalog -and $Catalog.ContainsKey($ModelId)) { return [int]$Catalog[$ModelId] }
-    $name = ([string]$ModelId).ToLowerInvariant()
-    $score = 50
-    if ($name -match "ultra") { $score += 40 }
-    elseif ($name -match "pro|max") { $score += 30 }
-    elseif ($name -match "large|big") { $score += 20 }
-    elseif ($name -match "flash|standard") { $score += 10 }
-    if ($name -match "mini") { $score -= 20 }
-    if ($name -match "tiny|nano|lite") { $score -= 30 }
-    $version = [regex]::Match($name, "[1-9]")
-    if ($version.Success) { $score += [int]$version.Value }
-    return $score
+    $rating = Get-DelegatorModelRating $ModelId
+    if ($null -ne $rating) { return [int]$rating }
+    return [int]$script:DelegateUnratedDpr
 }
 
 function Get-StrongEnabledModel {
@@ -1915,6 +1907,9 @@ function Write-RouterDecision {
             routerVersion = [string]$Decision.routerVersion
             routeMs = $ElapsedMs
             features = $Decision.features
+            # Marked, not dropped: a learned router must be able to exclude
+            # benchmark traffic later without re-deriving which lines it was.
+            bench = (Test-DelegatorBenchmarkActive)
         } | ConvertTo-Json -Depth 5 -Compress
         $path = Join-Path $script:DelegateHome "router-decisions.jsonl"
         $stream = New-Object System.IO.StreamWriter($path, $true, (New-Object System.Text.UTF8Encoding $false))

@@ -139,6 +139,33 @@ function Read-RunMeta([string]$Id) {
     return (Read-Utf8 $metaPath | ConvertFrom-Json)
 }
 
+# ── Benchmark isolation ───────────────────────────────────────────────────────
+# The three usage writers (delegator-common.ps1, gemini-delegate.ps1,
+# opencode-delegate.ps1) stamp `bench:true` on every record written while this
+# flag is fresh, and the core drops those records from EVERY figure it reports.
+# Without it a benchmark - twelve tasks solved twice, by design - would show up
+# as the user's own delegated work and inflate both spent and saved tokens.
+#
+# The agent runs the arms through ai-delegate.cmd in separate processes, so an
+# environment variable cannot carry this; only a file can.
+$script:BenchmarkFlagFile = Join-Path $script:DelegateHome "benchmark-active.json"
+
+function Set-BenchmarkFlag {
+    param([string]$RunIdValue)
+    try {
+        Ensure-DelegateDir $script:DelegateHome
+        $flag = [pscustomobject]@{
+            runId = [string]$RunIdValue
+            startedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        }
+        Write-Utf8 $script:BenchmarkFlagFile ($flag | ConvertTo-Json -Depth 3)
+    } catch {}
+}
+
+function Clear-BenchmarkFlag {
+    try { Remove-Item -LiteralPath $script:BenchmarkFlagFile -Force -ErrorAction SilentlyContinue } catch {}
+}
+
 function Start-Run {
     $payload = @{ mode = $Mode; model = $Model; reasoning = $Reasoning; force = [bool]$Force }
     if ($Seed -gt 0) { $payload.seed = $Seed }
@@ -154,6 +181,9 @@ function Start-Run {
         throw "Delegator Core вернул ошибку HTTP $($started.status). $($started.raw)"
     }
     $run = $started.data
+    # Set BEFORE the first task is handed out: everything from here to
+    # finish/cancel is measurement, not the user's work.
+    Set-BenchmarkFlag $run.runId
 
     $runDir = Get-RunDir $run.runId
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
@@ -365,6 +395,7 @@ function Complete-Run {
         }
         throw "Delegator Core вернул ошибку HTTP $($result.status). $($result.raw)"
     }
+    Clear-BenchmarkFlag
     Show-Report $result.data
 }
 
@@ -391,6 +422,9 @@ function Stop-Run {
     $payload = @{}
     if (-not [string]::IsNullOrWhiteSpace($RunId)) { $payload.runId = $RunId }
     $result = Invoke-Core -Path "/api/benchmark/cancel" -Body $payload
+    # Cleared even when the core says there was nothing to cancel: a leftover
+    # flag from a crashed run would keep real work out of the counters.
+    Clear-BenchmarkFlag
     if (-not $result.ok) {
         throw "Delegator Core вернул ошибку HTTP $($result.status). $($result.raw)"
     }

@@ -7,6 +7,7 @@ mod gui;
 mod ide_detector;
 mod models_service;
 mod runtime_service;
+mod single_instance;
 mod theme;
 mod tray_service;
 mod update_check;
@@ -23,6 +24,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|arg| arg.eq_ignore_ascii_case("--remove-hooks")) {
         ide_detector::IdeDetector::remove_all_hooks();
         ide_detector::IdeDetector::remove_legacy_shims();
+        return Ok(());
+    }
+    // BEFORE the core is touched. Two supervisors on :1380 spend their time
+    // respawning what the other one tree-kills, and both would rewrite
+    // config.json behind each other's back. Autostart plus a manual launch is
+    // the ordinary way this happens, so the second copy just surfaces the first
+    // one's window and leaves.
+    if single_instance::acquire() == single_instance::InstanceLock::AlreadyRunning {
+        single_instance::raise_running_instance();
         return Ok(());
     }
     let start_in_background = std::env::args().any(|arg| {
