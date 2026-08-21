@@ -56,10 +56,28 @@ try {
     # 10 000 characters is Cursor's own limit; over it the hook is rejected.
     if ($body.Length -gt 9500) { $body = $body.Substring(0, 9500) }
 
+    # THE KEY IS snake_case. Read out of Cursor 3.16's own bundle:
+    #   cursor-agent-exec/dist/main.js, case "beforeSubmitPrompt":
+    #     new u1V({ continue: t?.continue,
+    #               userMessage:       t?.user_message,
+    #               additionalContext: t?.additional_context })
+    # `additionalContext` there is the INTERNAL field being set; what it reads
+    # from the hook is `additional_context`. The camelCase-only payload this
+    # script used to emit was therefore silently discarded on every prompt, and
+    # the Cursor integration injected nothing at all since 0.6.3.
+    #
+    # The Claude-style nested shape is no fallback either:
+    #   workbench.desktop.main.js:
+    #     enableClaudeNestedHookSpecificOutputCompatibility ?? !1
+    # it is opt-in and defaults to FALSE, so the flat object is used as-is.
+    # Both spellings are emitted anyway — an unread key costs nothing, and a
+    # rename in either direction should not silence the hook a second time.
     $payload = [ordered]@{
+        additional_context = $body
         additionalContext = $body
         hookSpecificOutput = [ordered]@{
             hookEventName = "beforeSubmitPrompt"
+            additional_context = $body
             additionalContext = $body
         }
     }

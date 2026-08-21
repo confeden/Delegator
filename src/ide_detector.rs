@@ -1168,6 +1168,52 @@ mod tests {
     // Cursor loads a rule only when it carries a header, and only offers it to
     // the agent by name when that header has a description. Without one the
     // agent had to grep the machine to find out what `-benchmark` means.
+    /// Cursor reads `additional_context` — snake_case — from a hook's stdout.
+    /// From its own 3.16 bundle, `cursor-agent-exec/dist/main.js`:
+    ///   `new u1V({ ..., additionalContext: t?.additional_context })`
+    /// where `additionalContext` is the internal field being SET. The hook used
+    /// to emit only camelCase, so every prompt silently discarded it and the
+    /// Cursor integration injected nothing at all. The nested Claude shape is no
+    /// fallback: `enableClaudeNestedHookSpecificOutputCompatibility ?? !1`.
+    ///
+    /// This runs the real script, because a source-text assertion would not have
+    /// caught the original bug — that payload was well-formed JSON with a
+    /// plausible key.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn the_cursor_hook_emits_the_key_cursor_actually_reads() {
+        let profile = TempProfile::new("cursor-hook-shape");
+        let rule = profile.root.join(".cursor\\rules\\delegator.mdc");
+        std::fs::create_dir_all(rule.parent().expect("rules dir")).expect("create rules dir");
+        std::fs::write(
+            &rule,
+            "---\ndescription: 'x'\nalwaysApply: true\n---\n<!-- DELEGATOR_HOOK_START -->\nBODY\n",
+        )
+        .expect("write rule");
+
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts\\cursor-hook.ps1");
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-File"])
+            .arg(&script)
+            .env("USERPROFILE", &profile.root)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("run cursor-hook.ps1");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value =
+            serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+                panic!("hook stdout must be JSON ({error}): {stdout}");
+            });
+
+        let injected = parsed
+            .get("additional_context")
+            .and_then(serde_json::Value::as_str)
+            .expect("Cursor reads `additional_context`; camelCase alone is discarded");
+        assert!(injected.contains("BODY"), "{injected}");
+        // The YAML header is Cursor rule metadata, not instructions.
+        assert!(!injected.contains("alwaysApply"), "{injected}");
+    }
+
     #[test]
     fn the_cursor_rule_is_an_mdc_with_a_header() {
         let profile = TempProfile::new("cursor-rule");
