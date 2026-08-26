@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::OnceLock;
 use std::time::Duration;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 /// The GUI context, published once the eframe app exists. Tray callbacks run on
@@ -171,11 +171,31 @@ fn start_quit_watchdog() {
 /// created them — the same thread that runs the egui loop.
 thread_local! {
     static TOGGLE_ITEM: RefCell<Option<MenuItem>> = const { RefCell::new(None) };
+    // The «Автозагрузка» tick, held for the same reason: a muda item is `Rc`
+    // inside, so it can be neither moved into the menu callback (which must be
+    // `Send + Sync`) nor touched from another thread.
+    static AUTOSTART_ITEM: RefCell<Option<CheckMenuItem>> = const { RefCell::new(None) };
 }
 
-/// Label the tray toggle with the action it performs, not with the state.
-pub fn set_toggle_label(enabled: bool) {
-    let text = if enabled {
+/// What the menu items should show. Written from anywhere, applied in exactly
+/// one place — [`refresh_menu_state`], which runs when the menu is about to open.
+///
+/// **A menu item may never be touched from its own menu callback.** muda hands
+/// the event over while that item's `RefCell` is still mutably borrowed
+/// (`menu_selected(hwnd, &mut item.borrow_mut())` keeps the guard alive across a
+/// synchronous `MenuEvent::send`), and `set_text` / `set_checked` / `is_checked`
+/// all borrow it again — `already mutably borrowed`, which under
+/// `panic = "abort"` takes the whole app down on the first click. Mirroring the
+/// state into an atomic and applying it from the tray-icon callback avoids it:
+/// Windows delivers that callback BEFORE the context menu is shown, so the user
+/// never sees a stale label either.
+static TOGGLE_SHOWS_ENABLED: AtomicBool = AtomicBool::new(true);
+static AUTOSTART_TICKED: AtomicBool = AtomicBool::new(false);
+
+/// Brings both items in step with the real state. Safe only OUTSIDE the menu
+/// callback — see [`TOGGLE_SHOWS_ENABLED`].
+fn refresh_menu_state() {
+    let text = if TOGGLE_SHOWS_ENABLED.load(Ordering::SeqCst) {
         "Отключить"
     } else {
         "Включить"
@@ -185,6 +205,21 @@ pub fn set_toggle_label(enabled: bool) {
             item.set_text(text);
         }
     });
+    // Read back rather than trusted: autostart can be switched off in
+    // msconfig or Task Manager, and a tick that lies is worse than no tick.
+    let autostart = crate::autostart::is_enabled();
+    AUTOSTART_TICKED.store(autostart, Ordering::SeqCst);
+    AUTOSTART_ITEM.with(|item| {
+        if let Some(item) = item.borrow().as_ref() {
+            item.set_checked(autostart);
+        }
+    });
+}
+
+/// Label the tray toggle with the action it performs, not with the state. The
+/// label is only ever seen when the menu opens, so recording it is enough.
+pub fn set_toggle_label(enabled: bool) {
+    TOGGLE_SHOWS_ENABLED.store(enabled, Ordering::SeqCst);
 }
 
 /// Actions the GUI still has to perform itself. «Включить/Отключить» is NOT
@@ -203,6 +238,7 @@ pub struct TrayManager {
     icon_size: (u32, u32),
     _open_item: MenuItem,
     _toggle_item: MenuItem,
+    _autostart_item: CheckMenuItem,
     _quit_item: MenuItem,
 }
 
@@ -212,10 +248,20 @@ impl TrayManager {
         let open_item = MenuItem::new("Открыть Delegator", true, None);
         // Text is replaced by set_toggle_label as soon as the GUI knows the state.
         let toggle_item = MenuItem::new("Отключить", true, None);
+        // The tick shows the CURRENT state, unlike «Отключить» above, which is
+        // named after the action: a checkbox that named an action would be
+        // unreadable ("Автозагрузка" checked = "it is on", nothing else).
+        let autostart_item = CheckMenuItem::new(
+            "Автозагрузка при входе в Windows",
+            true,
+            crate::autostart::is_enabled(),
+            None,
+        );
         let quit_item = MenuItem::new("Выйти из Delegator", true, None);
 
         let _ = tray_menu.append(&open_item);
         let _ = tray_menu.append(&toggle_item);
+        let _ = tray_menu.append(&autostart_item);
         let _ = tray_menu.append(&quit_item);
 
         let logo = image::load_from_memory(include_bytes!("../assets/delegator-logo.png"))?
@@ -235,6 +281,7 @@ impl TrayManager {
         let _ = QUIT_TX.set(tx.clone());
         let open_id = open_item.id().clone();
         let toggle_id = toggle_item.id().clone();
+        let autostart_id = autostart_item.id().clone();
         let quit_id = quit_item.id().clone();
         let menu_tx = tx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
@@ -243,11 +290,22 @@ impl TrayManager {
                 Some(TrayAction::Open)
             } else if event.id == toggle_id {
                 // Done here and now: the GUI would only see the request the
-                // next time the window is opened. This callback runs on the
-                // thread that owns the menu item, so relabelling works too.
+                // next time the window is opened. The new LABEL is only
+                // recorded — writing it into the item from here is the panic
+                // described at TOGGLE_SHOWS_ENABLED.
                 set_toggle_label(crate::gui::background::toggle_delegator_enabled());
                 // An open window has to re-read the config it no longer owns.
                 wake_ui();
+                None
+            } else if event.id == autostart_id {
+                // muda flipped the tick on its way here, so the wanted state is
+                // the opposite of what was shown. The registry is the only
+                // state; the mirror is then set from what it ACTUALLY says, so
+                // a write that failed cannot leave a tick claiming otherwise
+                // (the next right-click repaints it).
+                let wanted = !AUTOSTART_TICKED.load(Ordering::SeqCst);
+                let _ = crate::autostart::set_enabled(wanted);
+                AUTOSTART_TICKED.store(crate::autostart::is_enabled(), Ordering::SeqCst);
                 None
             } else if event.id == quit_id {
                 start_quit_watchdog();
@@ -261,6 +319,11 @@ impl TrayManager {
             }
         }));
         TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+            if matches!(event, TrayIconEvent::Click { .. }) {
+                // tray-icon sends this BEFORE it shows the context menu, which
+                // makes it the one moment the menu items may be touched at all.
+                refresh_menu_state();
+            }
             if matches!(event, TrayIconEvent::DoubleClick { .. }) {
                 raise_window();
                 let _ = tx.send(TrayAction::Open);
@@ -269,6 +332,8 @@ impl TrayManager {
         }));
 
         TOGGLE_ITEM.with(|slot| *slot.borrow_mut() = Some(toggle_item.clone()));
+        AUTOSTART_ITEM.with(|slot| *slot.borrow_mut() = Some(autostart_item.clone()));
+        AUTOSTART_TICKED.store(autostart_item.is_checked(), Ordering::SeqCst);
 
         Ok((
             Self {
@@ -277,6 +342,7 @@ impl TrayManager {
                 icon_size: (width, height),
                 _open_item: open_item,
                 _toggle_item: toggle_item,
+                _autostart_item: autostart_item,
                 _quit_item: quit_item,
             },
             rx,

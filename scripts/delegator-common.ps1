@@ -69,9 +69,18 @@ function Get-DelegatorRatingRows {
             foreach ($entry in @($parsed.models)) {
                 if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
                 if ($null -eq $entry.dpr) { continue }
+                # `confidence` and `swe_verified` are carried through, not
+                # dropped: §13.6 turns "how many independent sources agree" into
+                # the width of the routing band, and 154 of the 196 rows rest on
+                # exactly one. Projecting them away is what made every row look
+                # equally trustworthy.
+                $secondSource = $null
+                try { if ($null -ne $entry.swe_verified) { $secondSource = [double]$entry.swe_verified } } catch {}
                 $rows += [pscustomobject]@{
-                    match = ([string]$entry.match).ToLowerInvariant()
-                    dpr   = [int]$entry.dpr
+                    match      = ([string]$entry.match).ToLowerInvariant()
+                    dpr        = [int]$entry.dpr
+                    confidence = ([string]$entry.confidence).ToLowerInvariant()
+                    swe        = $secondSource
                 }
             }
         }
@@ -89,6 +98,37 @@ function Get-DelegatorModelRating {
         if ($name.Contains($row.match)) { return [int]$row.dpr }
     }
     return $null
+}
+
+function Get-DelegatorRatingConfidence {
+    <#
+      How much weight this row's number can carry: "measured" | "provisional" |
+      "unrated" | "" (no row at all). DEV_CONTRACTS §13.6.
+
+      The table already records `confidence` and, on some rows, a second source
+      (`swe_verified`). Neither has ever reached a routing decision, so a score
+      derived from a sibling model was trusted exactly as much as one confirmed
+      by two independent benchmarks.
+
+      `provisional` is a row whose number rests on ONE source: a `derived` score,
+      or a `measured` one with no `swe_verified` beside it. That is not a smaller
+      number - the measurement stands - it is a wider error bar, and §13.3 widens
+      the indifference band instead of inventing a correction.
+    #>
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return "" }
+    $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
+    foreach ($row in (Get-DelegatorRatingRows)) {
+        if (-not $name.Contains($row.match)) { continue }
+        $stated = ""
+        try { $stated = [string]$row.confidence } catch {}
+        if ($stated -eq "unrated") { return "unrated" }
+        $hasSecondSource = $false
+        try { $hasSecondSource = ($null -ne $row.swe) } catch {}
+        if ($stated -eq "measured" -and $hasSecondSource) { return "measured" }
+        return "provisional"
+    }
+    return ""
 }
 
 # ── Outbound Proxy (DEV_CONTRACTS section 7a) ──
@@ -427,7 +467,13 @@ function Write-DelegateUsageRecord {
         [object]$Cost = $null,
         [int]$ElapsedMs = 0,
         [bool]$Ok = $true,
-        [string]$AccountId = ""
+        [string]$AccountId = "",
+        # DEV_CONTRACTS section 5 class of a FAILED call, omitted on success.
+        # Get-ModelHealth reads it to tell a model that cannot answer from an
+        # account that is merely out of quota today. The dispatcher's own stages
+        # rarely know a class; the parameter exists so all three copies of this
+        # writer (I14) keep the same shape.
+        [string]$ErrorClass = ""
     )
     try {
         $requestId = if ($env:DELEGATOR_REQUEST_ID) { [string]$env:DELEGATOR_REQUEST_ID } else { "" }
@@ -448,6 +494,9 @@ function Write-DelegateUsageRecord {
             ok               = $Ok
             accountId        = $AccountId
             bench            = (Test-DelegatorBenchmarkActive)
+        }
+        if (-not $Ok -and -not [string]::IsNullOrWhiteSpace($ErrorClass)) {
+            Add-Member -InputObject $entry -NotePropertyName "errorClass" -NotePropertyValue ([string]$ErrorClass) -Force
         }
         $line = ($entry | ConvertTo-Json -Depth 4 -Compress) + [Environment]::NewLine
 

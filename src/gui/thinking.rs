@@ -147,6 +147,7 @@ fn process_label(stage: &str) -> &str {
         "synthesis" => "синтез",
         "critic" => "критик",
         "verify" => "проверка",
+        "review" => "разбор черновика",
         "improve" => "правка черновика",
         "micro" => "микро-задача",
         "plan" => "план",

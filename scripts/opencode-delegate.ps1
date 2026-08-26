@@ -816,7 +816,11 @@ function Write-DelegateUsageRecord {
         [object]$Cost,
         [long]$ElapsedMs,
         [bool]$Ok,
-        [object]$AccountId
+        [object]$AccountId,
+        # DEV_CONTRACTS section 5 class of a FAILED call. Omitted on success and
+        # on older callers; Get-ModelHealth reads it to tell a model that cannot
+        # answer from an account that is merely out of quota today.
+        [string]$ErrorClass
     )
     $requestId = [string]$env:DELEGATOR_REQUEST_ID
     if ([string]::IsNullOrWhiteSpace($requestId)) {
@@ -840,6 +844,9 @@ function Write-DelegateUsageRecord {
         ok = $Ok
         accountId = $AccountId
         bench = (Test-DelegatorBenchmarkActive)
+    }
+    if (-not $Ok -and -not [string]::IsNullOrWhiteSpace($ErrorClass)) {
+        Add-Member -InputObject $record -NotePropertyName "errorClass" -NotePropertyValue ([string]$ErrorClass) -Force
     }
     $line = ($record | ConvertTo-Json -Depth 6 -Compress) + [Environment]::NewLine
     try {
@@ -961,6 +968,24 @@ function Get-ModelCooldownSeconds {
     if ($ErrorClass -eq "server" -or $ErrorClass -eq "timeout") { return 60 }
     if ($ErrorClass -eq "network") { return 30 }
     return 0
+}
+
+function Test-AttemptIsModelFailure {
+    <#
+      Should this failed attempt be written to usage.jsonl against the model?
+
+      Everything except a LOCAL environment problem. Exit code 2 means the CLI is
+      missing or there are no keys: every candidate in the ladder fails the same
+      way, so attributing it would demote the whole pool in one run, and health
+      (unlike a cooldown) has no expiry to undo that.
+
+      A rate limit IS written - the attempt happened and the attribution is a
+      fact - but it carries its errorClass, and Get-ModelHealth refuses to read
+      that class as a statement about the model (DEV_CONTRACTS section 9).
+    #>
+    param([int]$ExitCode, [string]$ErrorClass)
+    if ($ExitCode -eq 2) { return $false }
+    return $true
 }
 
 function Get-OpenCodeErrorClass {
@@ -1551,6 +1576,8 @@ function Run-Ask {
     $script:_runCompleted = $false
     $lastCandidate = $selected
     $lastProvider = "opencode-cli"
+    $recordedFailures = New-Object System.Collections.Generic.HashSet[string]
+    $suppressedFailures = New-Object System.Collections.Generic.HashSet[string]
     try {
         $attempts = @()
         $candidateModels = @(Get-ModelAttempts -SelectedModel $selected -Text $Prompt)
@@ -1563,6 +1590,12 @@ function Run-Ask {
                 promptSummary = $summary; domain = $domain; model = $candidate
                 variant = Get-OpenCodeMaxVariant $candidate; attempts = $attempts.Count + 1
             })
+            # THIS attempt's own duration. usage.jsonl elapsedMs is per CALL
+            # (section 2.1) and Get-ModelHealth turns it into a p75 latency; timing
+            # from the start of the run instead made every rung of the ladder wear
+            # the cost of the rungs before it, so the model that finally answered
+            # looked like the slow one.
+            $attemptSw = [System.Diagnostics.Stopwatch]::StartNew()
             $usedDirectOpenRouter = $false
             $preferredExecutionPath = Get-PreferredExecutionPath $candidate
             if ($preferredExecutionPath -eq "zen-direct") {
@@ -1604,6 +1637,7 @@ function Run-Ask {
                 }
             }
             if ($result.exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($parsed.answer)) {
+                $attemptSw.Stop()
                 $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
                 Write-RunEvent ([pscustomobject]@{
                     runId = $runId; delegate = "opencode"; event = "completed"; status = "ok"
@@ -1615,7 +1649,10 @@ function Run-Ask {
                 })
                 $accountId = $null
                 if ($result.PSObject.Properties["accountId"]) { $accountId = [string]$result.accountId }
-                Write-DelegateUsageRecord -Mode $Command -Provider $providerName -ModelId $candidate -PromptTokens $parsed.promptTokens -CompletionTokens $parsed.completionTokens -TotalTokens $parsed.tokens -Cost $parsed.cost -ElapsedMs $elapsed -Ok $true -AccountId $accountId
+                # The RUN took $elapsed; THIS CALL took $attemptSw. The run event
+                # keeps the run number (that is the timeline), the usage record
+                # keeps the call number (that is what p75 latency is made of).
+                Write-DelegateUsageRecord -Mode $Command -Provider $providerName -ModelId $candidate -PromptTokens $parsed.promptTokens -CompletionTokens $parsed.completionTokens -TotalTokens $parsed.tokens -Cost $parsed.cost -ElapsedMs ([long]$attemptSw.ElapsedMilliseconds) -Ok $true -AccountId $accountId
                 Clear-ModelCooldown $candidate
                 $script:_runCompleted = $true
                 if ($Json) {
@@ -1625,6 +1662,7 @@ function Run-Ask {
                 }
                 return
             }
+            $attemptSw.Stop()
             $errorClass = Get-OpenCodeErrorClass -ExitCode $result.exitCode -Output $result.output
             $retryAfterSec = 0
             if ([string]$result.output -match '(?i)retry[-_ ]?(after|delay)\D{0,10}(\d+)') { $retryAfterSec = [int]$Matches[2] }
@@ -1641,6 +1679,26 @@ function Run-Ask {
                 exitCode = $result.exitCode; errorClass = $errorClass; elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
                 errorPreview = (Get-PromptSummary $result.output)
             })
+            # EVERY failed rung, not just the last one. The ladder used to write a
+            # single record per run, so a run that failed on A and B and answered
+            # on C left no trace of A and B in usage.jsonl at all: Get-ModelHealth
+            # never learned they were broken and the router picked A first again
+            # on the very next call. The evidence the routing claims to use has to
+            # exist before it can be used.
+            $failedAccountId = $null
+            if ($result.PSObject.Properties["accountId"]) { $failedAccountId = [string]$result.accountId }
+            if (Test-AttemptIsModelFailure -ExitCode $result.exitCode -ErrorClass $errorClass) {
+                Write-DelegateUsageRecord -Mode $Command -Provider $providerName -ModelId $candidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([long]$attemptSw.ElapsedMilliseconds) -Ok $false -AccountId $failedAccountId -ErrorClass $errorClass
+                [void]$recordedFailures.Add([string]$candidate)
+            } else {
+                # "Deliberately NOT recorded" is a different state from "already
+                # recorded", and the finally path must respect both. Membership of
+                # $recordedFailures alone would let a crash on the next rung write
+                # an unclassified failure for the exit-2 rung this branch just
+                # refused to blame - and a record with no errorClass reads as a
+                # pre-0.7.2 one, i.e. a full quality signal.
+                [void]$suppressedFailures.Add([string]$candidate)
+            }
         }
 
         Write-RunEvent ([pscustomobject]@{
@@ -1649,7 +1707,17 @@ function Run-Ask {
             elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds; attempts = $attempts.Count
         })
         $script:_runCompleted = $true
-        Write-DelegateUsageRecord -Mode $Command -Provider $lastProvider -ModelId $lastCandidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([int]((Get-Date) - $started).TotalMilliseconds) -Ok $false -AccountId $null
+        # The loop now records each rung, so the old blanket record here would
+        # double-count the last candidate - the very model the router is deciding
+        # about. It survives only for the case where no rung ran at all.
+        #
+        # A ladder in which every rung failed with exit 2 deliberately writes
+        # NOTHING: no provider call was made (the CLI is missing or unconfigured),
+        # nothing was spent, and attributing it would demote the whole pool for a
+        # problem no model caused.
+        if ($recordedFailures.Count -eq 0 -and $attempts.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$lastCandidate)) {
+            Write-DelegateUsageRecord -Mode $Command -Provider $lastProvider -ModelId $lastCandidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([int]((Get-Date) - $started).TotalMilliseconds) -Ok $false -AccountId $null -ErrorClass "unknown"
+        }
         throw "All opencode models failed."
     } finally {
         # Гарантируем запись completed если скрипт упал до явного завершения
@@ -1660,7 +1728,16 @@ function Run-Ask {
                 elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
                 note = "force-closed by finally block (unexpected exit)"
             })
-            Write-DelegateUsageRecord -Mode $Command -Provider $lastProvider -ModelId $lastCandidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([int]((Get-Date) - $started).TotalMilliseconds) -Ok $false -AccountId $null
+            # An unexpected exception at the top of the NEXT rung leaves
+            # $lastCandidate pointing at the previous one, which the loop has
+            # already recorded - counting it twice would make one bad call look
+            # like two - or deliberately SUPPRESSED, and re-adding it here without
+            # an errorClass would read as a pre-0.7.2 record, i.e. a full quality
+            # signal for a local environment fault.
+            $already = $recordedFailures.Contains([string]$lastCandidate) -or $suppressedFailures.Contains([string]$lastCandidate)
+            if (-not $already) {
+                Write-DelegateUsageRecord -Mode $Command -Provider $lastProvider -ModelId $lastCandidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([int]((Get-Date) - $started).TotalMilliseconds) -Ok $false -AccountId $null
+            }
         }
     }
 }

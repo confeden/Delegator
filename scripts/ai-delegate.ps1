@@ -1,6 +1,6 @@
 ﻿param(
     [Parameter(Position = 0)]
-    [ValidateSet("assist", "ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage")]
+    [ValidateSet("assist", "ask", "delegate", "boost", "improve", "micro", "verify", "plan", "parallel", "ui", "status", "models", "policy", "triage", "extract", "usage", "ping")]
     [string]$Command = "ask",
 
     [Parameter(Position = 1)]
@@ -40,6 +40,14 @@
 
     # Window for the `usage` subcommand summary.
     [int]$Days = 7,
+
+    # The model that is CALLING us, as its own provider names it, including any
+    # reasoning-effort suffix (`gemini-3.7-flash-low`, `claude-opus-5`).
+    # DEV_CONTRACTS §13: it decides whether this request is an economy case
+    # (we match the caller, so take the work off it) or an amplification case
+    # (we are clearly stronger, so spend on quality). Omitted -> routed exactly
+    # as before §13. Env fallback: DELEGATOR_CALLER_MODEL.
+    [string]$CallerModel,
 
     # Hidden diagnostic: print the resolved prompt(s) and exit 0 (transport tests).
     [switch]$EchoPrompt,
@@ -83,6 +91,7 @@ for ($i = 0; $i -lt $rawPrompts.Count; $i++) {
         "--model" { if ($i + 1 -lt $rawPrompts.Count) { $Model = [string]$rawPrompts[++$i] }; continue }
         "--timeoutsec" { if ($i + 1 -lt $rawPrompts.Count) { $TimeoutSec = [int]$rawPrompts[++$i] }; continue }
         "--promptfile" { if ($i + 1 -lt $rawPrompts.Count) { $promptFileList.Add([string]$rawPrompts[++$i]) }; continue }
+        "--callermodel" { if ($i + 1 -lt $rawPrompts.Count) { $CallerModel = [string]$rawPrompts[++$i] }; continue }
         "--days" { if ($i + 1 -lt $rawPrompts.Count) { $Days = [int]$rawPrompts[++$i] }; continue }
         "--json" { $Json = $true; continue }
         "--boost" { $Boost = $true; continue }
@@ -204,6 +213,50 @@ function Get-FastEnabledOpenCodeModel {
     return ""
 }
 
+function Test-ErrorClassIsQualitySignal {
+    <#
+      Does a failure of this class say anything about the MODEL?
+
+      The rule is CORRELATION. A class every candidate in the ladder suffers
+      identically is a fact about the environment, the account or the prompt, and
+      attributing it to models demotes the whole pool at once. That did not matter
+      while a run wrote ONE usage record; since 0.7.2 it writes one per rung, so
+      an offline laptop marks every enabled model in a single delegation.
+
+      - rate_limit, auth  - time-bounded ACCOUNT states, already tracked precisely
+        and WITH AN EXPIRY in cooldowns.json / google-api-usage.json (G29).
+      - network           - the machine or the proxy is down. Every rung reports
+        `unable to connect`; none of them was ever reached.
+      - context_overflow  - a statement about the PROMPT. One oversized
+        -ContextFile makes every model in the pool look broken.
+
+      Health has no expiry: a sample only leaves when twelve newer calls of that
+      model push it out. So a demotion earned during a two-minute outage outlives
+      it by days, and nothing prints health, so nobody would see why the strength
+      floor had quietly inverted into a weakness floor.
+
+      server / timeout / not_found / content_policy / unknown DO count. They can
+      be correlated too, but they are also exactly the per-model failures N3 exists
+      to catch, and their cooldowns are short.
+
+      A record with no errorClass at all counts: everything written before 0.7.2
+      lacks the field, and dropping those would erase the router's memory on
+      upgrade.
+    #>
+    param([string]$ErrorClass)
+    return ([string]$ErrorClass -notin @("rate_limit", "auth", "network", "context_overflow"))
+}
+
+# Below this many samples a failure rate is an anecdote, not a rate. Kept next to
+# the health helpers because Test-ModelAffordable is the only reader.
+$script:DelegateMinHealthSamples = 3
+
+function Clear-ModelLatencyCache {
+    # usage.jsonl is read once per process. Tests write a log per case, so they
+    # need to drop the memo; nothing in production calls this.
+    $script:ModelLatencyStats = $null
+}
+
 function Get-ModelLatencyStats {
     # Recent per-model behaviour from <RT>\usage.jsonl, in call order. Read
     # without the usage mutex on purpose - the file is append-only and a torn
@@ -227,6 +280,13 @@ function Get-ModelLatencyStats {
             if ([string]::IsNullOrWhiteSpace($id)) { continue }
             $isOk = $true
             try { if ($row.PSObject.Properties["ok"] -and $null -ne $row.ok) { $isOk = [bool]$row.ok } } catch {}
+            if (-not $isOk) {
+                $errorClass = ""
+                try { $errorClass = [string]$row.errorClass } catch {}
+                # Not a sample at all, rather than a successful one: a quota day
+                # is silence about the model, not evidence in its favour.
+                if (-not (Test-ErrorClassIsQualitySignal $errorClass)) { continue }
+            }
             $ms = 0
             [void][int]::TryParse([string]$row.elapsedMs, [ref]$ms)
             if (-not $stats.ContainsKey($id)) { $stats[$id] = @() }
@@ -277,7 +337,22 @@ function Test-ModelAffordable {
     $health = Get-ModelHealth $ModelId
     if ($health.samples -eq 0) { return $true }
     if ($health.samples -ge 4 -and $health.failRate -ge 0.4) { return $false }
-    if ($null -eq $health.p75Ms) { return ($health.failRate -lt 0.5) }
+    if ($null -eq $health.p75Ms) {
+        # No successful call in the window, so there is no latency to judge -
+        # only a failure rate, and a rate over one or two samples is not a rate.
+        # The four-sample floor above exists for exactly that reason and this
+        # branch used to bypass it: ONE failure with no success beside it read as
+        # failRate 1.0 and the model was dropped.
+        #
+        # That was survivable while a run wrote a single usage record. Since the
+        # ladder writes one per rung (section 2.1), a single provider outage marks
+        # every rung it touched, each with one failure and no success - so one bad
+        # run demoted the whole pool and Get-StrongEnabledModel fell through to the
+        # FASTEST model. Measured here: a 23-rung ladder left every model
+        # samples=1, failRate=1, affordable=False.
+        if ($health.samples -lt $script:DelegateMinHealthSamples) { return $true }
+        return ($health.failRate -lt 0.5)
+    }
     return ([int]$health.p75Ms -le $BudgetMs)
 }
 
@@ -312,6 +387,89 @@ function Get-ModelStrengthScore {
     $rating = Get-DelegatorModelRating $ModelId
     if ($null -ne $rating) { return [int]$rating }
     return [int]$script:DelegateUnratedDpr
+}
+
+# ── Caller strength (DEV_CONTRACTS §13) ──────────────────────────────────────
+# A reasoning-effort suffix is NOT a different model in the ratings table, but it
+# is a different model in practice. `model-ratings.json` carries one row per
+# model, and the longest-substring lookup therefore scores
+# `gemini-3.7-flash-low` exactly like `gemini-3.7-flash` - 152, seventh of 196,
+# above claude-opus-4-8. An agent running that model at low effort is nothing
+# like that number, and routing it as if it were would hand it the ECONOMY path
+# when what it needs is amplification.
+#
+# The penalty lives here rather than in the table on purpose (I10): the table is
+# a snapshot of a published index and must never be hand-edited, and the index
+# publishes one figure per model, not one per effort level. This is an explicit,
+# reviewable correction sitting on top of it - and it applies ONLY to the caller.
+# The models Delegator answers with always run at their own default effort.
+$script:DelegateEffortPenalty = @{
+    "minimal" = 35
+    "low"     = 25
+    "medium"  = 12
+    "high"    = 0
+    "xhigh"   = 0
+    "max"     = 0
+}
+
+function Get-CallerEffortPenalty {
+    # DPR points to subtract for a trailing reasoning-effort token, 0 when the id
+    # carries none. Recognised only at the END of the id: `gpt-5.3-codex-high` is
+    # an effort level, `low-latency-v2` is a model name.
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return 0 }
+    if ([string]$ModelId -match '(?i)[-_:\s]((?:x)?high|minimal|low|medium|max)$') {
+        $token = $Matches[1].ToLowerInvariant()
+        if ($script:DelegateEffortPenalty.ContainsKey($token)) {
+            return [int]$script:DelegateEffortPenalty[$token]
+        }
+    }
+    return 0
+}
+
+function Get-CallerDpr {
+    <#
+      The DPR of the model that called us, effort-adjusted, or 0 for "did not
+      say". Zero is not a low score - it is the absence of a comparison, and the
+      router routes an undeclared caller exactly as it did before §13 existed.
+
+      Precedence: -CallerModel, then DELEGATOR_CALLER_MODEL. An id we have no row
+      for stays 0: guessing a number for an unknown model would make the router
+      act on a fabrication, and `unrated` (100) is a deliberate MID value that
+      would read as a weak caller and trigger amplification nobody asked for.
+    #>
+    param([string]$ModelId = "")
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { $ModelId = [string]$env:DELEGATOR_CALLER_MODEL }
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return 0 }
+    $rating = Get-DelegatorModelRating $ModelId
+    if ($null -eq $rating) { return 0 }
+    $score = [int]$rating - (Get-CallerEffortPenalty $ModelId)
+    if ($score -lt 1) { $score = 1 }
+    return $score
+}
+
+function Get-CallerRatingConfidence {
+    # Confidence of the CALLER's row, resolved the same way as its score so the
+    # two always describe the same row. §13.6.
+    param([string]$ModelId = "")
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { $ModelId = [string]$env:DELEGATOR_CALLER_MODEL }
+    return (Get-DelegatorRatingConfidence $ModelId)
+}
+
+function Get-BestAvailableDpr {
+    # DPR of the strongest model we can actually reach right now - the same pick
+    # Get-StrongEnabledModel makes, so the router compares the caller against the
+    # model that would really answer, not against the best row in the table.
+    # 0 when nothing is enabled or nothing is rated: no comparison is possible.
+    $best = Get-StrongEnabledModel
+    if ([string]::IsNullOrWhiteSpace($best)) { return 0 }
+    $rating = Get-DelegatorModelRating $best
+    if ($null -eq $rating) {
+        $strengths = Get-ZenCatalogStrengthMap
+        if ($strengths -and $strengths.ContainsKey($best)) { return [int]$strengths[$best] }
+        return 0
+    }
+    return [int]$rating
 }
 
 function Get-StrongEnabledModel {
@@ -1224,6 +1382,159 @@ function Run-UI {
     exit 0
 }
 
+function Format-PingReport {
+    <#
+      The user-visible answer to `-ping`, built from facts that are already
+      known. Split out from Run-Ping so the wording can be tested without a
+      network call - this text is the whole product of the command, and the one
+      thing it must never do is claim to work when nothing answered.
+
+      Russian on purpose: everything else the runtime prints goes to an agent,
+      this goes to the person who typed `-ping`.
+    #>
+    param(
+        [string]$RuntimeHome = "",
+        # Empty when the core did not answer on 127.0.0.1:1380.
+        [string]$CoreVersion = "",
+        [int]$GeminiModels = 0,
+        [int]$OtherModels = 0,
+        # Empty when the agent did not pass -CallerModel.
+        [string]$Caller = "",
+        # Empty when the live probe brought nothing back.
+        [string]$AnswerModel = "",
+        # Everything the probe called, in order - the failure text is useless
+        # without it ("никто не ответил" from WHOM?).
+        [string[]]$TriedModels = @(),
+        [double]$Seconds = 0,
+        [int]$ExitCode = 0
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    # Not measured, and deliberately not pretending to be: an agent can only
+    # know the verb from the instruction file, so this output existing at all
+    # IS the proof that the file reached the session (G45: at session start).
+    $lines.Add("Delegator: инструкции дошли до этого чата.")
+    $lines.Add("  Иначе агент не знал бы про -ping - эта команда описана только в них.")
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeHome)) {
+        $lines.Add("  Runtime: $RuntimeHome")
+    }
+    if ([string]::IsNullOrWhiteSpace($CoreVersion)) {
+        $lines.Add("  Ядро: не отвечает на 127.0.0.1:1380 - окно Delegator закрыто или ядро не поднялось")
+    } else {
+        $lines.Add("  Ядро: отвечает, версия $CoreVersion")
+    }
+    $total = $GeminiModels + $OtherModels
+    $lines.Add("  Моделей включено: $total (Gemini $GeminiModels, через OpenCode $OtherModels)")
+    if ([string]::IsNullOrWhiteSpace($Caller)) {
+        $lines.Add("  Ваша модель: агент не передал -CallerModel - маршрутизация будет как до 0.8")
+    } else {
+        $lines.Add("  Ваша модель: $Caller")
+    }
+
+    $elapsed = [math]::Round($Seconds, 1)
+    if (-not [string]::IsNullOrWhiteSpace($AnswerModel)) {
+        $lines.Add("  Проверка связи: ответила $AnswerModel за $elapsed с")
+        $lines.Add("Итог: Delegator подключён и работает.")
+    } else {
+        $lines.Add("  Проверка связи: ответа нет за $elapsed с (код $ExitCode)")
+        if (@($TriedModels).Count -gt 0) {
+            $lines.Add("  Пробовали: " + (@($TriedModels) -join ", "))
+        }
+        $lines.Add("Итог: инструкции на месте, но ответить сейчас никто не смог.")
+        $lines.Add("  Обычно это дневная квота провайдера, отсутствующий ключ или нет сети.")
+        $lines.Add("  Загляните в окне Delegator во вкладки «API-ключи» и «Модели».")
+        $lines.Add("  Настоящая задача при этом может пройти: у неё длиннее перебор моделей, чем у -ping.")
+    }
+    return $lines.ToArray()
+}
+
+function Run-Ping {
+    <#
+      One command a user can type in their IDE chat to see whether Delegator is
+      there FOR THAT CHAT and whether it can still answer. The second half is
+      measured with a real delegation down the normal routing path - a
+      reachability check that never calls a model would go on saying "работает"
+      through an entire quota outage.
+
+      ALWAYS exits 0. Any other code means "Delegator could not help" under the
+      hook contract, and the agent would then hide the report that explains why.
+    #>
+    # A ping is a self-test, never work the caller receives: `ping` is not in
+    # SAVED_STAGES, so its tokens are booked as spent (DEV_CONTRACTS section 3).
+    $probe = "Ответь одним словом: PONG"
+    # Long enough for a cold OpenCode CLI (listing models alone takes ~13 s),
+    # and this is a PER-CALL budget: the probe below makes at most two calls.
+    $script:TimeoutSec = 60
+
+    $coreVersion = ""
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:1380/health" -TimeoutSec 5
+        if ($health -and $health.ok) { $coreVersion = [string]$health.version }
+    } catch {
+        # Down is one of the two answers this command exists to give.
+    }
+
+    $caller = $CallerModel
+    if ([string]::IsNullOrWhiteSpace($caller)) { $caller = $env:DELEGATOR_CALLER_MODEL }
+
+    # AT MOST TWO CALLS, one per backend. Deliberately NOT
+    # Invoke-DelegateAcrossBackends: its ladder walks up to six models, and with
+    # a 60 s budget each that is a nine-minute "status check" - measured, on the
+    # first run through the installed runtime, at over four minutes and still
+    # going. A real task is allowed to be that patient; a status line is not.
+    $primary = Select-Backend $probe
+    $secondary = "opencode"
+    if ($primary -eq "opencode") { $secondary = "gemini" }
+    $plan = @()
+    foreach ($backend in @($primary, $secondary)) {
+        $candidate = Get-PreferredBackendModel $backend $probe
+        if ([string]::IsNullOrWhiteSpace($candidate) -and $backend -eq $primary) { $candidate = $Model }
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $plan += ,@($backend, $candidate)
+        }
+    }
+
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $answered = ""
+    $tried = @()
+    $code = 1
+    foreach ($step in $plan) {
+        $tried += [string]$step[1]
+        $result = $null
+        try {
+            $result = Invoke-Delegate -ChosenBackend $step[0] -Text $probe -ChosenModel $step[1] -EffectiveComplexity "fast" -Stage "ping"
+        } catch {
+            # Under $ErrorActionPreference = "Stop" (G19) a provider script that
+            # dies takes this one with it, and the user would get a PowerShell
+            # stack where the report should be. A throw is just another way of
+            # saying "this one did not answer".
+        }
+        if ($result) {
+            $code = [int]$result.exitCode
+            $text = ""
+            if ($result.output) { $text = ([string]$result.output).Trim() }
+            if ($code -eq 0 -and -not [string]::IsNullOrWhiteSpace($text)) {
+                $answered = [string]$step[1]
+                break
+            }
+        }
+    }
+    $watch.Stop()
+
+    $report = Format-PingReport `
+        -RuntimeHome $BinHome `
+        -CoreVersion $coreVersion `
+        -GeminiModels @(Get-DelegatorEnabledModels "enabled_gemini_models").Count `
+        -OtherModels @(Get-DelegatorEnabledModels "enabled_opencode_models").Count `
+        -Caller $caller `
+        -AnswerModel $answered `
+        -TriedModels $tried `
+        -Seconds $watch.Elapsed.TotalSeconds `
+        -ExitCode $code
+    foreach ($line in $report) { Write-Output $line }
+    Exit-Delegate 0
+}
+
 function Run-Policy {
     if (Test-Path -LiteralPath $PolicyFile) {
         Get-Content -LiteralPath $PolicyFile -Raw
@@ -1370,6 +1681,54 @@ function Get-AdvisorExitCode {
     return 1
 }
 
+function Get-BoostAdvisorModels {
+    <#
+      The advisors a `boost` convenes: the strongest models the user actually
+      ENABLED, ordered exactly the way Get-StrongEnabledModel orders its single
+      pick, filtered by the same measured health.
+
+      Why it is not a constant list. `model-rankings.json` never ships (N6), so
+      the ranking branch above never fires and a hardcoded triple was the real
+      advisor pool. Two of its three ids were not enabled here, the nested
+      `ask -Model X` refuses anything outside the GUI allowlist (I8 defending
+      itself), and boost failed 3 times out of 3 on this machine.
+
+      What this honestly buys: the STRONGEST advisor now equals the ordinary
+      single-model pick, and no advisor is weaker than something the user chose.
+      It cannot promise "no worse than answering once" - a top-N by strength
+      includes weaker members by definition, and the synthesis step is what is
+      supposed to make the set worth more than its best member.
+
+      Returns an EMPTY array when nothing is enabled. The caller falls back to a
+      single answer; inventing ids would only reproduce the bug.
+    #>
+    # -Enabled exists for tests: the allowlist is read from %APPDATA%\...\config.json,
+    # which DELEGATOR_RUNTIME_HOME does not redirect, so a suite cannot otherwise
+    # control the one input that matters.
+    param([int]$Count = 3, [string[]]$Exclude = @(), [string[]]$Enabled)
+    if ($Count -lt 1) { return @() }
+    $enabled = if ($PSBoundParameters.ContainsKey("Enabled")) { @($Enabled) }
+    else { @(Get-DelegatorEnabledModels "enabled_opencode_models") }
+    $enabled = @($enabled | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($Exclude.Count -gt 0) { $enabled = @($enabled | Where-Object { $Exclude -notcontains $_ }) }
+    if ($enabled.Count -eq 0) { return @() }
+
+    $strengths = Get-ZenCatalogStrengthMap
+    $ordered = @($enabled | Sort-Object `
+        @{ Expression = { Get-ModelStrengthScore -ModelId $_ -Catalog $strengths }; Descending = $true }, `
+        @{ Expression = { [string]$_ }; Descending = $false })
+    $ordered = @(Select-ActiveRankedModels $ordered)
+    if ($ordered.Count -eq 0) { return @() }
+
+    # Health filters, it does not decide: an advisor that is merely slow is still
+    # a second opinion, and dropping every unhealthy id could empty the panel.
+    $budget = Get-LatencyBudgetMs
+    $healthy = @($ordered | Where-Object { Test-ModelAffordable -ModelId $_ -BudgetMs $budget })
+    if ($healthy.Count -ge $Count) { return @($healthy | Select-Object -First $Count) }
+    $rest = @($ordered | Where-Object { $healthy -notcontains $_ })
+    return @(@($healthy) + @($rest) | Select-Object -First $Count)
+}
+
 function Run-Boost {
     param([string]$Text, [int]$Count, [string]$SynthModelName)
 
@@ -1387,9 +1746,23 @@ function Run-Boost {
         $topModels = @(Select-ActiveRankedModels $topModels)
     }
     if ($topModels.Count -lt $Count) {
-        $topModels = @("opencode/deepseek-v4-flash-free", "opencode/ling-3.0-flash-free", "opencode/nemotron-3-ultra-free")
+        # `model-rankings.json` does not ship and is absent on every install (N6),
+        # so this branch is the ONLY one that ever runs, and it used to hand back
+        # a hardcoded triple. Measured on the owner's machine: two of those three
+        # ids are not in `enabled_opencode_models`, the nested `ask -Model X`
+        # refuses them ("not enabled in the Delegator GUI"), and every boost this
+        # machine has ever run ended `all-advisors-failed` - all three records in
+        # delegate-metrics.jsonl, including one from a §13 `amplify` route. The
+        # one tier that is supposed to ADD something was firing into a pipeline
+        # that could not succeed.
+        $topModels = @(Get-BoostAdvisorModels -Count $Count)
     }
-    
+    if ($topModels.Count -eq 0) {
+        Write-DelegateMetric -Stage "boost" -Status "no-advisors" -LatencyMs $boostSw.ElapsedMilliseconds
+        [Console]::Error.WriteLine("[Delegator] boost: нет включённых моделей для консилиума, отвечаем одной")
+        return $false
+    }
+
     $modelsToUse = @($topModels | Select-Object -First $Count)
     $explicitParam = $modelsToUse -join ","
     $maxPar = [Math]::Min($Count, $modelsToUse.Count)
@@ -1681,6 +2054,14 @@ function Get-CacheVariant {
 $script:ImproveTaskBudget = 8000
 $script:ImproveDraftBudget = 24000
 $script:ImproveContextBudget = 12000
+# The re-ask carries the reviewer's OWN unreadable reply back to it. A review is
+# a verdict plus at most five short defects, so anything past this is prose the
+# reformat does not need - and the whole point of the second call is that it is
+# cheap.
+$script:ImproveReaskBudget = 6000
+# Section 12: false means run §11 only and never ask a model for an opinion.
+# Run-Assist sets it from the router; a direct `improve` call keeps the review.
+$script:ImproveModelReview = $true
 
 function Read-ContextFiles {
     # Semicolon-separated list, same convention as -PromptFile. A path that does
@@ -1781,14 +2162,142 @@ function Get-MechanicalDefects {
     }
 }
 
+function Get-JsonObjectCandidates {
+    <#
+      Every BALANCED {...} region of a text, in order, ignoring braces and quotes
+      that live inside a JSON string.
+
+      The predecessor took IndexOf("{") .. LastIndexOf("}") and handed the slice
+      to ConvertFrom-Json. That is correct only when the object is the sole thing
+      in the answer. It broke on all three shapes reviewers actually produce: a
+      closing sentence containing braces, a schema example printed before the
+      real verdict, and a defect whose text quotes a brace. Measured on this
+      machine: 32 of 228 `improve` runs ended `verdict-unparsable`.
+    #>
+    param([string]$Raw)
+    $found = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($Raw)) { return @() }
+    $depth = 0
+    $start = -1
+    $inString = $false
+    $escaped = $false
+    for ($i = 0; $i -lt $Raw.Length; $i++) {
+        $ch = $Raw[$i]
+        if ($inString) {
+            if ($escaped) { $escaped = $false; continue }
+            if ($ch -eq '\') { $escaped = $true; continue }
+            if ($ch -eq '"') { $inString = $false }
+            continue
+        }
+        if ($ch -eq '"') { $inString = $true; continue }
+        if ($ch -eq '{') {
+            if ($depth -eq 0) { $start = $i }
+            $depth++
+            continue
+        }
+        if ($ch -eq '}' -and $depth -gt 0) {
+            $depth--
+            if ($depth -eq 0 -and $start -ge 0) {
+                $found.Add($Raw.Substring($start, $i - $start + 1))
+                $start = -1
+            }
+        }
+    }
+    return @($found)
+}
+
 function Get-ImproveVerdict {
-    # First {...} block of the reviewer answer -> object, or $null.
+    <#
+      The reviewer's verdict object, or $null. Adds `parseMode`:
+        json     - a real JSON object was parsed
+        salvaged - the JSON was broken, but the reviewer named its verdict in a
+                   way only one of the four words fits
+
+      Candidate order matters. A reviewer that echoes the schema before answering
+      produces TWO objects with a `verdict` key, and only the second one carries a
+      real value, so an object whose verdict is one of the four always wins.
+
+      A salvaged object carries NO defects on purpose: section 11a says a defect
+      must come with a demonstration, and text we could not even parse is not a
+      demonstration. `ok`/`minor` then keeps the draft (the cheap correct answer),
+      and `major`/`wrong` with zero defects also keeps it.
+    #>
     param([string]$Raw)
     if ([string]::IsNullOrWhiteSpace($Raw)) { return $null }
-    $start = $Raw.IndexOf("{")
-    $end = $Raw.LastIndexOf("}")
-    if ($start -lt 0 -or $end -le $start) { return $null }
-    try { return ($Raw.Substring($start, $end - $start + 1) | ConvertFrom-Json) } catch { return $null }
+
+    $candidates = @(Get-JsonObjectCandidates $Raw)
+    # The scanner reads every `"` as a JSON delimiter, which prose is not: ONE
+    # unpaired quote in the reviewer's preamble ("prints 5\" without escaping")
+    # leaves it inside a string for the rest of the text and it returns nothing
+    # for an answer that plainly contains a valid object. The old whole-slice
+    # parse handled exactly that shape, so it stays as the second attempt rather
+    # than being replaced - dropping straight to salvage LOSES the defects and
+    # was a regression against the parser this function replaced.
+    if ($candidates.Count -eq 0) {
+        $start = $Raw.IndexOf("{")
+        $end = $Raw.LastIndexOf("}")
+        if ($start -ge 0 -and $end -gt $start) { $candidates = @($Raw.Substring($start, $end - $start + 1)) }
+    }
+
+    $valid = @("ok", "minor", "major", "wrong")
+    $withValidVerdict = $null
+    $withVerdictKey = $null
+    $anyObject = $null
+    foreach ($candidate in $candidates) {
+        $obj = $null
+        try { $obj = $candidate | ConvertFrom-Json } catch { continue }
+        if ($null -eq $obj) { continue }
+        if ($null -eq $anyObject) { $anyObject = $obj }
+        $hasKey = $false
+        try { $hasKey = @($obj.PSObject.Properties.Name) -contains "verdict" } catch {}
+        if (-not $hasKey) { continue }
+        if ($null -eq $withVerdictKey) { $withVerdictKey = $obj }
+        if (([string]$obj.verdict).Trim().ToLowerInvariant() -in $valid) {
+            $withValidVerdict = $obj
+            break
+        }
+    }
+    $chosen = if ($withValidVerdict) { $withValidVerdict }
+    elseif ($withVerdictKey) { $withVerdictKey }
+    else { $anyObject }
+    if ($null -ne $chosen) {
+        Add-Member -InputObject $chosen -NotePropertyName "parseMode" -NotePropertyValue "json" -Force
+        return $chosen
+    }
+
+    # Nothing parsed. The verdict FIELD must still be present - a reviewer that
+    # merely wrote "the draft is ok" in prose has not returned a verdict, and
+    # reading one out of prose is how a keep silently becomes a rewrite.
+    #
+    # `(?![|/])` rejects the SCHEMA the check prompt itself printed. Without it
+    # `"verdict":"ok|minor|major|wrong"` salvages as `ok`, which is usable enough
+    # to suppress the one re-ask that exists for precisely this case: the review
+    # is then reported as a clean `ok` the reviewer never gave.
+    if ($Raw -match '(?i)"?\bverdict"?\s*[:=]\s*"?\s*(ok|minor|major|wrong)\b(?![|/])') {
+        return [pscustomobject]@{
+            verdict    = $Matches[1].ToLowerInvariant()
+            defects    = @()
+            confidence = $null
+            parseMode  = "salvaged"
+        }
+    }
+    return $null
+}
+
+function Test-ShouldReaskVerdict {
+    <#
+      Is one extra, bounded call worth it?
+
+      Only when the reviewer SAID something we could not turn into a verdict.
+      Empty output is a backend failure, not a formatting failure, and asking a
+      silent model twice buys nothing but latency.
+    #>
+    param([string]$RawText, $Parsed)
+    if ([string]::IsNullOrWhiteSpace($RawText)) { return $false }
+    if ($null -eq $Parsed) { return $true }
+    $value = ""
+    try { $value = ([string]$Parsed.verdict).Trim().ToLowerInvariant() } catch {}
+    return ($value -notin @("ok", "minor", "major", "wrong"))
 }
 
 function Get-SupportedDefects {
@@ -1853,11 +2362,13 @@ function Get-RouterDecision {
       "answer it" is what Delegator did for every request before the router
       existed, and it is never destructive.
     #>
-    param([string]$Task, [string]$Draft, [int]$ContextFiles = 0)
+    param([string]$Task, [string]$Draft, [int]$ContextFiles = 0, [int]$CallerDpr = 0, [int]$BestDpr = 0,
+        [string]$CallerConfidence = "", [string]$BestConfidence = "")
 
     $fallback = [pscustomobject]@{
         mode = "delegate"; reason = "router-unavailable"; confidence = 0.0
         complexity = "auto"; escalate = $false; tier = "fallback"; routerVersion = "0"
+        callerTier = "unknown"; callerDpr = $CallerDpr; bestDpr = $BestDpr; modelReview = $true
     }
     $core = Get-CoreExecutable
     if ([string]::IsNullOrWhiteSpace($core)) { return $fallback }
@@ -1868,7 +2379,11 @@ function Get-RouterDecision {
     $decisionPath = Join-Path $tempDir "dg-route-out-$stamp.json"
     $utf8 = New-Object System.Text.UTF8Encoding $false
     try {
-        $payload = @{ task = [string]$Task; draft = [string]$Draft; contextFiles = $ContextFiles }
+        $payload = @{
+            task = [string]$Task; draft = [string]$Draft; contextFiles = $ContextFiles
+            callerDpr = $CallerDpr; bestDpr = $BestDpr
+            callerConfidence = [string]$CallerConfidence; bestConfidence = [string]$BestConfidence
+        }
         [System.IO.File]::WriteAllText($requestPath, ($payload | ConvertTo-Json -Depth 4 -Compress), $utf8)
         $process = Start-Process -FilePath $core -ArgumentList @("--route", $requestPath, $decisionPath) `
             -PassThru -WindowStyle Hidden
@@ -2006,12 +2521,38 @@ function Run-Assist {
     }
     $contextCount = if ($ContextFile) { @($ContextFile).Count } else { 0 }
 
+    # DEV_CONTRACTS section 13. Both numbers, or neither: one of them alone is not
+    # a comparison, and the router reads 0 as "not declared", never as "weak".
+    $callerDpr = Get-CallerDpr $CallerModel
+    $bestDpr = 0
+    $callerConfidence = ""
+    $bestConfidence = ""
+    if ($callerDpr -gt 0) {
+        $bestDpr = Get-BestAvailableDpr
+        $callerConfidence = Get-CallerRatingConfidence $CallerModel
+        $bestConfidence = Get-DelegatorRatingConfidence (Get-StrongEnabledModel)
+    }
+
     $routeSw = [System.Diagnostics.Stopwatch]::StartNew()
-    $decision = Get-RouterDecision -Task $Prompt -Draft $draftText -ContextFiles $contextCount
+    $decision = Get-RouterDecision -Task $Prompt -Draft $draftText -ContextFiles $contextCount `
+        -CallerDpr $callerDpr -BestDpr $bestDpr `
+        -CallerConfidence $callerConfidence -BestConfidence $bestConfidence
     $routeSw.Stop()
     $mode = [string]$decision.mode
     if ($mode -notin @("improve", "delegate", "boost", "keep")) { $mode = "delegate" }
+    $callerTier = [string]$decision.callerTier
+    if ([string]::IsNullOrWhiteSpace($callerTier)) { $callerTier = "unknown" }
+    # `improve` runs its MODEL review only when a model opinion can be trusted
+    # against this caller (G34). Read once here so Run-Improve cannot forget it.
+    $script:ImproveModelReview = $true
+    if ($decision.PSObject.Properties.Name -contains "modelReview") {
+        try { $script:ImproveModelReview = [bool]$decision.modelReview } catch {}
+    }
     $tier = [string]$decision.tier
+    # A tier-2 model may refine an uncertain rule, but it knows nothing about who
+    # is calling: letting it overrule the quality guard would undo the one promise
+    # section 13 makes to a strong caller.
+    if ($callerTier -eq "guard") { $decision.escalate = $false }
     if ($decision.escalate -and $decision.tier -eq "rules") {
         # The rules are unsure: let one fast model have the last word.
         $escalated = Get-EscalatedMode -Task $Prompt -HasDraft (-not [string]::IsNullOrWhiteSpace($draftText)) -Fallback $mode
@@ -2029,8 +2570,17 @@ function Run-Assist {
     if ($decision.PSObject.Properties.Name -contains "tier") { $decision.tier = $tier }
     Write-RouterDecision -Decision $decision -Mode $mode -ElapsedMs $routeSw.ElapsedMilliseconds
     Write-DelegateMetric -Stage "route" -Status $mode -LatencyMs $routeSw.ElapsedMilliseconds `
-        -Extra ("reason={0};tier={1};conf={2}" -f $decision.reason, $decision.tier, $decision.confidence)
+        -Extra ("reason={0};tier={1};conf={2};caller={3};callerDpr={4};bestDpr={5}" -f `
+            $decision.reason, $decision.tier, $decision.confidence, $callerTier, $callerDpr, $bestDpr)
     [Console]::Error.WriteLine("[Delegator] режим: $mode ($($decision.reason), $($routeSw.ElapsedMilliseconds) мс)")
+    if ($callerTier -ne "unknown") {
+        $callerNote = switch ($callerTier) {
+            "amplify" { "усиливаем ответ: вызвавшая модель $callerDpr, наша лучшая $bestDpr" }
+            "guard" { "бережём качество: вызвавшая модель $callerDpr сильнее нашей лучшей $bestDpr" }
+            default { "паритет: вызвавшая модель $callerDpr ($callerConfidence), наша лучшая $bestDpr ($bestConfidence)" }
+        }
+        [Console]::Error.WriteLine("[Delegator] $callerNote")
+    }
 
     switch ($mode) {
         "improve" { Run-Improve }
@@ -2139,10 +2689,50 @@ DRAFT ANSWER:
 $draftForReview
 "@
 
+    # ── Mechanical-only review (section 13) ──
+    # The caller is stronger than anything we can reach. Two things follow, and
+    # both are refusals to spend:
+    #
+    #   * No model REVIEW. G34, measured: a reviewer weaker than the thing it
+    #     reviews invents defects it cannot justify. §11 survives because it
+    #     COMPILES the draft - those defects are facts, and they cost nothing.
+    #   * No model REWRITE either. §11b would guarantee the rewrite clears the
+    #     proven defect, but it guarantees nothing about the rest of the answer,
+    #     and handing a 110-rated model an Opus draft to edit is the one trade
+    #     this mode exists to refuse. The proven defects go back on stderr; the
+    #     caller is the best rewriter in the room and now has facts it lacked.
+    #
+    # Zero model calls either way, which is the honest form of "economy" when we
+    # have nothing strong enough to earn its keep. Handing the defects back as
+    # DATA rather than as stderr prose needs P5 (a machine-readable first line).
+    if (-not $script:ImproveModelReview) {
+        $mechStatus = if ($mechanical.Count -eq 0) { "keep-mechanical-clean" } else { "keep-mechanical-defects" }
+        Write-DelegateMetric -Stage "improve" -Backend $reviewBackend -Status $mechStatus -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($mechanical.Count),calls=0,review=mechanical,ctxmissing=$($script:ImproveMissingContext)"
+        if ($mechanical.Count -eq 0) {
+            [Console]::Error.WriteLine("[Delegator] improve: механическая проверка дефектов не нашла, ваш ответ сильнее нашего лучшего — оставляем как есть")
+        } else {
+            [Console]::Error.WriteLine("[Delegator] improve: доказанные дефекты (проверено запуском), правьте сами — наша лучшая модель слабее вашей:")
+            foreach ($item in $mechanical) { [Console]::Error.WriteLine("  - $item") }
+        }
+        if ($callerWantsJson) {
+            [pscustomobject]@{
+                delegate = "improve"; verdict = $(if ($mechanical.Count -eq 0) { "ok" } else { "major" })
+                model = ""; defects = @($mechanical); guard = "mechanical-only"; output = ""
+            } | ConvertTo-Json -Depth 4
+        }
+        Exit-Delegate 3
+    }
+
     # Falls over to the other backend rather than giving up: an exhausted
     # OpenCode free tier must not stop Delegator while the Google keys still
     # have quota.
-    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "verify"
+    #
+    # Stage "review", NOT "verify": `verify` is a SAVED stage (DEV_CONTRACTS §3)
+    # and also the name of the user-facing `verify` command. This call produces
+    # nothing the caller ever sees - only the rewrite does - so booking its output
+    # as a saving credited Delegator with work nobody received. Internal stages
+    # are spent, never saved.
+    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "review"
     if ($checkResult.fellBack) {
         $reviewBackend = $checkResult.backend
         $reviewModel = $checkResult.model
@@ -2156,6 +2746,60 @@ $draftForReview
         Exit-Delegate 1
     }
     $verdictObj = Get-ImproveVerdict $checkText
+    $reviewCalls = 1
+    $reasked = 0
+
+    # ── One bounded, TARGETED re-ask ──
+    # The reviewer answered; we just could not read it. Repeating the review
+    # would only produce the same unreadable answer, so the second call is a
+    # different, much smaller question: restate YOUR OWN review as the schema.
+    # Bounded at one - a model that cannot produce four characters of JSON twice
+    # will not produce them on the third try, and `improve` must not turn into an
+    # open-ended loop against a free tier.
+    if (Test-ShouldReaskVerdict -RawText $checkText -Parsed $verdictObj) {
+        $reviewNote = $checkText
+        if ($reviewNote.Length -gt $script:ImproveReaskBudget) {
+            $reviewNote = $reviewNote.Substring(0, $script:ImproveReaskBudget) + "`n... [truncated]"
+        }
+        # The schema is DESCRIBED, never printed as a complete object. A reviewer
+        # that echoes its instructions would hand back a parseable verdict we
+        # wrote ourselves, and Get-ImproveVerdict takes the first candidate whose
+        # verdict is one of the four - so the example would BE the answer.
+        $reaskPrompt = @"
+Your previous reply was meant to be one JSON object and could not be parsed.
+Do not review anything again. Restate the review you already gave, unchanged, as strict minified JSON and nothing else.
+The object has exactly three keys:
+- verdict: one of the four words ok, minor, major, wrong
+- defects: a list of objects, each with a "defect" string and a "failingCase" string
+- confidence: an integer from 0 to 100
+No prose, no code fence, no explanation, no second object, no copy of these instructions.
+Drop any defect you cannot give a concrete failingCase for.
+If your review did not actually find a defect, use verdict ok and an empty defects list.
+
+YOUR PREVIOUS REPLY:
+$reviewNote
+"@
+        $reaskResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $reaskPrompt -ChosenModel $reviewModel -EffectiveComplexity "fast" -Stage "review"
+        $reviewCalls++
+        $reasked = 1
+        if ($reaskResult.fellBack) {
+            $reviewBackend = $reaskResult.backend
+            $reviewModel = $reaskResult.model
+            $script:FinalModel = $reviewModel
+            $script:FinalProvider = Get-UsageProviderName $reviewBackend
+        }
+        if ($reaskResult.exitCode -eq 0) {
+            $reaskText = (($reaskResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+            $reaskObj = Get-ImproveVerdict $reaskText
+            # Only when the second try produced something USABLE. A re-ask that
+            # is also unreadable must leave the first result in place, not
+            # replace a $null with a different $null.
+            if (-not (Test-ShouldReaskVerdict -RawText $reaskText -Parsed $reaskObj)) {
+                $verdictObj = $reaskObj
+            }
+        }
+    }
+
     $verdict = if ($verdictObj -and $verdictObj.verdict) { ([string]$verdictObj.verdict).Trim().ToLowerInvariant() } else { "" }
     # Only defects the reviewer could demonstrate survive: see Get-SupportedDefects.
     $defects = @()
@@ -2169,7 +2813,7 @@ $draftForReview
         # An unparsable verdict is not evidence of a defect - unless the compiler
         # already found one, and then the reviewer's opinion is not needed.
         if ($mechanical.Count -eq 0) {
-            Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "verdict-unparsable" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
+            Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "verdict-unparsable" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "calls=$reviewCalls,reask=$reasked,ctxmissing=$($script:ImproveMissingContext)"
             Exit-Delegate 3
         }
         $verdict = "major"
@@ -2181,7 +2825,7 @@ $draftForReview
     if ($verdict -in @("ok", "minor") -or $defects.Count -eq 0) {
         # `unsupported` is the tuning signal: how often the reviewer claimed a
         # defect it could not demonstrate. Watch it in delegate-metrics.jsonl.
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "keep-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),unsupported=$unsupported,calls=1,ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "keep-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),unsupported=$unsupported,calls=$reviewCalls,reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "keep"; output = "" } | ConvertTo-Json -Depth 4
         }
@@ -2219,7 +2863,7 @@ $draftForReview
     }
     $improved = Filter-ConversationalNoise ((($rewriteResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim())
     if ($rewriteResult.exitCode -ne 0) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
         [Console]::Error.WriteLine("[Delegator] improve: the rewrite failed, keeping your draft")
         Exit-Delegate 1
     }
@@ -2229,7 +2873,7 @@ $draftForReview
     # it. Nothing checked the rewrite at all - only the draft was ever linted.
     $rewriteProblems = @(Get-MechanicalDefects -Task $task -Draft $draft -Rewrite $improved -WantRewriteDefects)
     if ($rewriteProblems.Count -gt 0) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-rewrite-broken" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=fail,reason=$($rewriteProblems[0])"
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-rewrite-broken" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,reason=$($rewriteProblems[0])"
         [Console]::Error.WriteLine("[Delegator] improve: rewrite is worse than the draft, keeping yours - $($rewriteProblems[0])")
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "rewrite-broken"; output = "" } | ConvertTo-Json -Depth 4
@@ -2239,7 +2883,7 @@ $draftForReview
 
     $guard = Test-ImproveGuards -Draft $draft -Improved $improved
     if (-not [string]::IsNullOrWhiteSpace($guard)) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=fail,ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,ctxmissing=$($script:ImproveMissingContext)"
         [Console]::Error.WriteLine("[Delegator] improve: rewrite rejected by guard '$guard', keeping your draft")
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = $guard; output = "" } | ConvertTo-Json -Depth 4
@@ -2247,7 +2891,7 @@ $draftForReview
         Exit-Delegate 3
     }
 
-    Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "improved-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=2,guard=pass,ctxmissing=$($script:ImproveMissingContext)"
+    Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "improved-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=pass,ctxmissing=$($script:ImproveMissingContext)"
     if ($callerWantsJson) {
         [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "pass"; output = $improved } | ConvertTo-Json -Depth 4
     } else {
@@ -2634,6 +3278,12 @@ function Run-Usage {
     exit 0
 }
 
+# Dot-sourcing loads the functions WITHOUT running a command - the same guard
+# opencode-delegate.ps1 already uses. It exists so tests/ps can unit-test the pure
+# helpers of the largest script in the product; without it `. ai-delegate.ps1`
+# falls through to the default command ("ask") and makes a network call.
+if ($MyInvocation.InvocationName -eq ".") { return }
+
 # The finally block guarantees the per-request usage file is aggregated/removed and
 # the ##DELEGATOR_USAGE## marker (when requested) is the LAST stdout line, on every
 # exit path including `exit` inside the Run-* handlers.
@@ -2652,6 +3302,7 @@ switch ($Command) {
     "parallel" { Run-Parallel }
     "ui" { Run-UI }
     "policy" { Run-Policy }
+    "ping" { Run-Ping }
     "usage" { Run-Usage }
     "status" {
         & $GeminiDelegate "status" "-Json"

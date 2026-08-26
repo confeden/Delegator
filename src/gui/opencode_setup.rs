@@ -11,7 +11,7 @@
 use crate::config::runtime_home_dir;
 use crate::models_service::ModelInfo;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -224,6 +224,40 @@ pub fn order_opencode_models(
     custom.extend(zen);
     custom.extend(rest);
     custom
+}
+
+/// Every id the user has ENABLED gets a row, even when the catalog that
+/// produced this list does not mention it.
+///
+/// I8 calls the tab an authoritative allowlist, and the tab can only be that if
+/// it shows what is on the list. It did not: the rows come from a live
+/// `opencode models` run, and when that run fails the fallback carries seven
+/// built-in Zen aliases. Measured on the owner's machine — 24 models enabled,
+/// 7 rows drawn, so 17 of their own choices had no checkbox and could not be
+/// turned off, including both Opus-class ids the whole of section 13 compares
+/// against. A catalog hiccup must never be able to hide a decision the user
+/// already made.
+///
+/// Appended, not sorted in: a row we could not confirm this run belongs at the
+/// bottom, and `provider` says why it is there.
+pub fn with_enabled_models(mut models: Vec<ModelInfo>, enabled: &[String]) -> Vec<ModelInfo> {
+    let known: HashSet<&str> = models.iter().map(|model| model.id.as_str()).collect();
+    let mut missing: Vec<&String> = enabled
+        .iter()
+        .filter(|id| !id.trim().is_empty() && !known.contains(id.as_str()))
+        .collect();
+    missing.sort();
+    let extra: Vec<ModelInfo> = missing
+        .into_iter()
+        .map(|id| ModelInfo {
+            id: id.clone(),
+            name: id.clone(),
+            is_free: false,
+            provider: "включена, но CLI её сейчас не перечислил".into(),
+        })
+        .collect();
+    models.extend(extra);
+    models
 }
 
 /// Which background CLI job produced a result (they share one code path but
@@ -797,5 +831,51 @@ mod order_tests {
                 "opencode/weak",
             ]
         );
+    }
+
+    #[test]
+    fn an_enabled_model_always_gets_a_row_even_when_the_catalog_forgot_it() {
+        // The live failure this guards: `opencode models` takes ~12.7 s and used
+        // to time out at 15 s, so the tab drew the seven built-in aliases while
+        // the owner had 24 models enabled. Seventeen of their own choices had no
+        // checkbox — including both Opus-class ids — and I8 calls this list
+        // authoritative, so they could not be turned off either.
+        let fallback = vec![model("opencode/big-pickle")];
+        let enabled = vec![
+            "opencode/big-pickle".to_string(),
+            "agentrouter/claude-opus-5".to_string(),
+            "aerolink/claude-opus-5".to_string(),
+            "   ".to_string(),
+        ];
+        let rows = with_enabled_models(fallback, &enabled);
+        let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "opencode/big-pickle",
+                "aerolink/claude-opus-5",
+                "agentrouter/claude-opus-5",
+            ],
+            "every enabled id gets exactly one row, blanks get none"
+        );
+        assert!(
+            rows.iter()
+                .all(|m| ids.iter().filter(|id| **id == m.id).count() == 1),
+            "a model present in BOTH the catalog and the enabled list must not be drawn twice"
+        );
+        assert_eq!(
+            rows[2].provider, "включена, но CLI её сейчас не перечислил",
+            "the row has to say why it is there"
+        );
+    }
+
+    #[test]
+    fn a_complete_catalog_is_left_exactly_as_it_was() {
+        let catalog = vec![model("opencode/big-pickle"), model("agentrouter/x")];
+        let enabled = vec!["opencode/big-pickle".to_string()];
+        let rows = with_enabled_models(catalog.clone(), &enabled);
+        assert_eq!(rows.len(), catalog.len());
+        assert_eq!(rows[0].id, "opencode/big-pickle");
+        assert_eq!(rows[1].id, "agentrouter/x");
     }
 }

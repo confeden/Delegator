@@ -1,6 +1,6 @@
 [package]
 name = "delegator"
-version = "0.7.1"
+version = "0.8.1"
 edition = "2021"
 authors = ["Delegator contributors"]
 description = "Portable Windows tray orchestrator for Gemini and OpenCode delegation"
@@ -39,7 +39,8 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Threading",
     "Win32_Security_Cryptography",
-    "Win32_System_Memory"
+    "Win32_System_Memory",
+    "Win32_System_Registry"
 ]
 
 [profile.release]

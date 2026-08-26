@@ -46,16 +46,25 @@ jobs:
           python -m pytest tests -q
 
       - name: Parse PowerShell scripts
-        shell: pwsh
+        # Windows PowerShell 5.1, not pwsh 7: 5.1 is what the product actually
+        # runs on and it rejects syntax pwsh accepts, so parsing under 7 proved
+        # the wrong thing.
+        shell: powershell
         run: |
-          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+          Get-ChildItem scripts, tests\ps -Filter *.ps1 | ForEach-Object {
             [void][scriptblock]::Create((Get-Content $_.FullName -Raw -Encoding UTF8))
           }
+
+      - name: Run PowerShell unit tests
+        # Under 5.1 for the same reason. These EXECUTE the helpers; every step
+        # above only reads the bytes.
+        shell: powershell
+        run: .\tests\ps\run-tests.ps1
 
       - name: Check .ps1 files have UTF-8 BOM
         shell: pwsh
         run: |
-          $bad = Get-ChildItem scripts -Filter *.ps1 | Where-Object {
+          $bad = Get-ChildItem scripts, tests\ps -Filter *.ps1 | Where-Object {
             $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
             -not ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
           }
@@ -72,7 +81,7 @@ jobs:
           # so every Pro model was ranked one tier too low and nothing failed
           # loudly. Parsing cannot catch it - the file is valid PowerShell.
           $bad = @()
-          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+          Get-ChildItem scripts, tests\ps -Filter *.ps1 | ForEach-Object {
             $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
             $found = $bytes | Where-Object { $_ -lt 9 -or $_ -eq 11 -or $_ -eq 12 -or ($_ -ge 14 -and $_ -le 31) }
             if ($found) { $bad += "$($_.Name): $(@($found | Select-Object -Unique) -join ',')" }

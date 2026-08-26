@@ -46,11 +46,20 @@ $defaultPool = @(
     "opencode/deepseek-v4-flash-free",
     "opencode/ling-3.0-flash-free"
 )
-$models = if ($explicitModels) { @($explicitModels -split ",") } else {
-    @(for ($i = 0; $i -lt $prompts.Count; $i++) {
-        if ($noDiverseModels) { $defaultPool[0] } else { $defaultPool[$i % $defaultPool.Count] }
+# The outer @() is NOT redundant. A script block that emits @("one-item") returns
+# a STRING, because the pipeline unrolls a single-element array on the way out --
+# and `$models[0]` on a string is a CHAR. With one advisor the id
+# `agentrouter-openai/gpt-5.6-sol` became `a`, the child reported
+# "Gemini model 'a' is not enabled in the Delegator GUI", and boost recorded
+# `all-advisors-failed`. Two or more advisors happened to work, which is why it
+# survived: the bug only exists at Count == 1.
+$models = @(if ($explicitModels) { @($explicitModels -split ",") } else {
+        @(for ($i = 0; $i -lt $prompts.Count; $i++) {
+            if ($noDiverseModels) { $defaultPool[0] } else { $defaultPool[$i % $defaultPool.Count] }
+        })
     })
-}
+$models = @($models | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { ([string]$_).Trim() })
+if ($models.Count -eq 0) { throw "No models resolved for parallel execution." }
 
 $entryPoint = Join-Path $PSScriptRoot "ai-delegate.ps1"
 $jobs = @()

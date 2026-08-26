@@ -134,6 +134,10 @@ pub struct DelegatorApp {
     // Models Lists
     gemini_models: Vec<ModelInfo>,
     opencode_models: Vec<ModelInfo>,
+    /// The last listing came from the built-in catalog, not from the CLI. The
+    /// tab has to SAY so: seven rows where the user enabled twenty-four reads
+    /// as "this is all there is" and there is nothing else to tell them apart.
+    opencode_catalog_is_fallback: bool,
     gemini_search: String,
     opencode_search: String,
     /// Zen strength scores from `<RT>\opencode-zen-catalog.json`; drives the
@@ -262,6 +266,7 @@ impl DelegatorApp {
             status_message: runtime_status,
             gemini_models: Vec::new(),
             opencode_models: Vec::new(),
+            opencode_catalog_is_fallback: false,
             gemini_search: String::new(),
             opencode_search: String::new(),
             zen_strengths: load_zen_strengths(),
@@ -693,6 +698,23 @@ fn highlight_label(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         });
 }
 
+/// Extra line for an IDE row whose scope is easy to misread.
+///
+/// VSCodium has no chat model of its own: the instruction file goes to the
+/// editor's built-in chat, while an agent that arrives as an EXTENSION (Claude
+/// Code, Gemini) reads its own profile — the row named after that agent. Without
+/// this, ticking «VSCodium» and seeing the Claude extension still know nothing
+/// looks like a broken integration.
+fn ide_row_hint(name: &str) -> Option<&'static str> {
+    match name {
+        "VSCodium" => Some(
+            "Инструкция пишется для встроенного чата VSCodium (%APPDATA%\\VSCodium\\User\\prompts).\n\
+             Расширения со своим агентом читают свои профили: для них включите «Claude» или «Antigravity».",
+        ),
+        _ => None,
+    }
+}
+
 /// What a tab is trying to tell the user before they click it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum TabAccent {
@@ -734,6 +756,44 @@ fn limit_banner(ui: &mut egui::Ui, theme: &ThemeConfig, provider: &str, limit: &
                 ));
         });
     ui.add_space(4.0);
+}
+
+/// The four tabs that can light up; the rest are always plain.
+#[derive(Debug, Clone, Copy)]
+struct TabAccents {
+    api: TabAccent,
+    gemini: TabAccent,
+    opencode: TabAccent,
+    benchmark: TabAccent,
+}
+
+/// The navigation row. One function because it is drawn in two layouts — see
+/// the call site: unwrapped once, to measure how wide it wants to be, and
+/// wrapped from then on so narrowing the window folds it onto a second line
+/// instead of pushing tabs out of reach.
+fn navigation_tabs(
+    ui: &mut egui::Ui,
+    active: &mut SelectedTab,
+    theme: &ThemeConfig,
+    accents: TabAccents,
+) {
+    let tabs = [
+        (SelectedTab::Ides, "Интеграция", TabAccent::None),
+        (SelectedTab::ApiKeys, "API-ключи", accents.api),
+        (SelectedTab::GeminiModels, "Модели Gemini", accents.gemini),
+        (
+            SelectedTab::OpenCodeModels,
+            "Модели OpenCode",
+            accents.opencode,
+        ),
+        (SelectedTab::Stats, "Статистика", TabAccent::None),
+        (SelectedTab::Thinking, "Мышление", TabAccent::None),
+        (SelectedTab::Benchmark, "Бенчмарк", accents.benchmark),
+        (SelectedTab::Proxies, "Прокси", TabAccent::None),
+    ];
+    for (value, label, accent) in tabs {
+        tab_button(ui, active, value, label, accent, theme);
+    }
 }
 
 fn tab_button(
@@ -918,8 +978,15 @@ impl eframe::App for DelegatorApp {
                             // The runtime rewrites the strength catalog when it
                             // ages out, so re-read it with every listing.
                             self.zen_strengths = load_zen_strengths();
-                            self.opencode_models =
-                                order_opencode_models(catalog.models, &self.zen_strengths);
+                            self.opencode_catalog_is_fallback = catalog.source
+                                == crate::models_service::OpenCodeCatalogSource::Fallback;
+                            // I8: the tab is an authoritative allowlist, so an
+                            // enabled model always gets a row — a CLI hiccup must
+                            // not hide a choice the user already made.
+                            self.opencode_models = crate::gui::opencode_setup::with_enabled_models(
+                                order_opencode_models(catalog.models, &self.zen_strengths),
+                                &self.config.enabled_opencode_models,
+                            );
                         }
                         Err(err) => self.status_message = format!("OpenCode error: {}", err),
                     }
@@ -1083,75 +1150,34 @@ impl eframe::App for DelegatorApp {
             } else {
                 TabAccent::None
             };
-            let tabs_row = ui.horizontal(|ui| {
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::Ides,
-                    "Интеграция",
-                    TabAccent::None,
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::ApiKeys,
-                    "API-ключи",
-                    TabAccent::warn(api_warning),
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::GeminiModels,
-                    "Модели Gemini",
-                    TabAccent::warn(gemini_warning),
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::OpenCodeModels,
-                    "Модели OpenCode",
-                    TabAccent::warn(opencode_warning),
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::Stats,
-                    "Статистика",
-                    TabAccent::None,
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::Thinking,
-                    "Мышление",
-                    TabAccent::None,
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::Benchmark,
-                    "Бенчмарк",
-                    benchmark_accent,
-                    &self.theme,
-                );
-                tab_button(
-                    ui,
-                    &mut self.active_tab,
-                    SelectedTab::Proxies,
-                    "Прокси",
-                    TabAccent::None,
-                    &self.theme,
-                );
-            });
+            let accents = TabAccents {
+                api: TabAccent::warn(api_warning),
+                gemini: TabAccent::warn(gemini_warning),
+                opencode: TabAccent::warn(opencode_warning),
+                benchmark: benchmark_accent,
+            };
+            // Narrowing the window used to push the last tabs past the right
+            // edge, where they were drawn but could not be clicked: eight tabs,
+            // no scrollbar, no wrap, and no way back to «Прокси» except making
+            // the window wider again. Wrapped, the row folds onto a second line
+            // and every tab stays reachable at the 650 px minimum width.
+            //
+            // Except on the very first frame: a wrapped row reports the width it
+            // was GIVEN, so the one-shot fit below would read "810" and grow the
+            // window by the padding at every single launch. An unwrapped row
+            // reports the width it WANTS, which is the number that fit needs.
+            let tabs_row = if self.window_width_fitted {
+                ui.horizontal_wrapped(|ui| {
+                    navigation_tabs(ui, &mut self.active_tab, &self.theme, accents)
+                })
+            } else {
+                ui.horizontal(|ui| {
+                    navigation_tabs(ui, &mut self.active_tab, &self.theme, accents)
+                })
+            };
 
-            // Fit the window width to the tab row once at startup so no tab is ever
-            // clipped; later resizes stay under the user's control.
+            // Fit the window width to the tab row once at startup so the row
+            // starts on one line; later resizes stay under the user's control.
             if !self.window_width_fitted {
                 let tabs_width = tabs_row.response.rect.width();
                 if tabs_width > 0.0 {
@@ -1199,7 +1225,7 @@ impl eframe::App for DelegatorApp {
                             ui.horizontal(|ui| {
                                 // Hooks are only written for installed IDEs, so a
                                 // checkbox for an undetected one would do nothing.
-                                let checkbox = ui.add_enabled(
+                                let mut checkbox = ui.add_enabled(
                                     ide.is_detected,
                                     egui::Checkbox::new(
                                         &mut is_enabled,
@@ -1207,8 +1233,12 @@ impl eframe::App for DelegatorApp {
                                     ),
                                 );
                                 if !ide.is_detected {
-                                    checkbox.on_hover_text("IDE не найдена на этом компьютере");
-                                } else if checkbox.changed() {
+                                    checkbox =
+                                        checkbox.on_hover_text("IDE не найдена на этом компьютере");
+                                } else if let Some(hint) = ide_row_hint(&ide.name) {
+                                    checkbox = checkbox.on_hover_text(hint);
+                                }
+                                if ide.is_detected && checkbox.changed() {
                                     self.config.ide_states.insert(ide.name.clone(), is_enabled);
                                     self.config.save();
                                     let _ = IdeDetector::apply_hook(
@@ -1680,6 +1710,18 @@ impl eframe::App for DelegatorApp {
                         ui.colored_label(
                             self.theme.warning_color(),
                             "Не выбрана ни одна модель.",
+                        );
+                    }
+                    if self.opencode_catalog_is_fallback {
+                        ui.colored_label(
+                            self.theme.warning_color(),
+                            "Список не получен от OpenCode CLI — показан встроенный минимум.",
+                        )
+                        .on_hover_text(
+                            "Запрос списка к CLI не успел или не удался, поэтому здесь только \
+                             встроенные модели OpenCode Zen плюс те, что вы уже включили. \
+                             Ваш выбор не потерян и делегирование работает как обычно. \
+                             Нажмите «Обновить CLI» или откройте вкладку заново.",
                         );
                     }
                     ui.horizontal(|ui| {
@@ -2437,5 +2479,79 @@ impl eframe::App for DelegatorApp {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lays the navigation row out in a window `width` px wide and returns the
+    /// rect it occupied. No `theme::apply` — that installs a font from the
+    /// user's machine; the default face is enough to compare two layouts.
+    fn tabs_rect(width: f32, wrapped: bool) -> egui::Rect {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(width, 420.0),
+            )),
+            ..Default::default()
+        };
+        let theme = ThemeConfig::load();
+        let accents = TabAccents {
+            api: TabAccent::None,
+            gemini: TabAccent::None,
+            opencode: TabAccent::None,
+            benchmark: TabAccent::None,
+        };
+        let mut active = SelectedTab::Ides;
+        let mut rect = egui::Rect::NOTHING;
+        ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let row = if wrapped {
+                    ui.horizontal_wrapped(|ui| navigation_tabs(ui, &mut active, &theme, accents))
+                } else {
+                    ui.horizontal(|ui| navigation_tabs(ui, &mut active, &theme, accents))
+                };
+                rect = row.response.rect;
+            });
+        });
+        rect
+    }
+
+    /// The window can be dragged down to `min_inner_size`, and at that width
+    /// eight tabs do not fit on one line. They used to be drawn past the right
+    /// edge — visible in no way, clickable in no way, and the only route back to
+    /// «Прокси» was widening the window again.
+    #[test]
+    fn narrowing_the_window_wraps_the_tabs_instead_of_putting_them_out_of_reach() {
+        const NARROW: f32 = 650.0;
+
+        let flat = tabs_rect(NARROW, false);
+        assert!(
+            flat.width() > NARROW,
+            "the row must genuinely overflow at this width, or the test proves nothing: {}",
+            flat.width()
+        );
+
+        let wrapped = tabs_rect(NARROW, true);
+        assert!(
+            wrapped.width() <= NARROW,
+            "a wrapped row must stay inside the window: {} > {NARROW}",
+            wrapped.width()
+        );
+        assert!(
+            wrapped.height() > flat.height(),
+            "not fitting on one line has to cost a second line, not a tab"
+        );
+        // And this is why the one-shot window fit measures the UNWRAPPED row:
+        // once wrapped, the row can no longer say how wide it wanted to be.
+        assert!(
+            flat.width() > wrapped.width(),
+            "only the unwrapped row reports the width the fit needs: {} vs {}",
+            flat.width(),
+            wrapped.width()
+        );
     }
 }

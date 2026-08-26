@@ -146,7 +146,11 @@ function Write-DelegateUsageRecord {
         [object]$Cost,
         [long]$ElapsedMs,
         [bool]$Ok,
-        [object]$AccountId
+        [object]$AccountId,
+        # DEV_CONTRACTS section 5 class of a FAILED call. Omitted on success and
+        # on older callers; Get-ModelHealth reads it to tell a model that cannot
+        # answer from an account that is merely out of quota today.
+        [string]$ErrorClass
     )
     $requestId = [string]$env:DELEGATOR_REQUEST_ID
     if ([string]::IsNullOrWhiteSpace($requestId)) {
@@ -170,6 +174,9 @@ function Write-DelegateUsageRecord {
         ok = $Ok
         accountId = $AccountId
         bench = (Test-DelegatorBenchmarkActive)
+    }
+    if (-not $Ok -and -not [string]::IsNullOrWhiteSpace($ErrorClass)) {
+        Add-Member -InputObject $record -NotePropertyName "errorClass" -NotePropertyValue ([string]$ErrorClass) -Force
     }
     $line = ($record | ConvertTo-Json -Depth 6 -Compress) + [Environment]::NewLine
     try {
@@ -800,23 +807,34 @@ function Run-Ask {
     $attempts = @()
     Write-RunEvent ([pscustomobject]@{ runId = $runId; event = "started"; status = "running"; promptSummary = $promptSummary; selectedModel = $selectedModel; accountSource = "delegator-dpapi" })
 
+    $recordedFailures = New-Object System.Collections.Generic.HashSet[string]
     foreach ($currentModel in $modelAttempts) {
         $excluded = @()
         $modelPolicy = $null
         $modelStatusCode = 0
         $modelRetryAfter = 0
+        $modelAccountId = $null
+        $callMs = 0
         while ($excluded.Count -lt $accounts.Count) {
             $account = Reserve-GoogleAccount -Accounts $accounts -ExcludedIds $excluded
             if (-not $account) { break }
             $excluded += $account.id
             Write-RunEvent ([pscustomobject]@{ runId = $runId; event = "attempt_started"; status = "running"; accountId = $account.id; accountLabel = $account.label; model = $currentModel })
+            # THIS CALL's own time. usage.jsonl elapsedMs is per call (section 2.1)
+            # and is the only thing the p75 latency Get-ModelHealth routes on is
+            # made of, so it must wrap ONE request. Around the account loop
+            # instead, an answer that arrives on the second key carries the first
+            # key's timeout too - up to TimeoutSec (180 s) of somebody else's wait.
+            $callSw = [System.Diagnostics.Stopwatch]::StartNew()
             $result = Invoke-GoogleGenerateContent -Account $account -ModelId $currentModel -Text $Prompt -Seconds $TimeoutSec
+            $callSw.Stop()
+            $callMs = [long]$callSw.ElapsedMilliseconds
             if ($result.ok) {
                 Complete-GoogleAttempt -Account $account -ModelId $currentModel -Success $true -Tokens $result.tokens -Status "ok"
                 $attempts += [pscustomobject]@{ accountId = $account.id; accountLabel = $account.label; model = $currentModel; status = "ok" }
                 $elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
                 Write-RunEvent ([pscustomobject]@{ runId = $runId; event = "completed"; status = "ok"; accountId = $account.id; accountLabel = $account.label; model = $currentModel; tokens = $result.tokens; elapsedMs = $elapsedMs })
-                Write-DelegateUsageRecord -Mode $Command -Provider "gemini" -ModelId $currentModel -PromptTokens $result.promptTokens -CompletionTokens $result.completionTokens -TotalTokens $result.tokens -Cost 0.0 -ElapsedMs $elapsedMs -Ok $true -AccountId $account.id
+                Write-DelegateUsageRecord -Mode $Command -Provider "gemini" -ModelId $currentModel -PromptTokens $result.promptTokens -CompletionTokens $result.completionTokens -TotalTokens $result.tokens -Cost 0.0 -ElapsedMs $callMs -Ok $true -AccountId $account.id
                 Clear-ModelCooldown $currentModel
                 if ($Json) {
                     [pscustomobject]@{ profile = $account.id; account = $account.label; model = $currentModel; output = $result.answer; stats = $result.usage; promptTokens = $result.promptTokens; completionTokens = $result.completionTokens; totalTokens = $result.tokens; cost = 0.0; attempts = $attempts } | ConvertTo-Json -Depth 10
@@ -830,6 +848,7 @@ function Run-Ask {
             $modelPolicy = $policy
             $modelStatusCode = $result.statusCode
             $modelRetryAfter = [int]$result.retryAfterSec
+            $modelAccountId = [string]$account.id
             Complete-GoogleAttempt -Account $account -ModelId $currentModel -Success $false -Tokens 0 -Status $policy.status -CooldownSeconds $policy.cooldown
             $attempts += [pscustomobject]@{ accountId = $account.id; accountLabel = $account.label; model = $currentModel; status = $policy.status; statusCode = $result.statusCode }
             Write-RunEvent ([pscustomobject]@{ runId = $runId; event = "attempt_failed"; status = $policy.status; errorClass = $policy.errorClass; accountId = $account.id; accountLabel = $account.label; model = $currentModel; statusCode = $result.statusCode; errorPreview = (Get-PromptSummary $result.error) })
@@ -838,6 +857,17 @@ function Run-Ask {
         # The model failed for every account we could try: put the MODEL on cooldown
         # (per-account cooldowns were already applied by Complete-GoogleAttempt above).
         if ($modelPolicy) {
+            # ONE record per abandoned model, written here rather than once per run.
+            # Google meters each MODEL separately (G28), so the ladder routinely
+            # burns two or three models before one answers - and until 0.7.2 only
+            # the LAST of them appeared in usage.jsonl. Get-ModelHealth therefore
+            # never saw the models that had just failed and kept ranking them
+            # first. Per ACCOUNT would be wrong in the other direction: health is
+            # keyed on the model, and three accounts would weigh a two-account
+            # model down by half again. $callMs is the LAST attempt's duration for
+            # the same reason: a failure record must not carry the sum of every key.
+            Write-DelegateUsageRecord -Mode $Command -Provider "gemini" -ModelId $currentModel -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs $callMs -Ok $false -AccountId $modelAccountId -ErrorClass ([string]$modelPolicy.errorClass)
+            [void]$recordedFailures.Add([string]$currentModel)
             if ($modelPolicy.dailyQuota) {
                 Set-ModelCooldown -ModelId $currentModel -Reason $modelPolicy.errorClass -Seconds 0 -StatusCode $modelStatusCode -UntilUtc (Get-NextPacificMidnightUtc)
             } else {
@@ -853,7 +883,12 @@ function Run-Ask {
     Write-RunEvent ([pscustomobject]@{ runId = $runId; event = "completed"; status = "failed"; attempts = $attempts.Count; elapsedMs = $elapsedMs })
     $failedModel = if ($attempts.Count -gt 0) { [string]$attempts[$attempts.Count - 1].model } else { $selectedModel }
     $failedAccountId = if ($attempts.Count -gt 0) { [string]$attempts[$attempts.Count - 1].accountId } else { $null }
-    Write-DelegateUsageRecord -Mode $Command -Provider "gemini" -ModelId $failedModel -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs $elapsedMs -Ok $false -AccountId $failedAccountId
+    # Each model that was actually tried has already been recorded above. This
+    # line survives only for the run that never reached a model at all (no
+    # account could be reserved), which would otherwise leave no trace.
+    if (-not $recordedFailures.Contains([string]$failedModel)) {
+        Write-DelegateUsageRecord -Mode $Command -Provider "gemini" -ModelId $failedModel -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs $elapsedMs -Ok $false -AccountId $failedAccountId
+    }
     throw "All enabled Delegator Google accounts/models failed. Run gemini-delegate status."
 }
 

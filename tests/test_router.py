@@ -154,3 +154,178 @@ def test_a_task_that_describes_the_work_in_prose_is_still_code_work():
     # And small talk is still small talk: the fix must not swallow everything.
     for task in ("Как дела?", "Объясни, чем HTTP/2 отличается от HTTP/3."):
         assert router.decide(task).reason == "plain-question", task
+
+
+# ── Caller strength (router 1.1) ─────────────────────────────────────────────
+# One rule: return an answer at least as good as the CALLER would have written,
+# at no token cost to the caller. A weak caller gets quality it cannot reach; a
+# strong one gets its tokens back without losing anything.
+
+WEAK = dict(caller_dpr=110, best_dpr=156)     # Flash at low effort vs our Opus-class
+STRONG = dict(caller_dpr=156, best_dpr=110)   # Opus asking, and we own nothing near it
+LEVEL = dict(caller_dpr=150, best_dpr=152)    # inside CALLER_MARGIN
+
+
+def test_an_undeclared_caller_routes_exactly_as_before():
+    # The whole point of defaulting to 0: an agent that never learned to declare
+    # itself must not be routed differently by an upgrade.
+    plain = router.decide("Напиши функцию merge_intervals(items).")
+    assert plain.callerTier == router.CALLER_TIER_UNKNOWN
+    assert plain.mode == router.MODE_DELEGATE and plain.reason == "code-task"
+    assert plain.modelReview is True
+    # Half-declared is still undeclared: one number cannot produce a comparison.
+    assert router.decide("x", caller_dpr=156).callerTier == router.CALLER_TIER_UNKNOWN
+    assert router.decide("x", best_dpr=156).callerTier == router.CALLER_TIER_UNKNOWN
+
+
+def test_a_weak_caller_gets_the_swarm_instead_of_one_model():
+    task = "Напиши функцию на Python, которая разбирает cron-выражение и проверяет совпадение. " * 6
+    base = router.decide(task)
+    assert base.mode == router.MODE_DELEGATE
+    assert len(task) >= router.AMPLIFY_TASK_CHARS
+    lifted = router.decide(task, **WEAK)
+    assert lifted.callerTier == router.CALLER_TIER_AMPLIFY
+    assert lifted.mode == router.MODE_BOOST
+    assert lifted.reason.endswith("+amplify-caller")
+
+    # ...but a one-liner is not worth three advisors and a judge: a single model
+    # at 156 already buries a caller at 110, and the swarm only costs minutes.
+    short = router.decide("Как отсортировать список по ключу?", **WEAK)
+    assert short.mode == router.MODE_DELEGATE
+
+
+def test_a_weak_caller_gets_its_thin_draft_reviewed_after_all():
+    # "Not worth thirty seconds" was measured against a caller of unknown
+    # strength. Against a weak one the draft IS the weakest thing in the request.
+    task = "Как отсортировать список словарей по ключу?"
+    draft = "Используй sorted(items, key=...)."
+    assert router.decide(task, draft).mode == router.MODE_KEEP
+    lifted = router.decide(task, draft, **WEAK)
+    assert lifted.mode == router.MODE_IMPROVE
+    assert lifted.reason == "draft-trivial+amplify-caller"
+
+
+def test_a_strong_caller_is_never_handed_a_worse_answer():
+    # Opus asks, the best we can reach is 110. Answering outright would return
+    # something worse than the caller would have written — the one outcome
+    # delegation must never produce.
+    task = "Напиши функцию merge_intervals(items), сливающую пересекающиеся интервалы."
+    assert router.decide(task).mode == router.MODE_DELEGATE
+    guarded = router.decide(task, **STRONG)
+    assert guarded.callerTier == router.CALLER_TIER_GUARD
+    assert guarded.mode == router.MODE_KEEP
+    assert guarded.reason == "code-task+caller-stronger"
+    assert not guarded.escalate, "a fast model must not overrule the quality guard"
+
+
+def test_a_strong_caller_still_gets_the_mechanical_check():
+    # `improve` survives the guard, stripped to §11: the checker COMPILES the
+    # draft, so its defects are facts and need no model opinion (G34).
+    guarded = router.decide("Напиши cron_match(...)", CODE_DRAFT, **STRONG)
+    assert guarded.mode == router.MODE_IMPROVE
+    assert guarded.reason == "draft-carries-code+mechanical-only"
+    assert guarded.modelReview is False
+
+
+def test_a_level_caller_changes_nothing():
+    task = "Напиши функцию merge_intervals(items), сливающую пересекающиеся интервалы."
+    base = router.decide(task)
+    level = router.decide(task, **LEVEL)
+    assert level.callerTier == router.CALLER_TIER_MATCH
+    assert (level.mode, level.reason) == (base.mode, base.reason)
+    assert level.modelReview is True
+
+
+def test_the_damage_guards_outrank_every_strength_comparison():
+    # A truncated draft is half an answer; reviewing it returns a confident
+    # rewrite of the surviving half. No caller comparison may unlock that.
+    for kwargs in (WEAK, STRONG, LEVEL):
+        assert router.decide("t", TRUNCATED_DRAFT, **kwargs).mode == router.MODE_KEEP
+        assert router.decide("", "", **kwargs).mode == router.MODE_KEEP
+        big = router.decide("t", "x" * (router.IMPROVE_DRAFT_BUDGET + 1), **kwargs)
+        assert big.mode == router.MODE_KEEP and big.reason == "draft-too-long"
+
+
+def test_the_tier_boundary_is_the_margin_and_nothing_else():
+    m = router.CALLER_MARGIN
+    both = dict(caller_confidence="measured", best_confidence="measured")
+    assert router.caller_tier(100, 100 + m, **both) == router.CALLER_TIER_AMPLIFY
+    assert router.caller_tier(100, 100 + m - 1, **both) == router.CALLER_TIER_MATCH
+    assert router.caller_tier(100, 100 - m, **both) == router.CALLER_TIER_GUARD
+    assert router.caller_tier(100, 100 - m + 1, **both) == router.CALLER_TIER_MATCH
+    assert router.caller_tier(0, 0) == router.CALLER_TIER_UNKNOWN
+
+
+def test_a_single_source_rating_buys_a_wider_band_not_a_lower_score():
+    # 154 of the 196 shipped rows rest on one source. `gemini-3.7-flash` is one
+    # of them: 152 from the coding index alone, five days after launch, with no
+    # SWE-Verified figure beside it — while `claude-sonnet-5` scores 143 from two
+    # benchmarks that agree. Published head-to-heads call the pair a TIE, so the
+    # nine-point gap is our arithmetic, not their difference.
+    flash, sonnet = 152, 143
+    confirmed = dict(caller_confidence="measured", best_confidence="measured")
+    provisional = dict(caller_confidence="provisional", best_confidence="measured")
+
+    # Taken at face value the tie reads as "the caller is clearly stronger", and
+    # Delegator would refuse to answer at all.
+    assert router.caller_tier(flash, sonnet, **confirmed) == router.CALLER_TIER_GUARD
+    # With the wider band it reads as what it is: level.
+    assert router.caller_tier(flash, sonnet, **provisional) == router.CALLER_TIER_MATCH
+
+    # The score itself is untouched — the band moved, not the number. A real gap
+    # still registers, so the effort penalty (§13.2) keeps working.
+    assert router.caller_tier(127, 156, **provisional) == router.CALLER_TIER_AMPLIFY
+    assert router.decide("t", caller_dpr=flash, best_dpr=sonnet, **provisional).callerDpr == flash
+
+
+def test_an_unconfirmed_pair_defaults_to_the_wider_band():
+    # Absent confidence is not "confirmed". Anything short of two agreeing
+    # sources on BOTH sides gets the cautious margin.
+    for kwargs in (
+        {},
+        dict(caller_confidence="measured"),
+        dict(best_confidence="measured"),
+        dict(caller_confidence="provisional", best_confidence="provisional"),
+    ):
+        assert router.caller_margin(**kwargs) == router.CALLER_MARGIN_PROVISIONAL
+    assert router.caller_margin("measured", "measured") == router.CALLER_MARGIN
+
+
+def test_the_decision_carries_the_numbers_that_produced_it(tmp_path):
+    # router-decisions.jsonl has to be replayable: a tier without its inputs is
+    # an assertion, not evidence.
+    request = tmp_path / "req.json"
+    out = tmp_path / "out.json"
+    request.write_text(
+        json.dumps({"task": "Напиши функцию foo(x).", "callerDpr": 110, "bestDpr": 156}),
+        encoding="utf-8",
+    )
+    router.route_files(request, out)
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["callerTier"] == router.CALLER_TIER_AMPLIFY
+    assert written["callerDpr"] == 110 and written["bestDpr"] == 156
+    assert written["routerVersion"] == "1.1"
+
+
+def test_the_verb_and_the_noun_are_almost_never_adjacent():
+    # Measured live on 2026-08-23: four of seven natural phrasings missed, and a
+    # miss is not harmless — «plain-question» carries complexity `fast`, so real
+    # code work went to a flash-class model. The gap the hint allows is exactly
+    # one language name, nothing wider.
+    for task in (
+        "Напиши на Python функцию merge_intervals(items), которая сливает интервалы.",
+        "Напиши на TypeScript хук useDebounce.",
+        "Сделай на Python скрипт, который читает CSV и пишет JSON.",
+        "Создай компонент карточки товара.",
+        "Write a Python function that merges overlapping intervals.",
+    ):
+        assert router.decide(task).reason == "code-task", task
+
+    # And the reason the gap is one language name and not a wildcard: with
+    # `\w+\s+` there instead, this becomes code work because "класса" matches.
+    for task in (
+        "Напиши краткое резюме этого класса задач.",
+        "Составь план поездки в Прагу.",
+        "Объясни, чем HTTP/2 отличается от HTTP/3.",
+    ):
+        assert router.decide(task).reason == "plain-question", task

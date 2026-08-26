@@ -95,7 +95,12 @@ const OPENCODE_FREE_MODELS: [(&str, &str); 7] = [
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const OPENCODE_CLI_TIMEOUT: Duration = Duration::from_secs(15);
+/// Measured on the owner's machine 2026-08-23: `opencode models` takes **12.7 s**
+/// warm and lists 618 lines. The old 15 s left a 2.3 s margin, so a cold start —
+/// npm shim, node boot, a slower disk — routinely blew it, and the tab silently
+/// fell back to seven built-in aliases while 24 models were enabled. The call is
+/// async and shows a spinner, so a longer ceiling costs nothing anyone waits on.
+const OPENCODE_CLI_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Text-capable Gemini models worth delegating to, newest generation first.
 ///

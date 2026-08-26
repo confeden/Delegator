@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod autostart;
 mod config;
 mod crypto;
 mod dependency_service;
@@ -26,6 +27,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ide_detector::IdeDetector::remove_legacy_shims();
         return Ok(());
     }
+    // The uninstaller's second call. Separate from `--remove-hooks` because the
+    // installer only records the `Run` value it wrote ITSELF: one switched on
+    // later from the tray would otherwise survive the uninstall and start a
+    // deleted executable at every logon.
+    if std::env::args().any(|arg| arg.eq_ignore_ascii_case("--disable-autostart")) {
+        let _ = autostart::set_enabled(false);
+        return Ok(());
+    }
     // BEFORE the core is touched. Two supervisors on :1380 spend their time
     // respawning what the other one tree-kills, and both would rewrite
     // config.json behind each other's back. Autostart plus a manual launch is
@@ -38,6 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_in_background = std::env::args().any(|arg| {
         arg.eq_ignore_ascii_case("--background") || arg.eq_ignore_ascii_case("--minimized")
     });
+    // After the lock, so a second copy never touches it: drops the Startup
+    // shortcut older installers left (two of them start Delegator twice) and
+    // repoints an entry whose target moved.
+    autostart::reconcile();
     let runtime_result = RuntimeService::start().await;
     let runtime_status = match &runtime_result {
         Ok(_) => "Delegator Core is ready".to_string(),

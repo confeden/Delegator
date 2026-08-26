@@ -30,10 +30,11 @@ Appended under named mutex `Global\DelegatorUsageLog`, one compact JSON per line
 
 ```json
 {"ts":"2026-08-10T12:34:56.789Z","requestId":"r-...","client":"core|ide|cli",
- "stage":"answer|triage|advisor|synthesis|verify|micro|plan|parallel",
+ "stage":"answer|triage|advisor|synthesis|verify|review|micro|plan|parallel",
  "mode":"ask|micro|verify|boost|parallel|plan","provider":"gemini|opencode-cli|openrouter|zen",
  "model":"...","promptTokens":123,"completionTokens":456,"totalTokens":579,
- "cost":0.0,"elapsedMs":1234,"ok":true,"accountId":"...","bench":false}
+ "cost":0.0,"elapsedMs":1234,"ok":true,"accountId":"...","bench":false,
+ "errorClass":"timeout"}
 ```
 
 **`bench` (0.7)** is true for every record written while a benchmark run is in flight, and the
@@ -47,9 +48,30 @@ cannot do this job: the agent runs each arm through `ai-delegate.cmd` in a separ
 Three copies of the check, one per usage writer. `router-decisions.jsonl` carries the same flag.
 
 Token fields may be null when the provider did not report them. Written by
-`gemini-delegate.ps1` / `opencode-delegate.ps1` on every completed provider call (success or
-final failure), and by `ai-delegate.ps1` for stages it runs itself. Each script carries its own
-copy of the writer helper (existing convention: provider scripts do not dot-source common).
+`gemini-delegate.ps1` / `opencode-delegate.ps1` on every completed provider call, and by
+`ai-delegate.ps1` for stages it runs itself. Each script carries its own copy of the writer
+helper (existing convention: provider scripts do not dot-source common).
+
+**Every rung of the ladder, not only the last (0.7.2).** Both providers try several models before
+giving up, and until 0.7.2 a run wrote exactly ONE record. A run that failed on A and B and
+answered on C left no trace of A and B, so `Get-ModelHealth` (§9) never learned they were broken
+and the router put A first again on the very next call — the feature that claims to pick models
+by measured ability was reading evidence that was never written down. Now:
+
+- opencode: one record per failed candidate, at the moment it fails.
+- gemini: one record per ABANDONED MODEL, not per account attempt. Health is keyed on the model,
+  and one record per account would weigh a model down once per configured key (G28).
+- The old end-of-run record survives only for a run that reached no model at all; a set of
+  already-recorded ids stops the `finally` path from counting the same call twice.
+- A failure with exit code 2 writes NOTHING: the CLI is missing or unconfigured, so no provider
+  call happened, nothing was spent, and attributing it would demote the whole pool at once
+  (`Test-AttemptIsModelFailure`).
+
+**`errorClass`** is present only on `ok:false` records and carries the §5 class. §9 reads it.
+
+**`elapsedMs` is the duration of that CALL**, not of the run that contained it. Both providers
+used to time from the start of the run, so a model that answered on the third rung wore the cost
+of the two before it and its p75 latency looked far worse than it was.
 
 ### 2.2 Per-request env contract (set by the parent, read by children)
 - `DELEGATOR_REQUEST_ID` — id shared by all stages of one invocation (generate `r-<8 hex>` if absent).
@@ -99,7 +121,7 @@ only cover core-initiated chats. **Every record with `bench:true` is dropped fir
 - **`handledTokens`** — gross throughput moved off the main model, input context included. This
   is where a long `-ContextFile` shows up.
 - **`spentTokensTotal`** — everything Delegator's own models burned, including internal stages
-  (`triage|advisor|synthesis|extract`) and failed calls.
+  (`triage|advisor|synthesis|extract|review`) and failed calls.
 - **`delegations`** — distinct `requestId`s that produced user-facing output.
 - **`savedTokensTotal`** — legacy key, equal to `savedOutputTokens` since 0.7. Before 0.7 it was
   gross `totalTokens`, i.e. Delegator's own SPEND presented as a SAVING.
@@ -114,6 +136,17 @@ spent 92 s timing out on it. Reset the COUNTER, never the EVIDENCE.
 
 A failed call is `spent` and never `saved`. Internal stages are `spent` and never `saved` —
 they replace no work the caller would otherwise have done.
+
+**`review` (0.7.2) exists because of exactly that rule.** `improve`'s internal review call was
+staged `verify`, which is BOTH a saved stage and the name of the user-facing `verify` command, so
+every draft Delegator reviewed and then KEPT was booked as a saving for output the caller never
+received. Only `improve`'s rewrite is user-facing; the review and the §8.1 re-ask are `review`.
+
+Since 0.7.2 the ladder records each failed rung (§2.1), so `byModel[].requests` counts attempts
+and a model that only ever fails now appears with requests and zero tokens. That is deliberate:
+the row is the truth about what was tried. The headline figures are unaffected — `savedOutputTokens`
+counts successful user-facing stages only, `spentTokensTotal` sums tokens (a failed rung reports
+none), and `daily`/`today` requests are distinct `requestId`s, not records.
 
 ## 4. HTTP body encoding (PS 5.1)
 
@@ -221,10 +254,10 @@ terminating error, so the exit code becomes 1 plus a stack trace. Use
 The answer ends at the first line matching `^##DELEGATOR_`: with `DELEGATOR_EMIT_USAGE=1` the
 usage marker of §2.3 is still appended as the last stdout line.
 
-Cost: one model call when the draft passes, two when it does not. The reviewer is
-`Get-StrongEnabledModel` (§9). `-Json` must never reach the two internal calls (the providers
-would answer with their envelope and the verdict parser would read the envelope's braces);
-`Run-Improve` clears it at script scope and keeps a copy for its own output.
+Cost: one model call when the draft passes, two when it does not, plus at most one re-ask (below).
+The reviewer is `Get-StrongEnabledModel` (§9). `-Json` must never reach the internal calls (the
+providers would answer with their envelope and the verdict parser would read the envelope's
+braces); `Run-Improve` clears it at script scope and keeps a copy for its own output.
 A draft longer than `$script:ImproveDraftBudget` (24 000 chars) is kept unreviewed — rewriting a
 truncated copy would delete the rest of the caller's answer. A `-ContextFile` path that does not
 exist is reported on stderr, counted in `ctxmissing=N` and skipped, never fatal: the caller is a
@@ -233,7 +266,45 @@ Guards (`Test-ImproveGuards`) reject a rewrite that is empty, shorter than 40 % 
 >400-character draft, dropped the draft's code fences, or reads as a refusal — damaging a correct
 draft is worse than failing to fix a wrong one, so every doubt ends in KEEP. Outcomes go to
 `<RT>\delegate-metrics.jsonl` as `stage=improve,
-status=keep-*|improved-*|guard-*, extra=defects=N,calls=K,guard=…,ctxmissing=N`.
+status=keep-*|improved-*|guard-*, extra=defects=N,calls=K,reask=0|1,parse=json|salvaged,guard=…,ctxmissing=N`.
+
+### 8.1 Reading the verdict (0.7.2)
+
+`Get-ImproveVerdict` used to slice `IndexOf("{")` … `LastIndexOf("}")` and hand that to
+`ConvertFrom-Json`. That is right only when the object is the whole answer, and it produced 32
+`verdict-unparsable` outcomes in 228 measured runs (14 %) — each one a review that was paid for
+and thrown away, returned to the caller as an exit 3 indistinguishable from "your draft passed".
+Four steps replace it, cheapest first:
+
+1. `Get-JsonObjectCandidates` walks the text and returns every BALANCED `{…}` region, ignoring
+   braces and quotes inside JSON strings. It survives a closing sentence with braces, a schema
+   example printed before the real verdict, and a defect that quotes a brace.
+2. **If that returns nothing, the old whole-slice parse runs once as a fallback.** The scanner
+   reads every `"` as a JSON delimiter and prose is not JSON, so ONE unpaired quote in the
+   reviewer's preamble (`prints 5" without escaping`) leaves it inside a string for the rest of
+   the text and it finds no region at all. The slice handled that shape, so dropping it would have
+   been a regression, not an improvement — and the cost of the regression is silent: salvage keeps
+   the verdict and throws every demonstrated defect away.
+3. The candidate whose `verdict` is one of the four words wins; otherwise the first with a
+   `verdict` key; otherwise the first that parses at all. `parseMode` is set to `json`.
+4. If nothing parsed, the raw text is searched for the verdict FIELD
+   (`"?\bverdict"?\s*[:=]\s*"?\s*(ok|minor|major|wrong)\b(?![|/])`) and a `salvaged` object is
+   built with **no defects** — §11a says a defect must be demonstrable, and text we could not
+   parse is not a demonstration. Two things it must NOT match: prose alone ("the draft is ok"),
+   because reading a verdict out of prose is how a keep silently becomes a rewrite; and the SCHEMA
+   this section's own check prompt prints, `"verdict":"ok|minor|major|wrong"` — that is what
+   `(?![|/])` is for. A reviewer that echoes its instructions and is then cut off would otherwise
+   salvage as a clean `ok` it never gave, and a usable verdict suppresses the re-ask below.
+
+Only when all four fail does `Test-ShouldReaskVerdict` allow **one** extra call, and it is a
+different, much smaller question: *restate the review you already gave as this schema*. The
+reviewer's own reply goes back to it, capped at `$script:ImproveReaskBudget` (6 000 chars). The
+re-ask DESCRIBES the three keys and never prints a complete example object: a model that echoes
+its instructions would hand back a verdict we wrote ourselves, and step 3 would take it.
+Bounded at one — a model that cannot emit JSON twice will not emit it on the third try, and
+`improve` must not become an open loop against a free tier. Empty reviewer output never triggers
+a re-ask: that is a backend failure, not a formatting failure. Both internal calls are staged
+`review`, never `verify` (§3).
 
 ## 9. Model choice for user-facing answers
 
@@ -286,6 +357,27 @@ Health comes from `<RT>\usage.jsonl` (last 400 records, per model the last 12): 
 skipped when ≥4 samples show a failure rate ≥40 %, or when the p75 of its successful calls
 exceeds the latency budget (100 s, `CODEX_DELEGATE_LATENCY_BUDGET_MS`). A model with no history
 is always tried, so a fresh install still reaches for the best one and demotes it by itself.
+
+**Not every failure is a statement about the model** (`Test-ErrorClassIsQualitySignal`, 0.7.2).
+The test is CORRELATION: a class every candidate in the ladder suffers identically is a fact about
+the environment, the account or the prompt, and blaming models for it demotes the whole pool at
+once. That was harmless while a run wrote ONE record; since §2.1 writes one per rung, a single
+delegation made offline would mark every enabled model. These classes are dropped from the window
+entirely — not counted as a failure, and not as a sample either:
+
+| class | why it says nothing about the model |
+|---|---|
+| `rate_limit`, `auth` | time-bounded ACCOUNT states, already tracked WITH AN EXPIRY in `cooldowns.json` / `google-api-usage.json` (G29) |
+| `network` | the machine or the proxy is down; every rung reports `unable to connect` and none of them was reached |
+| `context_overflow` | a statement about the PROMPT — one oversized `-ContextFile` makes the whole pool look broken |
+
+`server`, `timeout`, `not_found`, `content_policy` and `unknown` still count: they can be
+correlated too, but they are also exactly the per-model failures N3 exists to catch, and their
+cooldowns are short. Health has no expiry — a sample only leaves when twelve newer calls push it
+out — so a demotion earned during a two-minute outage would outlive it by days, and nothing prints
+health, so nobody would see the strength floor quietly invert into a weakness floor. A record with
+NO `errorClass` counts as a failure: everything written before 0.7.2 lacks the field, and dropping
+those would erase the router's memory on upgrade.
 If every candidate is unaffordable the least slow one wins — an answer beats a timeout.
 
 Applied at: the `ask`/`delegate` strength floor (deep, verify or heavy domain), the fusion judge
@@ -552,3 +644,80 @@ Zen catalog sync never saw it because it only keeps ids matching `^opencode/…`
 NOT added to `known_opencode_models`: that list is the Zen catalog's memory and stays `opencode/*`
 only (a test guards this), and `sync_opencode_catalog` never prunes `openrouter/*` anyway.
 `openrouter/*` always goes to the **opencode** backend, whichever side the failover started from.
+
+## 13. Caller-aware delegation (0.7.2)
+
+Everything before this section assumed one kind of caller. It is not: an IDE agent running
+`gemini-3.7-flash-low` and one running `claude-opus-5` want opposite things from the same command,
+and until now both got the same pipeline.
+
+**The rule, and everything below follows from it:** *return an answer at least as good as the
+CALLER would have produced, at no token cost to the caller.*
+
+### 13.1 The caller declares itself
+
+    ai-delegate.ps1 assist -PromptFile <task> -CallerModel "gemini-3.7-flash-low"
+
+`-CallerModel`, else `DELEGATOR_CALLER_MODEL`, else nothing. The id is whatever the caller's own
+provider calls it, **including a reasoning-effort suffix**. The IDE hook text asks for it and tells
+agents to omit it rather than guess. An undeclared caller routes exactly as it did in router 1.0 —
+that is a hard requirement, not a nicety: most installed hook files predate this section.
+
+### 13.2 Effort is not a rounding error
+
+`model-ratings.json` carries ONE row per model, and the longest-substring lookup (§9.1) therefore
+scores `gemini-3.7-flash-low` exactly like `gemini-3.7-flash`: **152, seventh of 196, above
+`claude-opus-4-8`**. An agent at low effort is nothing like that number, and routing it as if it
+were hands it the ECONOMY path when what it needs is amplification.
+
+`Get-CallerEffortPenalty` subtracts DPR points for a trailing effort token — minimal 35, low 25,
+medium 12, high/xhigh/max 0 — recognised only at the END of the id, so `low-latency-v2` is a model
+name and `gpt-5.3-codex-high` is an effort level. Two rules about where this lives:
+
+- **It is not in the table.** I10 forbids hand-editing rows; the published index has one figure per
+  model, not one per effort level. This is a reviewable correction sitting on top of the snapshot.
+- **It applies to the CALLER only.** The models Delegator answers with run at their own defaults.
+
+An id with no row scores **0**, not `unrated_default`. Zero means "no comparison is possible"; 100
+would be a mid score that reads as a weak caller and triggers amplification nobody asked for.
+
+### 13.3 Three tiers, one number
+
+`Get-CallerDpr` and `Get-BestAvailableDpr` (the DPR of the model `Get-StrongEnabledModel` would
+actually pick, health included) go into the router as `callerDpr` / `bestDpr`. Router 1.1 turns the
+gap into a tier — `CALLER_MARGIN` is 8, because the top twenty models of the shipped table sit
+inside fifteen points, so eight is a tier and not a rounding difference.
+
+| gap = best − caller | tier | what changes |
+|---|---|---|
+| ≥ +8 | `amplify` | `delegate` → `boost` on tasks ≥400 chars; `keep` → `improve` when a draft exists. We are clearly stronger, so the caller's tokens are not the scarce resource — its answer quality is. |
+| −8 … +8 | `match` | nothing. We are level: answer once and do not spend three advisors proving it. |
+| ≤ −8 | `guard` | `delegate`/`boost` → `keep`; `improve` keeps running but `modelReview=false`. |
+| either number 0 | `unknown` | router 1.0 behaviour, exactly. |
+
+The adjustment runs LAST, over a mode the textual rules already chose, and **never over a
+confidence-1.0 guard**: empty task, truncated draft and oversized draft are about damage, and no
+strength comparison may talk Delegator into reviewing half an answer. Tier-2 escalation is also
+switched off in `guard` — a fast model knows nothing about who is calling, and letting it overrule
+the quality guard would undo the one promise this section makes.
+
+### 13.4 What `guard` actually does
+
+Two refusals to spend, both deliberate:
+
+- **No model review.** G34, measured: a reviewer weaker than the thing it reviews invents defects it
+  cannot justify. §11 survives because it COMPILES the draft — those defects are facts.
+- **No model rewrite either.** §11b would guarantee the rewrite clears the proven defect, but it
+  guarantees nothing about the rest of the answer, and handing a 110-rated model an Opus draft to
+  edit is the trade this mode exists to refuse. The proven defects go back on stderr and in the
+  `-Json` envelope; the caller is the best rewriter in the room and now has facts it lacked.
+
+Zero model calls either way — the honest form of "economy" when nothing we own earns its keep.
+Returning those defects as DATA on stdout rather than as stderr prose needs P5.
+
+### 13.5 Audit
+
+`router-decisions.jsonl` carries `callerTier`, `callerDpr`, `bestDpr` and `modelReview` beside the
+mode, and `delegate-metrics.jsonl` gets `caller=…;callerDpr=…;bestDpr=…` on the `route` record. A
+tier without the two numbers that produced it is an assertion, not evidence — and the benchmark
+grades the CHOICE by replaying it.

@@ -289,6 +289,22 @@ impl AppConfig {
         if self.config_version < 12 {
             self.migrate_reset_usage_counter(&runtime_home_dir());
         }
+        self.ensure_known_ide_keys();
+    }
+
+    /// Every IDE Delegator knows about must have a key here. `apply_ide_hooks`
+    /// iterates `ide_states`, so an IDE added after the user's config was
+    /// written would never even be asked to strip a stale block on pause.
+    ///
+    /// Deliberately NOT gated on `config_version`: inserting a missing key
+    /// without touching an existing one is idempotent, and G73 is the lesson
+    /// that a step guarded only by the version number can still run twice.
+    /// A new row therefore starts switched OFF, exactly like a fresh install —
+    /// enabling it stays the user's click.
+    fn ensure_known_ide_keys(&mut self) {
+        for (name, state) in default_ide_states() {
+            self.ide_states.entry(name).or_insert(state);
+        }
     }
 
     /// v11→v12 (0.7): the usage log starts over.
@@ -853,6 +869,7 @@ fn default_ide_states() -> HashMap<String, bool> {
     default_ides.insert("Cursor".to_string(), false);
     default_ides.insert("Claude".to_string(), false);
     default_ides.insert("VS Code".to_string(), false);
+    default_ides.insert("VSCodium".to_string(), false);
     default_ides
 }
 
