@@ -572,6 +572,83 @@ function Get-DelegatorEnabledModels {
     }
 }
 
+function Select-AffordableRankedModels {
+    <#
+      Keeps the candidates whose own record says they can still deliver
+      (Test-ModelAffordable), and the WHOLE list when none can: the caller must
+      always be left with something to try.
+
+      Cooldowns alone were not enough. A `server` failure buys a 60-second
+      cooldown, so a model the provider is currently failing walks straight back
+      to the front of the order - which is how `-ping` spent 90 s on
+      `gemini-flash-latest` while Google was answering 503 for it and
+      `gemini-flash-lite-latest` answered in 3.2 s. Health looks at the last 12
+      calls instead of the last minute.
+    #>
+    param([string[]]$Models)
+    $list = @(@($Models) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        ForEach-Object { [string]$_ })
+    if ($list.Count -le 1) { return $list }
+    $budget = Get-LatencyBudgetMs
+    $affordable = @($list | Where-Object { Test-ModelAffordable -ModelId $_ -BudgetMs $budget })
+    if ($affordable.Count -gt 0) { return $affordable }
+    return $list
+}
+
+function Get-BackendFallbackModel {
+    <#
+      The backend's pick when there are no rankings to consult.
+
+      N6: `<RT>\model-rankings.json` has never shipped, so on a normal install
+      this is not a rare fallback - it is the ONLY branch. It used to return a
+      literal model id, which meant Delegator probed a model the user may never
+      have enabled: `-ping` called `opencode/deepseek-v4-flash-free` on a machine
+      whose list holds `orcarouter/deepseek/deepseek-v4-flash-free` and not that
+      one, so the answer was "никто не ответил" while the enabled models were
+      fine.
+
+      The literal stays as a PREFERENCE - only when the user actually enabled
+      it. Otherwise the enabled list, and the ORDER matters: this function is the
+      backend CORRECTION, the one N4 describes as overwriting a strong pick with
+      a flash one, so it must keep reaching for something cheap and quick. Taking
+      the strongest enabled model instead would make `-ping` probe a 156-point
+      reasoner to hear the word PONG.
+
+      Hence: flash-class models first, strongest within each group (I10 - a model
+      with no rating counts as 100, never 0), and cooling-down models pushed
+      aside by Select-ActiveRankedModels. That is a tie-break, not the
+      strength-first ORDERING N3 measured as harmful.
+    #>
+    param([string]$BackendName, [string[]]$Enabled)
+    $preferred = ""
+    if ($BackendName -eq "opencode") { $preferred = "opencode/deepseek-v4-flash-free" }
+    elseif ($BackendName -eq "puter") { $preferred = "moonshotai/kimi-k2.6" }
+
+    $list = @(@($Enabled) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        ForEach-Object { [string]$_ })
+    if ($list.Count -eq 0) { return $preferred }
+
+    # The names providers give their small models. Matching on the id is what
+    # the runtime already does for the same question (G31).
+    $quick = "(?i)(flash|lite|mini|fast|lightning|turbo|haiku|small)"
+    $rest = @($list | Where-Object { $_ -ne $preferred } | Sort-Object -Descending -Property @{
+        Expression = {
+            $dpr = Get-DelegatorModelRating $_
+            $score = if ($null -eq $dpr) { 100 } else { [int]$dpr }
+            # Every quick model outranks every heavy one; strength orders within.
+            if ($_ -match $quick) { $score + 1000 } else { $score }
+        }
+    })
+    $ordered = @()
+    if ($list -contains $preferred) { $ordered += $preferred }
+    $ordered += $rest
+    $active = @(Select-AffordableRankedModels @(Select-ActiveRankedModels $ordered))
+    if ($active.Count -gt 0) { return [string]$active[0] }
+    return $preferred
+}
+
 function Get-PreferredBackendModel {
     param([string]$BackendName, [string]$Text)
     if ($BackendName -eq "gemini") {
@@ -582,6 +659,7 @@ function Get-PreferredBackendModel {
             @("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest")
         }
         $selectedGemini = @(Select-ActiveRankedModels @($order | Where-Object { $enabledGemini -contains $_ }))
+        $selectedGemini = @(Select-AffordableRankedModels $selectedGemini)
         if ($selectedGemini.Count -gt 0) { return [string]$selectedGemini[0] }
         return ""
     }
@@ -592,9 +670,7 @@ function Get-PreferredBackendModel {
     }
     $rankings = Read-ModelRankings
     if (-not $rankings -or -not $rankings.overall) {
-        if ($BackendName -eq "opencode") { return "opencode/deepseek-v4-flash-free" }
-        if ($BackendName -eq "puter") { return "moonshotai/kimi-k2.6" }
-        return ""
+        return (Get-BackendFallbackModel -BackendName $BackendName -Enabled $enabledForBackend)
     }
     $domain = Get-TaskDomain $Text
     $rows = @()
@@ -609,7 +685,7 @@ function Get-PreferredBackendModel {
             ($enabledForBackend.Count -eq 0 -or $enabledForBackend -contains $m) -and
             -not (Model-HasDomainSetting $m "avoidDomains" $domain)) { $domainCandidates += $m }
     }
-    $domainCandidates = @(Select-ActiveRankedModels $domainCandidates)
+    $domainCandidates = @(Select-AffordableRankedModels @(Select-ActiveRankedModels $domainCandidates))
     if ($domainCandidates.Count -gt 0) { return [string]$domainCandidates[0] }
     $overallCandidates = @()
     foreach ($row in @($rankings.overall)) {
@@ -617,7 +693,7 @@ function Get-PreferredBackendModel {
         if ((Test-ModelMatchesBackend $m $BackendName) -and
             ($enabledForBackend.Count -eq 0 -or $enabledForBackend -contains $m)) { $overallCandidates += $m }
     }
-    $overallCandidates = @(Select-ActiveRankedModels $overallCandidates)
+    $overallCandidates = @(Select-AffordableRankedModels @(Select-ActiveRankedModels $overallCandidates))
     if ($overallCandidates.Count -gt 0) { return [string]$overallCandidates[0] }
     return ""
 }
@@ -1382,6 +1458,111 @@ function Run-UI {
     exit 0
 }
 
+function Get-PingAdvice {
+    <#
+      What to tell the user to DO, chosen from the failure classes that were
+      actually observed. The old text named all three usual causes every time -
+      "квота, ключ или сеть" - which on a provider outage sends someone to check
+      an API key that is perfectly fine, and, worse, reads as "your setup is
+      broken" when nothing of theirs is.
+
+      No classes at all (nothing was recorded) keeps the old generic wording:
+      guessing out loud is honest when there is genuinely nothing to go on.
+    #>
+    param([string[]]$Classes)
+    $set = @(@($Classes) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        ForEach-Object { ([string]$_).Trim().ToLowerInvariant() })
+    $out = New-Object System.Collections.Generic.List[string]
+    if ($set.Count -eq 0) {
+        $out.Add("Обычно это дневная квота провайдера, отсутствующий ключ или нет сети.")
+        $out.Add("Загляните в окне Delegator во вкладки «API-ключи» и «Модели».")
+        return $out.ToArray()
+    }
+    if ($set -contains "auth") {
+        $out.Add("Ключ не принят - откройте вкладку «API-ключи».")
+    }
+    if ($set -contains "rate_limit") {
+        $out.Add("Похоже на дневную квоту: она обнулится сама, а пока помогут другие модели во вкладке «Модели».")
+    }
+    if ($set -contains "network") {
+        # G98: a proxy that has stopped tunnelling looks EXACTLY like this, and
+        # the user has no other hint that egress is the problem.
+        $out.Add("До провайдера не достучаться. Если настроен прокси, проверьте его во вкладке «Прокси»: сломанный прокси выглядит точно так же, как умершие модели.")
+    }
+    if ($out.Count -eq 0) {
+        # Only server / timeout / unknown: the models were reached, they just
+        # did not deliver. Nothing of the user's is broken.
+        $out.Add("Похоже на временные неполадки у провайдера, а не на вашу настройку.")
+        $out.Add("Если это надолго, эти модели можно снять во вкладке «Модели» - перебор сразу пойдёт по остальным.")
+    }
+    return $out.ToArray()
+}
+
+function Get-PingFailureReason {
+    <#
+      Why one probe model did not answer, in the words of the person who typed
+      `-ping`. Returns "" when nothing was recorded for it.
+
+      The provider scripts already CLASSIFY every rung: `attempt_failed` in
+      runs.jsonl carries `errorClass`, `statusCode` and `errorPreview` (I21,
+      G82). `-ping` used to throw all of that away and print three guesses -
+      "квота, ключ или сеть". On the run that prompted this fix all three were
+      wrong: Google was answering 503 "experiencing high demand" for one model
+      while another Gemini model answered in 3.2 s.
+
+      Read from the tail only. The file is append-only and a probe writes its
+      records seconds ago, so a few hundred lines always covers it; parsing the
+      whole log would make a status command O(history).
+    #>
+    param([string]$ModelName, [datetime]$Since)
+    $none = [pscustomobject]@{ reason = ""; class = "" }
+    if ([string]::IsNullOrWhiteSpace($ModelName)) { return $none }
+    $record = $null
+    try {
+        if (-not (Test-Path -LiteralPath $script:DelegateRunsFile)) { return $none }
+        foreach ($line in @(Get-Content -LiteralPath $script:DelegateRunsFile -Tail 400 -ErrorAction Stop)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $row = $null
+            try { $row = $line | ConvertFrom-Json } catch { continue }
+            if (-not $row) { continue }
+            if ([string]$row.event -ne "attempt_failed") { continue }
+            if ([string]$row.model -ne $ModelName) { continue }
+            try { if ([datetime]$row.timestamp -lt $Since) { continue } } catch { continue }
+            $record = $row
+        }
+    } catch {
+        return $none
+    }
+    if (-not $record) { return $none }
+
+    $status = 0
+    try { $status = [int]$record.statusCode } catch {}
+    $class = ""
+    try { $class = [string]$record.errorClass } catch {}
+    $reason = switch ($class) {
+        "rate_limit"       { "лимит запросов или дневная квота" }
+        "auth"             { "ключ не принят" }
+        "network"          { "до провайдера не достучаться" }
+        "context_overflow" { "запрос слишком длинный" }
+        "timeout"          { "не ответила вовремя" }
+        "server"           { "провайдер вернул ошибку" }
+        default            { "не ответила" }
+    }
+    if ($status -gt 0) { $reason += " ($status)" }
+    $preview = ""
+    try { $preview = ([string]$record.errorPreview).Trim() } catch {}
+    # The provider's own sentence is the useful half - "This model is currently
+    # experiencing high demand" explains more than any class name. A JSON blob
+    # is not: those start with '{' and are the CLI's raw envelope.
+    if (-not [string]::IsNullOrWhiteSpace($preview) -and -not $preview.StartsWith("{")) {
+        $preview = ($preview -replace '\s+', ' ')
+        if ($preview.Length -gt 110) { $preview = $preview.Substring(0, 110).TrimEnd() + "..." }
+        $reason += ": $preview"
+    }
+    return [pscustomobject]@{ reason = $reason; class = $class }
+}
+
 function Format-PingReport {
     <#
       The user-visible answer to `-ping`, built from facts that are already
@@ -1405,6 +1586,14 @@ function Format-PingReport {
         # Everything the probe called, in order - the failure text is useless
         # without it ("никто не ответил" from WHOM?).
         [string[]]$TriedModels = @(),
+        # Parallel to $TriedModels: why each one did not answer, already phrased
+        # for the user (Get-PingFailureReason). Empty entries are allowed - a
+        # provider that died before writing a record leaves nothing to report.
+        [string[]]$TriedReasons = @(),
+        # The raw errorClass values behind those reasons. The ADVICE is chosen
+        # from these, never guessed: sending someone to the «API-ключи» tab over
+        # a provider's 503 is worse than saying nothing.
+        [string[]]$FailureClasses = @(),
         [double]$Seconds = 0,
         [int]$ExitCode = 0
     )
@@ -1437,12 +1626,25 @@ function Format-PingReport {
         $lines.Add("Итог: Delegator подключён и работает.")
     } else {
         $lines.Add("  Проверка связи: ответа нет за $elapsed с (код $ExitCode)")
-        if (@($TriedModels).Count -gt 0) {
-            $lines.Add("  Пробовали: " + (@($TriedModels) -join ", "))
+        $tried = @($TriedModels)
+        $reasons = @($TriedReasons)
+        $known = @($reasons | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($tried.Count -gt 0 -and $known.Count -eq 0) {
+            # Nothing was recorded for any of them: one line, as before.
+            $lines.Add("  Пробовали: " + ($tried -join ", "))
+        } elseif ($tried.Count -gt 0) {
+            $lines.Add("  Пробовали:")
+            for ($i = 0; $i -lt $tried.Count; $i++) {
+                $why = if ($i -lt $reasons.Count) { [string]$reasons[$i] } else { "" }
+                if ([string]::IsNullOrWhiteSpace($why)) {
+                    $lines.Add("    " + $tried[$i])
+                } else {
+                    $lines.Add("    " + $tried[$i] + " - " + $why)
+                }
+            }
         }
         $lines.Add("Итог: инструкции на месте, но ответить сейчас никто не смог.")
-        $lines.Add("  Обычно это дневная квота провайдера, отсутствующий ключ или нет сети.")
-        $lines.Add("  Загляните в окне Delegator во вкладки «API-ключи» и «Модели».")
+        foreach ($advice in (Get-PingAdvice $FailureClasses)) { $lines.Add("  " + $advice) }
         $lines.Add("  Настоящая задача при этом может пройти: у неё длиннее перебор моделей, чем у -ping.")
     }
     return $lines.ToArray()
@@ -1494,6 +1696,7 @@ function Run-Ping {
         }
     }
 
+    $probeStarted = Get-Date
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $answered = ""
     $tried = @()
@@ -1521,6 +1724,20 @@ function Run-Ping {
     }
     $watch.Stop()
 
+    # The provider already wrote WHY each rung failed; read it back rather than
+    # guessing in the report (see Get-PingFailureReason).
+    $reasons = @()
+    $classes = @()
+    if ([string]::IsNullOrWhiteSpace($answered)) {
+        foreach ($model in $tried) {
+            $failure = Get-PingFailureReason -ModelName $model -Since $probeStarted
+            $reasons += [string]$failure.reason
+            if (-not [string]::IsNullOrWhiteSpace([string]$failure.class)) {
+                $classes += [string]$failure.class
+            }
+        }
+    }
+
     $report = Format-PingReport `
         -RuntimeHome $BinHome `
         -CoreVersion $coreVersion `
@@ -1529,6 +1746,8 @@ function Run-Ping {
         -Caller $caller `
         -AnswerModel $answered `
         -TriedModels $tried `
+        -TriedReasons $reasons `
+        -FailureClasses $classes `
         -Seconds $watch.Elapsed.TotalSeconds `
         -ExitCode $code
     foreach ($line in $report) { Write-Output $line }

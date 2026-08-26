@@ -235,3 +235,35 @@ Test-Case "the window is the last 12 calls of that model" {
     Assert-Equal 12 $health.samples
     Assert-Equal 0 $health.failRate
 }
+
+# ── Select-AffordableRankedModels: the same verdict, applied to an ORDER ──
+# `-ping` used to spend its whole budget on gemini-flash-latest while Google was
+# answering 503 for it. A `server` failure buys only a 60 s cooldown, so the
+# model came straight back to the front; health looks at the last 12 calls.
+
+Test-Case "a model its own record says is failing loses its place in the order" {
+    $lines = @()
+    foreach ($i in 1..6) { $lines += (New-UsageLine -Model "m/sick" -Ok $false -ErrorClass "server") }
+    foreach ($i in 1..4) { $lines += (New-UsageLine -Model "m/well" -Ok $true -ElapsedMs 3000) }
+    Set-SandboxUsageLog $lines
+    $picked = @(Select-AffordableRankedModels @("m/sick", "m/well"))
+    Assert-Equal "m/well" $picked[0] "the sick model was first in the order and must not stay there"
+}
+
+Test-Case "when every candidate looks bad the order survives untouched" {
+    # The caller must always be left with something to try: an empty list here
+    # would turn a bad day at the provider into "Delegator has no models".
+    $lines = @()
+    foreach ($i in 1..6) { $lines += (New-UsageLine -Model "m/bad1" -Ok $false -ErrorClass "server") }
+    foreach ($i in 1..6) { $lines += (New-UsageLine -Model "m/bad2" -Ok $false -ErrorClass "server") }
+    Set-SandboxUsageLog $lines
+    $picked = @(Select-AffordableRankedModels @("m/bad1", "m/bad2"))
+    Assert-Equal 2 $picked.Count
+    Assert-Equal "m/bad1" $picked[0]
+}
+
+Test-Case "a model nobody has called yet keeps its place" {
+    Set-SandboxUsageLog @()
+    $picked = @(Select-AffordableRankedModels @("m/unknown-a", "m/unknown-b"))
+    Assert-Equal "m/unknown-a" $picked[0] "no record means try it, not skip it"
+}

@@ -74,3 +74,115 @@ Test-Case "the verdict is the LAST thing the user reads in the working case" {
     $report = Get-SuccessReport
     Assert-Match "^Итог: " $report[$report.Count - 1]
 }
+
+# ── The advice must follow the observed failure, not a fixed list of guesses ──
+# The report that prompted this said "квота, ключ или сеть" while Google was
+# answering 503 for one model and another Gemini model answered in 3.2 s: all
+# three guesses wrong, and all three point the user at their own settings.
+
+Test-Case "an auth failure sends the user to the keys tab and nowhere else" {
+    $text = (Get-PingAdvice @("auth")) -join "`n"
+    Assert-Match "API-ключи" $text
+    Assert-False ($text -match "квота провайдера, отсутствующий ключ или нет сети") "the blanket guess must not survive a KNOWN cause"
+}
+
+Test-Case "a network failure names the proxy, because a dead proxy looks exactly like dead models" {
+    # G98: the owner's proxy answered 504 to CONNECT and every OpenCode model
+    # timed out. Nothing in the report hinted that egress, not the models, was
+    # the problem.
+    $text = (Get-PingAdvice @("network")) -join "`n"
+    Assert-Match "Прокси" $text
+}
+
+Test-Case "a provider-side failure does not send the user to fix settings that are fine" {
+    $text = (Get-PingAdvice @("server", "timeout")) -join "`n"
+    Assert-Match "временные неполадки у провайдера" $text
+    Assert-False ($text -match "API-ключи") "nothing of the user's is broken when the provider 503s"
+}
+
+Test-Case "with nothing recorded the report still guesses out loud" {
+    $text = (Get-PingAdvice @()) -join "`n"
+    Assert-Match "квота" $text "an honest guess beats silence when there is no evidence"
+}
+
+Test-Case "each model that refused is listed with its own reason" {
+    $text = (@(Format-PingReport `
+        -CoreVersion "0.8.2" `
+        -TriedModels @("gemini-flash-latest", "opencode/big-pickle") `
+        -TriedReasons @("провайдер вернул ошибку (503): This model is currently experiencing high demand", "") `
+        -FailureClasses @("server") `
+        -Seconds 42.3 -ExitCode 1)) -join "`n"
+    Assert-Match "experiencing high demand" $text "the provider's own sentence is the useful half"
+    Assert-Match "gemini-flash-latest - провайдер вернул ошибку \(503\)" $text
+    # The one with no record still has to appear: "nobody answered" is
+    # unreadable without WHO was asked.
+    Assert-Match "opencode/big-pickle" $text
+}
+
+Test-Case "the reason is read back from the record the provider already wrote" {
+    $runs = Join-Path $env:DELEGATOR_RUNTIME_HOME "runs.jsonl"
+    $old = (Get-Date).AddHours(-2).ToString("o")
+    $fresh = (Get-Date).AddSeconds(-5).ToString("o")
+    # One line per variable on purpose: `,` binds TIGHTER than `+` in PS 5.1, so
+    # writing these two as `'a' + $x + 'b', 'c' + $y + 'd'` silently produces a
+    # single mangled string and the test passes on nothing.
+    $staleLine = '{"event":"attempt_failed","model":"gemini-flash-latest","errorClass":"auth","statusCode":401,"errorPreview":"stale, from an older run","timestamp":"' + $old + '"}'
+    $freshLine = '{"event":"attempt_failed","model":"gemini-flash-latest","errorClass":"server","statusCode":503,"errorPreview":"This model is currently experiencing high demand.","timestamp":"' + $fresh + '"}'
+    Set-Content -LiteralPath $runs -Encoding UTF8 -Value @($staleLine, $freshLine)
+    try {
+        $failure = Get-PingFailureReason -ModelName "gemini-flash-latest" -Since (Get-Date).AddMinutes(-1)
+        Assert-Equal "server" $failure.class
+        Assert-Match "503" $failure.reason
+        Assert-Match "experiencing high demand" $failure.reason
+        Assert-False ($failure.reason -match "older run") "a record from before the probe is not this probe's failure"
+
+        $none = Get-PingFailureReason -ModelName "opencode/big-pickle" -Since (Get-Date).AddMinutes(-1)
+        Assert-Equal "" $none.reason "a model with no record reports nothing, it does not invent a cause"
+    } finally {
+        Remove-Item -LiteralPath $runs -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "a raw JSON envelope is not shown to the user as an explanation" {
+    $runs = Join-Path $env:DELEGATOR_RUNTIME_HOME "runs.jsonl"
+    $fresh = (Get-Date).AddSeconds(-5).ToString("o")
+    Set-Content -LiteralPath $runs -Encoding UTF8 -Value @(
+        '{"event":"attempt_failed","model":"aerolink/claude-opus-5","errorClass":"auth","errorPreview":"{\"type\":\"error\",\"data\":{\"message\":\"Unauthorized\"}}","timestamp":"' + $fresh + '"}'
+    )
+    try {
+        $failure = Get-PingFailureReason -ModelName "aerolink/claude-opus-5" -Since (Get-Date).AddMinutes(-1)
+        Assert-Match "ключ не принят" $failure.reason
+        Assert-False ($failure.reason -match '\{') "the CLI's error envelope is noise, not an explanation"
+    } finally {
+        Remove-Item -LiteralPath $runs -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ── N6's residue: the no-rankings branch is the ONLY branch on a real install ──
+
+Test-Case "the fallback pick never names a model the user did not enable" {
+    # The exact shape of the reported bug: `-ping` probed
+    # opencode/deepseek-v4-flash-free on a machine whose list holds the
+    # orcarouter one and not that.
+    $enabled = @("orcarouter/deepseek/deepseek-v4-flash-free", "opencode/big-pickle")
+    $pick = Get-BackendFallbackModel -BackendName "opencode" -Enabled $enabled
+    Assert-True ($enabled -contains $pick) "picked [$pick], which is not in the enabled list"
+}
+
+Test-Case "the fallback still prefers the cheap default when it IS enabled" {
+    $enabled = @("opencode/big-pickle", "opencode/deepseek-v4-flash-free")
+    Assert-Equal "opencode/deepseek-v4-flash-free" (Get-BackendFallbackModel -BackendName "opencode" -Enabled $enabled)
+}
+
+Test-Case "an empty enabled list falls back to the literal, not to nothing" {
+    Assert-Equal "opencode/deepseek-v4-flash-free" (Get-BackendFallbackModel -BackendName "opencode" -Enabled @())
+    Assert-Equal "" (Get-BackendFallbackModel -BackendName "gemini" -Enabled @())
+}
+
+Test-Case "the fallback reaches for a quick model, not the strongest one" {
+    # N4 calls this function the backend CORRECTION - the one that overwrites a
+    # strong pick with a flash one. Ordering by raw strength here would send a
+    # one-word probe to a 156-point reasoner.
+    $enabled = @("agentrouter/claude-opus-5", "opencode/nemotron-3.5-lightning-free")
+    Assert-Equal "opencode/nemotron-3.5-lightning-free" (Get-BackendFallbackModel -BackendName "opencode" -Enabled $enabled)
+}
