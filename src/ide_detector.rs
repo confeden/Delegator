@@ -13,6 +13,13 @@ pub struct IdeStatus {
 const DELEGATOR_HOOK_HEADER: &str = "<!-- DELEGATOR_HOOK_START -->";
 const DELEGATOR_HOOK_FOOTER: &str = "<!-- DELEGATOR_HOOK_END -->";
 
+/// Strings only Delegator's own instruction text puts in a file: the runtime
+/// entry point and the policy file it ships. Before the marker convention
+/// existed Delegator wrote whole SECTIONS into these files with no header and
+/// no footer, so nothing could ever find them again — see
+/// [`strip_legacy_delegator_prose`].
+const LEGACY_PROSE_MARKERS: [&str; 2] = ["ai-delegate", "DELEGATOR.md"];
+
 /// VS Code / Copilot attaches a personal `*.instructions.md` file to a chat
 /// request ONLY when it declares an `applyTo` pattern — its automatic collector
 /// logs "No applyTo pattern" and skips the file otherwise. Without this header
@@ -134,6 +141,83 @@ fn migrate_legacy_text(env: &IdeEnv, content: String) -> String {
         }
     }
     result
+}
+
+/// ATX heading level of `line`, or None when it is ordinary text. `#hashtag`
+/// is not a heading: the marker needs a space (or the end of the line) after it.
+fn heading_level(line: &str) -> Option<usize> {
+    let trimmed = line.trim_start();
+    let level = trimmed.chars().take_while(|c| *c == '#').count();
+    if level == 0 || level > 6 {
+        return None;
+    }
+    match trimmed.chars().nth(level) {
+        None => Some(level),
+        Some(next) if next.is_whitespace() => Some(level),
+        Some(_) => None,
+    }
+}
+
+/// Removes the instruction text Delegator wrote BEFORE the marker convention.
+///
+/// Switching an integration off used to strip only what sat between
+/// [`DELEGATOR_HOOK_HEADER`] and [`DELEGATOR_HOOK_FOOTER`]. Older versions
+/// wrote unmarked prose — «Antigravity Delegation Policy», «OpenCode Global
+/// Delegator Policy» and the like — which therefore survived every disable and
+/// went on telling the agent to call the runtime. Worse, that prose advertises
+/// the verbs retired in 0.6 (`micro`, `delegate`, `boost`, `verify`,
+/// `parallel`, `policy`), so while a row was ON the agent read two contradicting
+/// contracts.
+///
+/// The unit of removal is a section: an ATX heading and the lines under it, up
+/// to the next heading of ANY level. A section goes when one of its own lines
+/// names the runtime ([`LEGACY_PROSE_MARKERS`]); a nested section is judged on
+/// its own, so a user heading is not dragged out by a Delegator subsection
+/// under it. Text above the first heading is judged the same way. Everything
+/// else — the user's own notes in the same file — is kept byte for byte.
+///
+/// Callers must strip the marked block FIRST: the current hook text names the
+/// entry point too, and would match itself.
+fn strip_legacy_delegator_prose(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_fence = false;
+    // Heading detection must ignore fenced code: `# comment` inside a shell
+    // example is not a section boundary.
+    let levels: Vec<Option<usize>> = lines
+        .iter()
+        .map(|line| {
+            if line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+                return None;
+            }
+            if in_fence {
+                None
+            } else {
+                heading_level(line)
+            }
+        })
+        .collect();
+
+    let mut kept = String::new();
+    let mut index = 0;
+    while index < lines.len() {
+        // This section runs to the next heading, whatever its level.
+        let mut end = index + 1;
+        while end < lines.len() && levels[end].is_none() {
+            end += 1;
+        }
+        let is_ours = lines[index..end]
+            .iter()
+            .any(|line| LEGACY_PROSE_MARKERS.iter().any(|mark| line.contains(mark)));
+        if !is_ours {
+            for line in &lines[index..end] {
+                kept.push_str(line);
+                kept.push('\n');
+            }
+        }
+        index = end;
+    }
+    kept
 }
 
 fn get_hook_text(env: &IdeEnv) -> String {
@@ -866,6 +950,10 @@ impl IdeDetector {
                 cleaned_content.push('\n');
             }
         }
+
+        // Only after the marked block is gone: the hook text names the entry
+        // point, so running this over it would delete what we just wrote.
+        let cleaned_content = strip_legacy_delegator_prose(&cleaned_content);
 
         let final_content = if enable {
             format!("{}{}", get_hook_text(env), cleaned_content.trim_start())
@@ -1602,6 +1690,173 @@ description: 'Delegator"
             "the second target's directory must not be created"
         );
         assert!(env.is_hooked("Claude"));
+    }
+
+    /// The prose Delegator wrote before the marker convention, as found in this
+    /// machine's `~/.gemini\GEMINI.md` after the row had already been unticked.
+    const LEGACY_ANTIGRAVITY_PROSE: &str = "\
+# Antigravity Delegation Policy
+
+Follow `C:\\Old\\runtime\\DELEGATOR.md`. Use shell/run-command to call the shared delegator.
+
+Preferred universal entry point: `C:\\Old\\runtime\\ai-delegate.cmd`.
+
+## Commands
+
+- Micro: `C:\\Old\\runtime\\ai-delegate.cmd micro \"PROMPT\"`
+- Boost: `C:\\Old\\runtime\\ai-delegate.cmd boost \"PROMPT\"`
+
+## Rules
+
+- Use delegation by default.
+- Do not bypass `ai-delegate.cmd`; it provides shared cross-IDE per-model locking.
+";
+
+    // The bug the owner reported on 0.8.1: Antigravity was switched OFF, and the
+    // agent kept calling Delegator anyway. Only the marked block was ever
+    // stripped, so the unmarked prose of an older version survived every
+    // disable — and it still names the entry point.
+    #[test]
+    fn switching_a_row_off_removes_unmarked_legacy_prose_too() {
+        let profile = TempProfile::new("legacy-prose-off");
+        let env = profile.env();
+
+        profile.write("home/.gemini/settings.json", "{}");
+        let gemini_md = profile.write("home/.gemini/GEMINI.md", LEGACY_ANTIGRAVITY_PROSE);
+
+        IdeDetector::apply_hook_in(&env, "Antigravity", false).expect("disable Antigravity");
+
+        let left = fs::read_to_string(&gemini_md).expect("read GEMINI.md");
+        assert!(
+            left.trim().is_empty(),
+            "nothing may still tell the agent to call the runtime, got:\n{left}"
+        );
+        assert!(!env.is_hooked("Antigravity"));
+    }
+
+    // The same sweep must not touch what the user wrote. This machine's
+    // `~/.codex\AGENTS.md` keeps the owner's own «Global preferences» right
+    // under our block; a rule that ate it would be worse than the bug.
+    #[test]
+    fn the_legacy_sweep_keeps_sections_the_user_wrote() {
+        let profile = TempProfile::new("legacy-prose-user");
+        let env = profile.env();
+
+        let user_section = "# Global preferences\n\n- Отвечай по-русски.\n- Экономь токены.\n";
+        profile.write("home/.gemini/settings.json", "{}");
+        let gemini_md = profile.write(
+            "home/.gemini/GEMINI.md",
+            &format!("{LEGACY_ANTIGRAVITY_PROSE}\n{user_section}"),
+        );
+
+        IdeDetector::apply_hook_in(&env, "Antigravity", false).expect("disable Antigravity");
+
+        let left = fs::read_to_string(&gemini_md).expect("read GEMINI.md");
+        assert_eq!(left.trim(), user_section.trim());
+    }
+
+    // A Delegator subsection under a heading the user owns takes only itself
+    // out: sections are judged on their OWN lines, never on their children's.
+    #[test]
+    fn a_delegator_subsection_does_not_drag_out_the_user_heading_above_it() {
+        let profile = TempProfile::new("legacy-prose-nested");
+        let env = profile.env();
+
+        profile.write("home/.gemini/settings.json", "{}");
+        let gemini_md = profile.write(
+            "home/.gemini/GEMINI.md",
+            "# My rules\n\n- Keep answers short.\n\n## Delegation\n\n- Call `ai-delegate.cmd`.\n\n## Style\n\n- No emoji.\n",
+        );
+
+        IdeDetector::apply_hook_in(&env, "Antigravity", false).expect("disable Antigravity");
+
+        let left = fs::read_to_string(&gemini_md).expect("read GEMINI.md");
+        assert!(left.contains("# My rules"), "got:\n{left}");
+        assert!(left.contains("- Keep answers short."), "got:\n{left}");
+        assert!(left.contains("## Style"), "got:\n{left}");
+        assert!(!left.contains("ai-delegate.cmd"), "got:\n{left}");
+        assert!(!left.contains("## Delegation"), "got:\n{left}");
+    }
+
+    // Enabling a row must leave ONE contract behind, not two: the legacy prose
+    // advertises `micro`/`boost`, retired in 0.6 in favour of a single `assist`.
+    #[test]
+    fn enabling_a_row_replaces_the_legacy_prose_instead_of_stacking_on_it() {
+        let profile = TempProfile::new("legacy-prose-on");
+        let env = profile.env();
+
+        profile.write("home/.gemini/settings.json", "{}");
+        let gemini_md = profile.write("home/.gemini/GEMINI.md", LEGACY_ANTIGRAVITY_PROSE);
+
+        IdeDetector::apply_hook_in(&env, "Antigravity", true).expect("enable Antigravity");
+
+        let left = fs::read_to_string(&gemini_md).expect("read GEMINI.md");
+        assert!(left.starts_with(DELEGATOR_HOOK_HEADER), "got:\n{left}");
+        assert!(left.contains("assist -PromptFile"));
+        assert!(
+            !left.contains("# Antigravity Delegation Policy"),
+            "the retired contract must be gone, got:\n{left}"
+        );
+        assert!(!left.contains("ai-delegate.cmd micro"), "got:\n{left}");
+        // ...and the block it just wrote survives its own sweep.
+        assert!(left.contains(DELEGATOR_HOOK_FOOTER));
+        assert!(env.is_hooked("Antigravity"));
+    }
+
+    // A `#` inside a fenced example is a shell comment, not a section boundary.
+    #[test]
+    fn a_hash_inside_a_code_fence_is_not_a_heading() {
+        let content = "# Notes\n\n```sh\n# ai-delegate.cmd is mentioned here\necho hi\n```\n\n## Keep\n\n- kept\n";
+        let left = strip_legacy_delegator_prose(content);
+        // Had the fenced `#` counted as a heading, `# Notes` would have ended
+        // above it, kept no marker of its own, and survived.
+        assert!(!left.contains("# Notes"), "got:\n{left}");
+        assert!(!left.contains("ai-delegate"), "got:\n{left}");
+        assert!(left.contains("## Keep"), "got:\n{left}");
+        assert!(left.contains("- kept"), "got:\n{left}");
+    }
+
+    /// Read-only dry run of the legacy sweep over this machine's real
+    /// instruction files. Writes nothing; prints what a disable would drop.
+    /// Run with: cargo test -- --ignored --nocapture legacy_sweep_report
+    #[test]
+    #[ignore]
+    fn legacy_sweep_report_for_this_machine() {
+        let env = IdeEnv::current();
+        for name in IdeDetector::IDE_NAMES {
+            for path in env.target_files(name) {
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                let body = split_frontmatter(&content).1;
+                let mut without_block = String::new();
+                let mut skipping = false;
+                for line in body.lines() {
+                    if line.contains(DELEGATOR_HOOK_HEADER) {
+                        skipping = true;
+                        continue;
+                    }
+                    if line.contains(DELEGATOR_HOOK_FOOTER) {
+                        skipping = false;
+                        continue;
+                    }
+                    if !skipping {
+                        without_block.push_str(line);
+                        without_block.push('\n');
+                    }
+                }
+                let swept = strip_legacy_delegator_prose(&without_block);
+                println!(
+                    "\n=== {name}: {}\n    outside the block: {} bytes -> kept {} bytes",
+                    path.display(),
+                    without_block.len(),
+                    swept.len()
+                );
+                if without_block.trim() != swept.trim() {
+                    println!("--- WOULD KEEP ---\n{swept}");
+                }
+            }
+        }
     }
 
     /// Diagnostic probe against the real machine.
