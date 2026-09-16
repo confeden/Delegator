@@ -645,6 +645,96 @@ NOT added to `known_opencode_models`: that list is the Zen catalog's memory and 
 only (a test guards this), and `sync_opencode_catalog` never prunes `openrouter/*` anyway.
 `openrouter/*` always goes to the **opencode** backend, whichever side the failover started from.
 
+### 12a. User-added OpenAI-compatible providers (config v13)
+
+A provider the user adds in the GUI is a row in `config.json` `custom_providers`:
+
+    { "id": "bai", "label": "B.AI", "base_url": "https://api.b.ai/v1", "enabled": true,
+      "accounts": [ { "id": "...", "label": "...", "api_key_enc": "<DPAPI>", "enabled": true } ],
+      "enabled_models": ["hy3"], "known_models": ["hy3", "glm-5.3-flash"] }
+
+**One namespace.** Its models are addressed `<provider id>/<model>` — the same shape as
+`openrouter/*` — and every consumer splits on the FIRST slash, because a model id may itself
+contain one (`tokenrouter/z-ai/glm-5.3-free` is one model of one provider). `is_valid_provider_id`
+(config.rs) refuses `opencode`, `openrouter`, `gemini` and `google`: a provider holding one of those
+prefixes would capture the built-in backends' ids in that split.
+
+**Who owns what.** Google keeps `google_accounts` (its protocol is `generateContent`, not
+OpenAI-compatible) and OpenRouter keeps `opencode_accounts` (the same key also authorises the
+OpenCode CLI). Migration **v12→v13** therefore moves nothing: it adds a field and bumps the number.
+Moving a live DPAPI blob is how a key gets lost (I19).
+
+**Dispatch** (`opencode-delegate.ps1`): `Get-CustomProviderForModel` is consulted BEFORE
+`Test-ModelAvailableInOpenCode`, or the CLI — which has never heard of the id — would claim it.
+It resolves to `executionPath = openai-compat-direct`, `provider = <id>`, and one POST to
+`<base_url>/chat/completions` through `Invoke-OpenAICompatModel`, which is also what
+`Invoke-OpenRouterDirectModel` now calls. §4 (UTF-8 body), §7a (proxy precedence, SOCKS via
+curl.exe), account rotation and the single 429 retry are that one function's, so a second provider
+cannot drift away from them.
+
+**Allowlist.** `enabled_models` is per provider and mandatory, exactly as `enabled_opencode_models`
+is for Zen (I8). The pool merge happens AFTER the `enabled_opencode_models` intersection, because
+that list is the Zen/OpenRouter allowlist and has never heard of these ids — intersecting would drop
+every one. Tiering is by DPR, the same thresholds the Zen catalog uses. A provider with no enabled
+key contributes NOTHING: an id in the pool that can only answer `401` costs a whole rung of a ladder.
+
+**Verdicts — `<RT>\provider-verdicts.json`.** A listing is not an answer to "is
+this free on MY key": b.ai lists 48 models, carries no `pricing` field, and four
+of them answer on a deposit-free key. So the GUI asks, once per model, with a
+`max_tokens: 8` request, and caches what came back:
+
+    {"version":1,"providers":{"bai":{"hy3":{"verdict":"free","status":200,
+      "reason":"","checked_at":1789,"expires_at":null}}}}
+
+`classify_probe` (`provider_verdicts.rs`) owns the mapping: `200` → `free`,
+`402`/`403` → `paid`, `400` NAMING money (insufficient / balance / quota /
+credit) → `paid`, `404` → `absent`. Everything else — `401`, `429`, `5xx`, a
+transport failure, a `400` about our own body — produces **no verdict**, because
+each says something about the key, the quota or the wire and nothing about the
+model. That arm is not a nicety: during the live check three working models
+answered `429` under probing pressure, and a classifier that read that as "not
+free" would have retired all three.
+
+`free` never expires (ordinary traffic revisits it and a later refusal replaces
+it); `paid`/`absent` expire after `NEGATIVE_VERDICT_TTL_SECS` (48 h), because a
+plan changes and nobody announces it. Probes are capped at `MAX_PROBES_PER_RUN`
+per provider per round, and cached per model rather than per run — a probe
+spends the provider's quota and saves nothing (I11).
+
+**A verdict may only REMOVE.** `Test-ModelRefusedByProvider` drops a
+non-`free` model from the pool; nothing anywhere ticks a box, because I8 makes
+the GUI selection the mandatory allowlist. A missing or unreadable verdict file
+is an empty map, and an empty map removes nothing — the same asymmetry that
+keeps a failed catalog load from emptying a provider.
+
+**The daily round** (`PROVIDER_CATALOG_INTERVAL_SECS`, `config.provider_catalog_
+refreshed_at`) is started by `spawn_provider_catalog_poller`, a tokio task that
+re-reads config every 120 s, and by «Проверить модели». Never from the egui loop:
+a hidden window gets no `update()`, so a round scheduled there ran only on restart
+(G105). It is due when 24 h have passed since the last attempt AND some provider
+is switched on with an enabled key (`CustomProvider::has_usable_key`); a round with
+nothing to ask returns before it stamps, so without the second half a keyless
+provider was due on every tick. The round stamps the ATTEMPT before any request,
+like the `opencode upgrade` round, so an unreachable provider cannot fire a probe
+round on every tick either.
+
+The round runs for seconds while the GUI stays live, so it never saves the config
+copy it read before the network: the stamp is saved and announced
+(`CONFIG_GENERATION`) at once, and the discovered ids are written into a fresh
+load at the end — the first round after a key is added runs exactly while the
+user is ticking that provider's models. Discovered ids go
+to `known_models` and **never** to `enabled_models`. Provider traffic from the
+GUI rides the `opencode` proxy flag — the same one the runtime resolves — because
+a catalog probed from one egress while delegation leaves from another describes a
+route that does not exist.
+
+**Ratings.** The table is matched by longest substring, so a new id can inherit a rating from a
+shorter one it contains — `glm-5.3-flash` took the 150 of `glm-5.3` and landed in the deep tier.
+A row with `"dpr": null, "confidence": "unrated"` is kept by `Get-DelegatorRatingRows` for exactly
+this: the most specific match wins, and when it is unrated the answer is "no number"
+(`DelegateUnratedDpr`), never a sibling's. Adding any row bumps `version` in `model-ratings.json`,
+which invalidates every catalog stamped with the old one (I10, G75).
+
 ## 13. Caller-aware delegation (0.7.2)
 
 Everything before this section assumed one kind of caller. It is not: an IDE agent running

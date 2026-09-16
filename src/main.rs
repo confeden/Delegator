@@ -7,6 +7,7 @@ mod dependency_service;
 mod gui;
 mod ide_detector;
 mod models_service;
+mod provider_verdicts;
 mod runtime_service;
 mod single_instance;
 mod theme;

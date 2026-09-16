@@ -124,6 +124,8 @@ function Get-ExtraOpenCodeModels {
 # "Dynamic Zen catalog" section further down, after the helpers it needs.
 $OpenCodeIdleTimeoutSec = if ($env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC) { [int]$env:CODEX_OPENCODE_IDLE_TIMEOUT_SEC } else { 90 }
 $script:OpenCodeInstalledModels = $null
+$script:DelegatorCustomProviders = $null
+$script:DelegatorProviderVerdicts = $null
 
 function Get-OpenCodeCommandPath {
     $exe = Get-Command "opencode.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -205,6 +207,232 @@ function Get-DelegatorOpenRouterAccounts {
         return @($rows)
     } catch {}
     return @()
+}
+
+function Get-DelegatorCustomProviders {
+    # config.json `custom_providers` (config v13): user-added OpenAI-compatible
+    # backends. Cached per process - every candidate in a ladder would otherwise
+    # re-read and re-DPAPI-decrypt the same file.
+    #
+    # A provider with no usable key is dropped here rather than later: an id in
+    # the pool that can only ever answer 401 costs a whole rung of the ladder.
+    if ($null -ne $script:DelegatorCustomProviders) { return $script:DelegatorCustomProviders }
+    $script:DelegatorCustomProviders = @()
+    if (-not (Test-Path -LiteralPath $DelegatorAppConfigFile)) { return $script:DelegatorCustomProviders }
+    try {
+        $config = Get-Content -LiteralPath $DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $providers = @()
+        foreach ($entry in @($config.custom_providers)) {
+            if (-not $entry) { continue }
+            if ($null -ne $entry.enabled -and -not [bool]$entry.enabled) { continue }
+            $id = ([string]$entry.id).Trim().ToLowerInvariant()
+            $baseUrl = ([string]$entry.base_url).Trim().TrimEnd([char]47)
+            if ([string]::IsNullOrWhiteSpace($id) -or [string]::IsNullOrWhiteSpace($baseUrl)) { continue }
+            $accounts = @()
+            foreach ($account in @($entry.accounts)) {
+                if (-not $account) { continue }
+                if ($null -ne $account.enabled -and -not [bool]$account.enabled) { continue }
+                $key = Unprotect-DelegatorOpenRouterKey ([string]$account.api_key_enc)
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                $accounts += [pscustomobject]@{
+                    id = [string]$account.id
+                    label = [string]$account.label
+                    key = $key
+                }
+            }
+            if ($accounts.Count -eq 0) { continue }
+            $models = @($entry.enabled_models | ForEach-Object { ([string]$_).Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+            $providers += [pscustomobject]@{
+                id = $id
+                label = [string]$entry.label
+                baseUrl = $baseUrl
+                accounts = @($accounts)
+                models = @($models)
+            }
+        }
+        $script:DelegatorCustomProviders = @($providers)
+    } catch {}
+    return $script:DelegatorCustomProviders
+}
+
+function Get-ProviderVerdicts {
+    # <RT>\provider-verdicts.json, written by the GUI's daily refresh
+    # (DEV_CONTRACTS section 12a). Maps "<provider>/<model>" -> verdict string
+    # for verdicts that have not expired.
+    #
+    # A missing, unreadable or empty file yields an EMPTY map, and an empty map
+    # removes nothing. That asymmetry is the whole safety property: a verdict may
+    # only ever take a model out of the pool, never put one in, and never on the
+    # strength of a file that failed to load.
+    if ($null -ne $script:DelegatorProviderVerdicts) { return $script:DelegatorProviderVerdicts }
+    $map = @{}
+    $script:DelegatorProviderVerdicts = $map
+    $verdictFile = Join-Path $DelegateHome "provider-verdicts.json"
+    if (-not (Test-Path -LiteralPath $verdictFile)) { return $map }
+    try {
+        $raw = Get-Content -LiteralPath $verdictFile -Raw -Encoding UTF8
+        if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) { $raw = $raw.Substring(1) }
+        $parsed = $raw | ConvertFrom-Json
+        if (-not $parsed -or -not $parsed.PSObject.Properties["providers"]) { return $map }
+        $nowUnix = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+        foreach ($providerProperty in @($parsed.providers.PSObject.Properties)) {
+            $providerId = [string]$providerProperty.Name
+            foreach ($modelProperty in @($providerProperty.Value.PSObject.Properties)) {
+                $entry = $modelProperty.Value
+                if (-not $entry -or -not $entry.PSObject.Properties["verdict"]) { continue }
+                if ($entry.PSObject.Properties["expires_at"] -and $null -ne $entry.expires_at) {
+                    if ([int64]$entry.expires_at -le $nowUnix) { continue }
+                }
+                $map[($providerId + "/" + [string]$modelProperty.Name)] = [string]$entry.verdict
+            }
+        }
+    } catch {}
+    $script:DelegatorProviderVerdicts = $map
+    return $map
+}
+
+function Test-ModelRefusedByProvider {
+    # True only when the provider ITSELF said it will not serve this model on
+    # this key. No verdict is not a refusal: a probe that timed out, a 401 or a
+    # 429 never becomes one (see provider_verdicts.rs classify_probe), because
+    # each of those is about the key, the quota or the wire.
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return $false }
+    $verdicts = Get-ProviderVerdicts
+    if (-not $verdicts.ContainsKey($ModelId)) { return $false }
+    return ([string]$verdicts[$ModelId] -ne "free")
+}
+
+function Get-CustomProviderModelIds {
+    # Every enabled model of every usable provider, prefixed `<provider>/<model>`
+    # - the same shape as `openrouter/*`, so the pool needs no per-provider case.
+    $ids = @()
+    foreach ($provider in (Get-DelegatorCustomProviders)) {
+        foreach ($model in @($provider.models)) { $ids += ($provider.id + "/" + $model) }
+    }
+    return @($ids)
+}
+
+function Get-CustomProviderForModel {
+    # Splits on the FIRST slash only: a model id may itself contain slashes
+    # (tokenrouter/z-ai/glm-5.3-free), and the remainder is what the upstream is
+    # asked for verbatim.
+    param([string]$ModelId)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
+    $separator = $ModelId.IndexOf([char]47)
+    if ($separator -lt 1 -or $separator -ge ($ModelId.Length - 1)) { return $null }
+    $prefix = $ModelId.Substring(0, $separator).ToLowerInvariant()
+    foreach ($provider in (Get-DelegatorCustomProviders)) {
+        if ($provider.id -eq $prefix) { return $provider }
+    }
+    return $null
+}
+
+function Invoke-OpenAICompatModel {
+    <#
+      One POST to <baseUrl>/chat/completions on any OpenAI-compatible backend.
+      Generalised from Invoke-OpenRouterDirectModel, which is now a caller: the
+      proxy precedence, the UTF-8 body (section 4), the SOCKS-via-curl detour
+      (section 7a), the account rotation and the single 429 retry are the same
+      rules for every provider, and a second copy of them would drift.
+    #>
+    param(
+        [string]$Text,
+        [string]$BaseUrl,
+        [string]$ModelId,
+        $Accounts,
+        [hashtable]$ExtraHeaders,
+        [int]$Seconds,
+        [string]$ProxyProvider = "opencode"
+    )
+
+    $accountList = @($Accounts)
+    if ($accountList.Count -eq 0) {
+        return [pscustomobject]@{ exitCode = 2; output = "No enabled API keys for this provider in Delegator. Add one on the API tab." }
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseUrl) -or [string]::IsNullOrWhiteSpace($ModelId)) {
+        return [pscustomobject]@{ exitCode = 2; output = "Provider is missing a base URL or a model id." }
+    }
+
+    $body = @{
+        model = $ModelId
+        messages = @(@{ role = "user"; content = $Text })
+    }
+    # DEV_CONTRACTS section 4: PS 5.1 encodes string bodies as ISO-8859-1 and turns
+    # non-ASCII (Cyrillic) into '?', so the JSON body must be sent as UTF-8 bytes.
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 12))
+    $uri = $BaseUrl.TrimEnd([char]47) + "/chat/completions"
+    # DEV_CONTRACTS section 7a: the Delegator proxy (env/proxy.json) takes
+    # precedence over the legacy system proxy detection.
+    $delegateProxy = Get-DelegateProxy -Provider $ProxyProvider
+    $useSocksProxy = (-not [string]::IsNullOrWhiteSpace($delegateProxy) -and $delegateProxy -match '^(?i)socks5h?://')
+    $proxyUrl = ""
+    if ([string]::IsNullOrWhiteSpace($delegateProxy)) { $proxyUrl = Get-SystemProxyForUrl $uri }
+    $startIndex = [int]([DateTime]::UtcNow.Ticks % $accountList.Count)
+    $orderedAccounts = @($accountList[$startIndex..($accountList.Count - 1)])
+    if ($startIndex -gt 0) { $orderedAccounts += @($accountList[0..($startIndex - 1)]) }
+    $lastError = "The request exhausted all enabled accounts."
+    foreach ($account in $orderedAccounts) {
+        $headers = @{
+            Authorization = "Bearer $($account.key)"
+            "Content-Type" = "application/json; charset=utf-8"
+        }
+        if ($ExtraHeaders) {
+            foreach ($name in $ExtraHeaders.Keys) { $headers[$name] = [string]$ExtraHeaders[$name] }
+        }
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            try {
+                if ($useSocksProxy) {
+                    $curl = Invoke-CurlJsonRequest -Method "POST" -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $delegateProxy
+                    if (-not $curl.ok) { throw (([string]$curl.error + " " + [string]$curl.rawBody).Trim()) }
+                    $response = $curl.body
+                } elseif (-not [string]::IsNullOrWhiteSpace($delegateProxy)) {
+                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $delegateProxy
+                } elseif (-not [string]::IsNullOrWhiteSpace($proxyUrl)) {
+                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $proxyUrl -ProxyUseDefaultCredentials
+                } else {
+                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds
+                }
+                $parsed = Parse-OpenRouterDirectOutput $response
+                if ([string]::IsNullOrWhiteSpace($parsed.answer)) {
+                    $lastError = "The provider response contained no answer text."
+                    break
+                }
+                return [pscustomobject]@{
+                    exitCode = 0
+                    output = ($response | ConvertTo-Json -Depth 20 -Compress)
+                    parsed = $parsed
+                    accountId = $account.id
+                }
+            } catch {
+                $extra = ""
+                try { if ($_.ErrorDetails.Message) { $extra = " " + [string]$_.ErrorDetails.Message } } catch {}
+                $lastError = ($_.Exception.Message + $extra).Trim()
+                # DEV_CONTRACTS section 7a: name the proxy when the transport failed before
+                # an HTTP status arrived so the failure classifies as network, not auth.
+                if (-not [string]::IsNullOrWhiteSpace($delegateProxy) -and $lastError -notmatch 'via proxy' -and $lastError -match '(?i)unable to connect|timed?\s*out|timeout|could not resolve') {
+                    $lastError = $lastError + " (via proxy $delegateProxy)"
+                }
+                if ($lastError -match '\(429\)|Too Many Requests' -and $attempt -lt 2) {
+                    Start-Sleep -Seconds (2 * $attempt)
+                    continue
+                }
+                break
+            }
+        }
+    }
+    return [pscustomobject]@{ exitCode = 1; output = $lastError }
+}
+
+function Invoke-CustomProviderModel {
+    param([string]$Text, [string]$OpenCodeModel, [int]$Seconds)
+    $provider = Get-CustomProviderForModel $OpenCodeModel
+    if ($null -eq $provider) {
+        return [pscustomobject]@{ exitCode = 2; output = "Model '$OpenCodeModel' does not belong to a configured provider." }
+    }
+    $modelId = $OpenCodeModel.Substring($provider.id.Length + 1)
+    return (Invoke-OpenAICompatModel -Text $Text -BaseUrl $provider.baseUrl -ModelId $modelId -Accounts $provider.accounts -Seconds $Seconds)
 }
 
 function Get-OpenRouterModelId {
@@ -599,10 +827,15 @@ function Get-DelegatorRatingRows {
             $script:DelegateRatingsVersion = [int]$parsed.version
             foreach ($entry in @($parsed.models)) {
                 if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
-                if ($null -eq $entry.dpr) { continue }
+                # An `unrated` row (dpr null) is KEPT, and that is the point: it is a
+                # statement that THIS id is unknown, so it must shadow a shorter rated
+                # substring of itself. Dropping it here let `glm-5.3-flash` inherit the
+                # 150 of `glm-5.3`, and a 100-DPR model was handed deep work.
+                $unrated = ($null -eq $entry.dpr)
                 $rows += [pscustomobject]@{
-                    match = ([string]$entry.match).ToLowerInvariant()
-                    dpr   = [int]$entry.dpr
+                    match   = ([string]$entry.match).ToLowerInvariant()
+                    dpr     = $(if ($unrated) { $null } else { [int]$entry.dpr })
+                    unrated = $unrated
                 }
             }
         }
@@ -616,7 +849,12 @@ function Get-DelegatorModelRating {
     if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
     $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
     foreach ($row in (Get-DelegatorRatingRows)) {
-        if ($name.Contains($row.match)) { return [int]$row.dpr }
+        if (-not $name.Contains($row.match)) { continue }
+        # The FIRST hit is the most specific one (rows are sorted longest-first).
+        # When it is an `unrated` row the answer is "no number", never the number
+        # of some shorter row that happens to be a substring of it.
+        if ($row.unrated) { return $null }
+        return [int]$row.dpr
     }
     return $null
 }
@@ -750,6 +988,32 @@ if ($selectedModels.Count -gt 0) {
     if ($OpenCodeNormalModels.Count -eq 0) { $OpenCodeNormalModels = @($eligibleModels) }
     if ($OpenCodeDeepModels.Count -eq 0) { $OpenCodeDeepModels = @($eligibleModels) }
     $OpenCodeAllModels = @($eligibleModels)
+}
+
+# Custom providers (config v13) join the pools by DPR, exactly the way the Zen
+# catalog tiers do. Deliberately AFTER the GUI intersection above: that
+# allowlist is `enabled_opencode_models`, which is the Zen/OpenRouter list and
+# has never heard of these ids, so intersecting would drop every one of them.
+# Their own allowlist is `custom_providers[].enabled_models`, already applied by
+# Get-DelegatorCustomProviders, and I8 still holds - nothing here can enable a
+# model the GUI did not.
+$customProviderIds = @(Get-CustomProviderModelIds | Where-Object { -not (Test-ModelRefusedByProvider $_) })
+if ($customProviderIds.Count -gt 0) {
+    foreach ($customId in $customProviderIds) {
+        $customStrength = Get-ModelStrength $customId
+        if ($customStrength -ge $script:DelegateDprDeep) {
+            $OpenCodeDeepModels = @($OpenCodeDeepModels + $customId)
+        }
+        if ($customStrength -ge $script:DelegateDprNormal) {
+            $OpenCodeNormalModels = @($OpenCodeNormalModels + $customId)
+        } else {
+            $OpenCodeFastModels = @($OpenCodeFastModels + $customId)
+        }
+    }
+    $OpenCodeFastModels = @($OpenCodeFastModels | Select-Object -Unique)
+    $OpenCodeNormalModels = @($OpenCodeNormalModels | Select-Object -Unique)
+    $OpenCodeDeepModels = @($OpenCodeDeepModels | Select-Object -Unique)
+    $OpenCodeAllModels = @(@($OpenCodeAllModels + $customProviderIds) | Select-Object -Unique)
 }
 
 function Invoke-RunsLocked {
@@ -1441,6 +1705,10 @@ exit `$LASTEXITCODE
 }
 
 function Invoke-OpenRouterDirectModel {
+    # OpenRouter is an ordinary OpenAI-compatible backend plus two attribution
+    # headers, so it routes through the shared caller. The keys still come from
+    # `opencode_accounts`: that same key also authorises the OpenCode CLI, which
+    # is why it never moved into `custom_providers` (config v13).
     param(
         [string]$Text,
         [string]$OpenCodeModel,
@@ -1456,72 +1724,7 @@ function Invoke-OpenRouterDirectModel {
         return [pscustomobject]@{ exitCode = 2; output = "Direct OpenRouter fallback supports only openrouter/* models." }
     }
 
-    $body = @{
-        model = $modelId
-        messages = @(@{ role = "user"; content = $Text })
-    }
-    # DEV_CONTRACTS section 4: PS 5.1 encodes string bodies as ISO-8859-1 and turns
-    # non-ASCII (Cyrillic) into '?', so the JSON body must be sent as UTF-8 bytes.
-    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 12))
-    $uri = "https://openrouter.ai/api/v1/chat/completions"
-    # DEV_CONTRACTS section 7a: the Delegator proxy (env/proxy.json) takes
-    # precedence over the legacy system proxy detection.
-    $delegateProxy = Get-DelegateProxy -Provider 'opencode'
-    $useSocksProxy = (-not [string]::IsNullOrWhiteSpace($delegateProxy) -and $delegateProxy -match '^(?i)socks5h?://')
-    $proxyUrl = if ([string]::IsNullOrWhiteSpace($delegateProxy)) { Get-SystemProxyForUrl $uri } else { "" }
-    $startIndex = [int]([DateTime]::UtcNow.Ticks % $accounts.Count)
-    $orderedAccounts = @($accounts[$startIndex..($accounts.Count - 1)])
-    if ($startIndex -gt 0) { $orderedAccounts += @($accounts[0..($startIndex - 1)]) }
-    $lastError = "OpenRouter request exhausted all enabled accounts."
-    foreach ($account in $orderedAccounts) {
-        $headers = @{
-            Authorization = "Bearer $($account.key)"
-            "Content-Type" = "application/json; charset=utf-8"
-            "HTTP-Referer" = "https://local-delegator"
-            "X-Title" = "Delegator"
-        }
-        for ($attempt = 1; $attempt -le 2; $attempt++) {
-            try {
-                if ($useSocksProxy) {
-                    $curl = Invoke-CurlJsonRequest -Method "POST" -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $delegateProxy
-                    if (-not $curl.ok) { throw (([string]$curl.error + " " + [string]$curl.rawBody).Trim()) }
-                    $response = $curl.body
-                } elseif (-not [string]::IsNullOrWhiteSpace($delegateProxy)) {
-                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $delegateProxy
-                } elseif (-not [string]::IsNullOrWhiteSpace($proxyUrl)) {
-                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds -ProxyUrl $proxyUrl -ProxyUseDefaultCredentials
-                } else {
-                    $response = Invoke-Utf8JsonPost -Uri $uri -Headers $headers -BodyBytes $bodyBytes -TimeoutSec $Seconds
-                }
-                $parsed = Parse-OpenRouterDirectOutput $response
-                if ([string]::IsNullOrWhiteSpace($parsed.answer)) {
-                    $lastError = "OpenRouter response contained no answer text."
-                    break
-                }
-                return [pscustomobject]@{
-                    exitCode = 0
-                    output = ($response | ConvertTo-Json -Depth 20 -Compress)
-                    parsed = $parsed
-                    accountId = $account.id
-                }
-            } catch {
-                $extra = ""
-                try { if ($_.ErrorDetails.Message) { $extra = " " + [string]$_.ErrorDetails.Message } } catch {}
-                $lastError = ($_.Exception.Message + $extra).Trim()
-                # DEV_CONTRACTS section 7a: name the proxy when the transport failed before
-                # an HTTP status arrived so the failure classifies as network, not auth.
-                if (-not [string]::IsNullOrWhiteSpace($delegateProxy) -and $lastError -notmatch 'via proxy' -and $lastError -match '(?i)unable to connect|timed?\s*out|timeout|could not resolve') {
-                    $lastError = $lastError + " (via proxy $delegateProxy)"
-                }
-                if ($lastError -match '\(429\)|Too Many Requests' -and $attempt -lt 2) {
-                    Start-Sleep -Seconds (2 * $attempt)
-                    continue
-                }
-                break
-            }
-        }
-    }
-    return [pscustomobject]@{ exitCode = 1; output = $lastError }
+    return (Invoke-OpenAICompatModel -Text $Text -BaseUrl "https://openrouter.ai/api/v1" -ModelId $modelId -Accounts $accounts -Seconds $Seconds -ExtraHeaders @{ "HTTP-Referer" = "https://local-delegator"; "X-Title" = "Delegator" })
 }
 
 function Get-PrimaryDelegateSkillPolicy {
@@ -1598,14 +1801,31 @@ function Run-Ask {
             $attemptSw = [System.Diagnostics.Stopwatch]::StartNew()
             $usedDirectOpenRouter = $false
             $preferredExecutionPath = Get-PreferredExecutionPath $candidate
-            if ($preferredExecutionPath -eq "zen-direct") {
+            # A custom provider owns its prefix, so it is decided before the
+            # OpenCode CLI is ever consulted: the CLI has never heard of it and
+            # `Test-ModelAvailableInOpenCode` would send it down the CLI branch.
+            $customProvider = Get-CustomProviderForModel $candidate
+            $executionPath = "opencode-cli"
+            $providerName = "opencode-cli"
+            if ($null -ne $customProvider) {
+                $usedDirectOpenRouter = $false
+                $usedZenDirect = $false
+                $executionPath = "openai-compat-direct"
+                $providerName = [string]$customProvider.id
+                $result = Invoke-CustomProviderModel -Text $effectivePrompt -OpenCodeModel $candidate -Seconds $TimeoutSec
+                $parsed = if ($result.PSObject.Properties["parsed"]) { $result.parsed } else { [pscustomobject]@{ answer = ""; tokens = 0; promptTokens = $null; completionTokens = $null; cost = 0 } }
+            } elseif ($preferredExecutionPath -eq "zen-direct") {
                 $usedDirectOpenRouter = $false
                 $usedZenDirect = $true
+                $executionPath = "zen-direct"
+                $providerName = "zen"
                 $result = Invoke-ZenDirectModel -Text $effectivePrompt -OpenCodeModel $candidate -Seconds $TimeoutSec
                 $parsed = if ($result.PSObject.Properties["parsed"]) { $result.parsed } else { [pscustomobject]@{ answer = ""; tokens = 0; promptTokens = $null; completionTokens = $null; cost = 0 } }
             } elseif ($candidate -like "openrouter/*" -and ($preferredExecutionPath -eq "openrouter-direct" -or -not (Test-ModelAvailableInOpenCode $candidate))) {
                 $usedDirectOpenRouter = $true
                 $usedZenDirect = $false
+                $executionPath = "openrouter-direct"
+                $providerName = "openrouter"
                 $result = Invoke-OpenRouterDirectModel -Text $effectivePrompt -OpenCodeModel $candidate -Seconds $TimeoutSec
                 $parsed = if ($result.PSObject.Properties["parsed"]) { $result.parsed } else { [pscustomobject]@{ answer = ""; tokens = 0; promptTokens = $null; completionTokens = $null; cost = 0 } }
             } else {
@@ -1626,7 +1846,6 @@ function Run-Ask {
                     }
                 }
             }
-            $providerName = if ($usedZenDirect) { "zen" } elseif ($usedDirectOpenRouter) { "openrouter" } else { "opencode-cli" }
             $lastCandidate = $candidate
             $lastProvider = $providerName
             $attempts += [pscustomobject]@{ model = $candidate; exitCode = $result.exitCode }
@@ -1643,7 +1862,7 @@ function Run-Ask {
                     runId = $runId; delegate = "opencode"; event = "completed"; status = "ok"
                     promptSummary = $summary; domain = $domain; model = $candidate
                     variant = Get-OpenCodeMaxVariant $candidate
-                    executionPath = $(if ($usedZenDirect) { "zen-direct" } elseif ($usedDirectOpenRouter) { "openrouter-direct" } else { "opencode-cli" })
+                    executionPath = $executionPath
                     tokens = $parsed.tokens; cost = $parsed.cost; elapsedMs = $elapsed
                     outputPreview = (Get-PromptSummary $parsed.answer)
                 })
@@ -1656,7 +1875,7 @@ function Run-Ask {
                 Clear-ModelCooldown $candidate
                 $script:_runCompleted = $true
                 if ($Json) {
-                    [pscustomobject]@{ delegate = "opencode"; model = $candidate; output = $parsed.answer; tokens = $parsed.tokens; promptTokens = $parsed.promptTokens; completionTokens = $parsed.completionTokens; totalTokens = $parsed.tokens; cost = $parsed.cost; executionPath = $(if ($usedZenDirect) { "zen-direct" } elseif ($usedDirectOpenRouter) { "openrouter-direct" } else { "opencode-cli" }); attempts = $attempts } | ConvertTo-Json -Depth 8
+                    [pscustomobject]@{ delegate = "opencode"; model = $candidate; output = $parsed.answer; tokens = $parsed.tokens; promptTokens = $parsed.promptTokens; completionTokens = $parsed.completionTokens; totalTokens = $parsed.tokens; cost = $parsed.cost; executionPath = $executionPath; attempts = $attempts } | ConvertTo-Json -Depth 8
                 } else {
                     Write-Output $parsed.answer
                 }
@@ -1675,7 +1894,7 @@ function Run-Ask {
             Write-RunEvent ([pscustomobject]@{
                 runId = $runId; delegate = "opencode"; event = "attempt_failed"; status = "error"
                 promptSummary = $summary; domain = $domain; model = $candidate
-                executionPath = $(if ($usedZenDirect) { "zen-direct" } elseif ($usedDirectOpenRouter) { "openrouter-direct" } else { "opencode-cli" })
+                executionPath = $executionPath
                 exitCode = $result.exitCode; errorClass = $errorClass; elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
                 errorPreview = (Get-PromptSummary $result.output)
             })

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "scale": {
     "name": "DPR",
     "title": "Delegator Programming Rating",
@@ -79,6 +79,25 @@
       "dpr": 150,
       "aa": 74.8,
       "confidence": "measured"
+    },
+    {
+      "match": "glm-5.3-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "b.ai free tier. No public index for the flash variant; the row exists so the longest-match lookup does not hand it the 150 of glm-5.3."
+    },
+    {
+      "match": "qwen3.8-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "b.ai free tier. No published index; the row is explicit so a future bare qwen3.8 row cannot capture it."
+    },
+    {
+      "match": "z-ai/glm-5.3-free",
+      "dpr": 150,
+      "aa": 74.8,
+      "confidence": "derived",
+      "note": "TokenRouter free alias of GLM-5.3. A -free suffix on a router is the same model served free, not a smaller variant - the same reading the Zen catalog already gives deepseek-v4-flash-free. Explicit so the value is a decision, not a substring accident."
     },
     {
       "match": "gpt-5.5",

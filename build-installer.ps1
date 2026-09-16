@@ -3,7 +3,9 @@
 )
 
 $ErrorActionPreference = "Stop"
+$buildStartedUtc = [DateTime]::UtcNow
 $projectRoot = $PSScriptRoot
+$installerPath = Join-Path $projectRoot "dist\DelegatorSetup-0.8.4.exe"
 $python = Join-Path $projectRoot ".venv312\Scripts\python.exe"
 $pyinstaller = Join-Path $projectRoot ".venv312\Scripts\pyinstaller.exe"
 $innoRoot = Join-Path $projectRoot "target\tools\innosetup-7.0.2"
@@ -52,15 +54,28 @@ $pathRemaps = @(
     "--remap-path-prefix=$projectRoot=delegator-src",
     "--remap-path-prefix=$env:USERPROFILE=user-home"
 )
-$env:CARGO_ENCODED_RUSTFLAGS = $pathRemaps -join [char]0x1f
+# Every unit the cargo steps used, as Cargo's JSON messages name them. The prune at
+# the end keeps these and what they were built against, and removes what older
+# builds left behind.
+$cargoMessages = @()
 
 Push-Location $projectRoot
 try {
     if (-not $SkipTests) {
+        # No path remap for the tests: it only matters in the SHIPPED binary. While
+        # it was set here too, this build and a plain `cargo test --locked` never
+        # agreed on flags, so target\debug held two copies of every dependency (466
+        # of 1200 units) and each command rebuilt what the other had just built.
         & cargo test
         if ($LASTEXITCODE -ne 0) { throw "Rust tests failed." }
+        # Everything is fresh after the run above, so this compiles nothing.
+        $cargoMessages += @(& cargo test --no-run --quiet --message-format=json)
+        if ($LASTEXITCODE -ne 0) { throw "Listing the Rust test build failed." }
     }
-    & cargo build --release
+
+    $env:CARGO_ENCODED_RUSTFLAGS = $pathRemaps -join [char]0x1f
+    # stdout carries the JSON messages; progress and diagnostics still render on stderr.
+    $cargoMessages += @(& cargo build --release --message-format=json-render-diagnostics)
     if ($LASTEXITCODE -ne 0) { throw "Rust release build failed." }
 
     $staticDir = Join-Path $projectRoot "delegator_core\static"
@@ -78,6 +93,13 @@ try {
 
     & $iscc (Join-Path $projectRoot "installer\Delegator.iss")
     if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed." }
+    # ISCC names the file after installer\Delegator.iss, this script after its own
+    # line at the top (I5). When they disagree, what sits at $installerPath is an
+    # older build's installer - and the prune below would bin the one just built.
+    if (-not (Test-Path -LiteralPath $installerPath) -or
+        (Get-Item -LiteralPath $installerPath).LastWriteTimeUtc -lt $buildStartedUtc) {
+        throw "This build did not write $($installerPath) - the version in build-installer.ps1 and in installer\Delegator.iss disagree."
+    }
 } finally {
     Pop-Location
     if ($null -eq $oldEncodedRustFlags) {
@@ -87,4 +109,14 @@ try {
     }
 }
 
-Get-Item (Join-Path $projectRoot "dist\DelegatorSetup-0.8.3.exe")
+# Housekeeping after a finished build, never a step of it: whatever goes wrong
+# here must not fail a build whose installer is already on disk.
+try {
+    & (Join-Path $projectRoot "scripts\prune-build-outputs.ps1") `
+        -TargetDir (Join-Path $projectRoot "target") -CargoMessages $cargoMessages `
+        -DistDir (Join-Path $projectRoot "dist") -KeepInstaller $installerPath -BuiltAfterUtc $buildStartedUtc
+} catch {
+    Write-Warning "Old build outputs were not pruned: $($_.Exception.Message)"
+}
+
+Get-Item -LiteralPath $installerPath

@@ -479,6 +479,112 @@ fn is_zero_price(value: &str) -> bool {
     value.parse::<f64>().is_ok_and(|price| price == 0.0)
 }
 
+// ── User-added OpenAI-compatible providers (DEV_CONTRACTS §12a) ──────────────
+
+/// Client for provider traffic. §7a: a configured proxy applies to MODEL
+/// traffic, catalog refresh included. Custom providers ride the `opencode`
+/// proxy flag — the runtime resolves them the same way
+/// (`Get-DelegateProxy -Provider 'opencode'`), and two different answers to
+/// "which proxy" is how a catalog and a delegation disagree about what exists.
+///
+/// An unusable proxy url is NOT silently ignored: going direct instead would
+/// probe from an egress the delegation itself cannot use, and every verdict
+/// would describe a route nothing else takes.
+fn provider_client(proxy_url: Option<&str>, timeout: Duration) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().timeout(timeout);
+    if let Some(url) = proxy_url.map(str::trim).filter(|url| !url.is_empty()) {
+        let proxy = reqwest::Proxy::all(url).map_err(|error| format!("proxy {url}: {error}"))?;
+        builder = builder.proxy(proxy);
+    }
+    builder.build().map_err(|error| error.to_string())
+}
+
+/// `GET <base_url>/models` — every model id the provider lists.
+///
+/// The listing is used ONLY to widen the candidate set: it carries no prices on
+/// any provider that matters here (b.ai lists 48 models and no `pricing` field
+/// at all), so it can never decide that something is free. That is what the
+/// probe below is for.
+pub async fn fetch_provider_models(
+    base_url: &str,
+    api_key: &str,
+    proxy_url: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let client = provider_client(proxy_url, Duration::from_secs(20))?;
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("{} ответил {}", base_url, response.status()));
+    }
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|error| format!("не разобрать ответ: {error}"))?;
+    let ids: Vec<String> = body
+        .get("data")
+        .and_then(|data| data.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get("id").and_then(|id| id.as_str()))
+                .filter(|id| is_clean_model_id(id, true))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return Err("в ответе нет моделей".to_string());
+    }
+    Ok(ids)
+}
+
+/// Asks the provider whether it will actually run `model` on this key, with the
+/// smallest request that can be answered. Returns `(status, body)`, where
+/// status `0` means the request never got an HTTP answer at all.
+///
+/// The point of returning the raw pair rather than a verdict is that
+/// `provider_verdicts::classify_probe` owns the mapping and is unit-tested
+/// against the refusals a real provider sent — this function only has to be
+/// honest about what came back.
+pub async fn probe_provider_model(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    proxy_url: Option<&str>,
+) -> (u16, String) {
+    let client = match provider_client(proxy_url, Duration::from_secs(60)) {
+        Ok(client) => client,
+        Err(error) => return (0, error),
+    };
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": "ping" }],
+        // Eight tokens is enough for the provider to decide whether it will
+        // serve at all, and small enough that a probe is not a real request.
+        "max_tokens": 8,
+    });
+    match client
+        .post(&url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            let text = response.text().await.unwrap_or_default();
+            (status, text)
+        }
+        Err(error) => (0, error.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,6 +753,66 @@ opencode/deepseek-v4-flash-free
         let ids = live.zen_ids_for_sync().expect("live catalog offers ids");
         assert_eq!(ids.len(), 7);
         assert!(ids.iter().all(|id| id.starts_with("opencode/")));
+    }
+
+    /// The whole §12a discovery loop against a REAL provider: list, probe,
+    /// classify. Ignored in CI — it needs a key and it spends the provider's
+    /// quota.
+    ///
+    /// ```text
+    /// $env:DELEGATOR_LIVE_PROVIDER_BASE = "https://api.b.ai/v1"
+    /// $env:DELEGATOR_LIVE_PROVIDER_KEY  = "sk-..."
+    /// $env:DELEGATOR_LIVE_PROVIDER_PROXY = "http://127.0.0.1:1371"   # optional
+    /// cargo test --offline live_provider_listing_and_probe -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn live_provider_listing_and_probe() {
+        let Ok(base_url) = std::env::var("DELEGATOR_LIVE_PROVIDER_BASE") else {
+            println!("DELEGATOR_LIVE_PROVIDER_BASE is not set; nothing to check");
+            return;
+        };
+        let key = std::env::var("DELEGATOR_LIVE_PROVIDER_KEY").unwrap_or_default();
+        let proxy = std::env::var("DELEGATOR_LIVE_PROVIDER_PROXY").ok();
+
+        let ids = fetch_provider_models(&base_url, &key, proxy.as_deref())
+            .await
+            .expect("the provider must list its models");
+        println!("{base_url} lists {} models", ids.len());
+
+        // Probe a bounded slice, and print what each answer was classified as.
+        let mut free = 0;
+        let mut refused = 0;
+        let mut silent = 0;
+        for model in ids
+            .iter()
+            .take(crate::provider_verdicts::MAX_PROBES_PER_RUN)
+        {
+            let (status, body) =
+                probe_provider_model(&base_url, &key, model, proxy.as_deref()).await;
+            match crate::provider_verdicts::classify_probe(status, &body) {
+                Some((verdict, reason)) => {
+                    if verdict.usable() {
+                        free += 1;
+                    } else {
+                        refused += 1;
+                    }
+                    let reason: String = reason.chars().take(70).collect();
+                    println!("  {model:<28} {status} -> {verdict:?} {reason}");
+                }
+                None => {
+                    silent += 1;
+                    let body: String = body.chars().take(70).collect();
+                    println!("  {model:<28} {status} -> no verdict ({body})");
+                }
+            }
+        }
+        println!("free={free} refused={refused} no-verdict={silent}");
+        assert!(
+            free + refused > 0,
+            "every probe came back without a verdict — the transport is the \
+             suspect, not the provider"
+        );
     }
 
     /// Runs the REAL `opencode models` on this machine and prints what the tab

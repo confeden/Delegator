@@ -128,3 +128,13 @@ if (-not [string]::IsNullOrWhiteSpace($InstallerPath)) {
     $hash = Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256
     Write-Output "Installer SHA-256: $($hash.Hash)"
 }
+
+# Exit 0 explicitly, because the binary scan above ends with ripgrep and ripgrep
+# exits 1 when it finds NOTHING - which is this script's pass condition. Without
+# this line the process inherits that 1, and every clean audit that was given an
+# -InstallerPath reports failure. It goes unnoticed locally (the release ritual
+# runs the bare form, which skips the scan and exits 0) but build-installer.yml
+# runs the -InstallerPath form under `shell: pwsh`, where GitHub appends
+# `exit $LASTEXITCODE` to every step. Every failure path here throws under
+# ErrorActionPreference = Stop, so reaching this line IS the pass.
+exit 0

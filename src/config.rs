@@ -24,6 +24,102 @@ pub struct OpenCodeApiAccount {
     pub enabled: bool,
 }
 
+/// One API key of a user-added provider. Field-for-field identical to
+/// `GoogleApiAccount` / `OpenCodeApiAccount` on purpose rather than shared with
+/// them: those two are already serialized in every installed `config.json`, and
+/// retyping a live field is a migration risk paid for nothing (I14 — the
+/// duplication here is deliberate, and all three shapes must stay identical).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderApiAccount {
+    pub id: String,
+    pub label: String,
+    pub api_key_enc: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// One user-added OpenAI-compatible provider (b.ai, TokenRouter, …).
+///
+/// Its models are addressed `<provider id>/<model>` everywhere — pool,
+/// allowlist, catalog, cooldowns — exactly like `openrouter/*`, so the runtime
+/// splits on the first `/` and needs no per-provider branch. `enabled_models`
+/// is a MANDATORY allowlist (I8): catalog discovery may add ids to
+/// `known_models`, never to `enabled_models`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomProvider {
+    /// Lowercase slug; doubles as the model-id prefix, so it may not contain
+    /// `/` or whitespace.
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// OpenAI-compatible root, e.g. `https://api.b.ai/v1`. `/chat/completions`
+    /// and `/models` are appended by the runtime.
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub accounts: Vec<ProviderApiAccount>,
+    #[serde(default)]
+    pub enabled_models: Vec<String>,
+    /// Every model id this provider's catalog has ever shown, so a brand-new
+    /// upstream model can be told from one the user deliberately switched off.
+    #[serde(default)]
+    pub known_models: Vec<String>,
+}
+
+impl CustomProvider {
+    /// Switched on and holding at least one enabled key: the only provider
+    /// worth a model in the pool or a request in the daily round.
+    pub fn has_usable_key(&self) -> bool {
+        self.enabled && self.accounts.iter().any(|account| account.enabled)
+    }
+}
+
+/// A provider the GUI can offer with one click: the user pastes a key and the
+/// candidate models are already there. `models` is a STARTING GUESS, not a
+/// promise — a provider's `/models` listing carries no prices, so what a given
+/// key actually serves is settled by the catalog refresh, not by this table.
+pub struct ProviderPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub base_url: &'static str,
+    pub models: &'static [&'static str],
+}
+
+/// Presets shown on the «API» tab under «+ Добавить провайдера».
+///
+/// The b.ai list is what a deposit-free key served when it was measured
+/// (`kb/providers-routing.md#P17`): its `/v1/models` advertises 48 models and
+/// four of them answer, so seeding the listing wholesale would fill the pool
+/// with models that reply `403 access_denied`.
+pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
+    ProviderPreset {
+        id: "bai",
+        label: "B.AI",
+        base_url: "https://api.b.ai/v1",
+        models: &["hy3", "mimo-v2.5", "glm-5.3-flash", "qwen3.8-flash"],
+    },
+    ProviderPreset {
+        id: "tokenrouter",
+        label: "TokenRouter",
+        base_url: "https://api.tokenrouter.com/v1",
+        models: &["z-ai/glm-5.3-free"],
+    },
+];
+
+/// True when `id` is usable as a model-id prefix: lowercase alphanumerics,
+/// `-`, `_` and `.`, and never empty. Anything else would either collide with
+/// the `<provider>/<model>` split or land in a cooldown key the runtime cannot
+/// round-trip.
+pub fn is_valid_provider_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 32
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'))
+}
+
 fn default_true() -> bool {
     true
 }
@@ -49,6 +145,13 @@ pub struct ProxyEntry {
 
 /// How often the GUI may run `opencode upgrade` in the background.
 pub const OPENCODE_UPGRADE_INTERVAL_SECS: u64 = 24 * 60 * 60;
+
+/// How often the GUI re-asks every user-added provider what it serves
+/// (DEV_CONTRACTS §12a). A day, because that is the granularity at which a
+/// free tier actually changes — and because nothing refreshed these catalogs
+/// on a schedule before, so a listing could sit stale for as long as the app
+/// went unopened.
+pub const PROVIDER_CATALOG_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 /// Unix seconds → `YYYY-MM-DDTHH:MM:SSZ`.
 ///
@@ -125,6 +228,13 @@ pub struct AppConfig {
     /// `openrouter/*`: that catalog is 335 models we do not track.
     #[serde(default)]
     pub known_opencode_models: Vec<String>,
+    /// User-added OpenAI-compatible providers (config v13). Google and
+    /// OpenRouter keep their own fields above: Google is not OpenAI-compatible
+    /// (`generateContent`), and the OpenRouter key also authorises the OpenCode
+    /// CLI, so neither can be folded in without moving a live DPAPI blob (I19).
+    /// The «API» tab presents all four the same way regardless.
+    #[serde(default)]
+    pub custom_providers: Vec<CustomProvider>,
     /// Outbound proxies (DEV_CONTRACTS §7a). Always serialized — the mere
     /// presence of the key (even `[]`) makes it authoritative for the
     /// runtime, which then stops consulting the legacy `<RT>\proxy.json`.
@@ -134,6 +244,10 @@ pub struct AppConfig {
     /// (0 = never). Keeps the background CLI update to once per 24 h.
     #[serde(default)]
     pub opencode_upgrade_checked_at: u64,
+    /// Unix seconds of the last provider catalog refresh + probe round
+    /// (0 = never).
+    #[serde(default)]
+    pub provider_catalog_refreshed_at: u64,
     #[serde(default = "default_ide_states")]
     pub ide_states: HashMap<String, bool>,
     #[serde(default = "default_true")]
@@ -143,7 +257,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 12,
+            config_version: 13,
             google_api_key_enc: String::new(),
             google_accounts: Vec::new(),
             opencode_api_key_enc: String::new(),
@@ -151,8 +265,10 @@ impl Default for AppConfig {
             enabled_gemini_models: default_gemini_models(),
             enabled_opencode_models: default_opencode_models(),
             known_opencode_models: default_known_opencode_models(),
+            custom_providers: Vec::new(),
             proxies: Vec::new(),
             opencode_upgrade_checked_at: 0,
+            provider_catalog_refreshed_at: 0,
             ide_states: default_ide_states(),
             delegator_enabled: true,
         }
@@ -178,6 +294,24 @@ impl AppConfig {
             Some(path) => Self::load_from_path(&path),
             None => Self::default(),
         }
+    }
+
+    /// Parses config.json WITHOUT migrating or saving it.
+    ///
+    /// `load` writes the file on every call (it migrates, then persists), which
+    /// is right for a startup or a user action and wrong for anything on a
+    /// timer: the provider poller wakes every two minutes, and a load there
+    /// would rewrite config.json all day and race whatever the GUI is saving.
+    /// Every field this is used for has a serde default, so an un-migrated read
+    /// answers the only question a poller asks — is a round due — correctly.
+    pub fn load_readonly() -> Self {
+        let Some(path) = Self::config_path() else {
+            return Self::default();
+        };
+        let Ok(content) = fs::read_to_string(&path) else {
+            return Self::default();
+        };
+        serde_json::from_str::<AppConfig>(&content).unwrap_or_default()
     }
 
     fn load_from_path(path: &Path) -> Self {
@@ -288,6 +422,13 @@ impl AppConfig {
         }
         if self.config_version < 12 {
             self.migrate_reset_usage_counter(&runtime_home_dir());
+        }
+        if self.config_version < 13 {
+            // v13 only ADDS `custom_providers`, which serde already defaults to
+            // `[]`. The bump exists so the file records which schema wrote it;
+            // there is deliberately nothing to move, because moving a live
+            // DPAPI blob is how a key gets lost (I19).
+            self.config_version = 13;
         }
         self.ensure_known_ide_keys();
     }
@@ -447,6 +588,69 @@ impl AppConfig {
     pub fn mark_opencode_upgrade_attempt(&mut self, now_unix: u64) {
         self.opencode_upgrade_checked_at = now_unix;
         self.save();
+    }
+
+    /// True when the daily provider catalog refresh is due. Same shape as
+    /// `opencode_upgrade_due`, including the clock-went-backwards arm: a stamp
+    /// in the future must not disable refreshes forever.
+    ///
+    /// Due only while some provider has a usable key. A round with nothing to
+    /// ask returns before it stamps, so a keyless or switched-off provider —
+    /// the state every provider is in between «Добавить провайдера» and
+    /// «Добавить ключ» — used to be due on EVERY poller tick: config.json
+    /// rewritten every two minutes and the status line replaced by an empty
+    /// «Провайдеры обновлены» report.
+    pub fn provider_catalog_refresh_due(&self, now_unix: u64) -> bool {
+        if !self
+            .custom_providers
+            .iter()
+            .any(CustomProvider::has_usable_key)
+        {
+            return false;
+        }
+        match now_unix.checked_sub(self.provider_catalog_refreshed_at) {
+            Some(elapsed) => elapsed >= PROVIDER_CATALOG_INTERVAL_SECS,
+            None => true,
+        }
+    }
+
+    /// Records the ATTEMPT, not the success — a provider that is permanently
+    /// unreachable must not make every GUI start fire another probe round.
+    pub fn mark_provider_catalog_refresh(&mut self, now_unix: u64) {
+        self.provider_catalog_refreshed_at = now_unix;
+        self.save();
+    }
+
+    /// Adds discovered ids to `known_models` and NOTHING else.
+    ///
+    /// This is I8 in one method: discovery may widen the list the user chooses
+    /// from, but only the user ticks a box. A model that appears here shows up
+    /// unticked, which is also what tells a brand-new upstream model apart from
+    /// one that was deliberately switched off. Returns whether anything changed.
+    pub fn add_known_provider_models(&mut self, provider_id: &str, ids: &[String]) -> bool {
+        let changed = self.apply_known_provider_models(provider_id, ids);
+        if changed {
+            self.save();
+        }
+        changed
+    }
+
+    /// The mutation without the write, so the I8 rule above is testable
+    /// (`save` targets the real config path). Returns whether anything changed.
+    fn apply_known_provider_models(&mut self, provider_id: &str, ids: &[String]) -> bool {
+        let Some(provider) = self.custom_provider_mut(provider_id) else {
+            return false;
+        };
+        let mut changed = false;
+        for id in ids {
+            let id = id.trim();
+            if id.is_empty() || provider.known_models.iter().any(|known| known == id) {
+                continue;
+            }
+            provider.known_models.push(id.to_string());
+            changed = true;
+        }
+        changed
     }
 
     /// v7→v8 (DEV_CONTRACTS §7a): adopt the runtime's legacy `<RT>\proxy.json`
@@ -717,6 +921,177 @@ impl AppConfig {
         self.save();
     }
 
+    // ── User-added OpenAI-compatible providers (config v13) ──────────────────
+
+    pub fn custom_provider(&self, id: &str) -> Option<&CustomProvider> {
+        self.custom_providers.iter().find(|p| p.id == id)
+    }
+
+    fn custom_provider_mut(&mut self, id: &str) -> Option<&mut CustomProvider> {
+        self.custom_providers.iter_mut().find(|p| p.id == id)
+    }
+
+    /// Adds a provider. `models` seeds BOTH lists: a provider the user chose to
+    /// add is one whose models they want, and an empty pool would make the new
+    /// row look broken. Later catalog runs may only extend `known_models`.
+    pub fn add_custom_provider(
+        &mut self,
+        id: &str,
+        label: &str,
+        base_url: &str,
+        models: &[String],
+    ) -> Result<(), String> {
+        let provider = validated_custom_provider(id, label, base_url, models)?;
+        if self.custom_provider(&provider.id).is_some() {
+            return Err(format!("Провайдер «{}» уже добавлен", provider.id));
+        }
+        self.custom_providers.push(provider);
+        self.save();
+        Ok(())
+    }
+
+    pub fn remove_custom_provider(&mut self, id: &str) {
+        self.custom_providers.retain(|provider| provider.id != id);
+        self.save();
+    }
+
+    pub fn set_custom_provider_enabled(&mut self, id: &str, enabled: bool) {
+        if let Some(provider) = self.custom_provider_mut(id) {
+            provider.enabled = enabled;
+            self.save();
+        }
+    }
+
+    pub fn add_provider_account(
+        &mut self,
+        provider_id: &str,
+        label: &str,
+        key: &str,
+    ) -> Result<(), String> {
+        let label = label.trim();
+        let key = key.trim();
+        if label.is_empty() || key.is_empty() {
+            return Err("Укажите название и API-ключ".to_string());
+        }
+        let id = new_account_id(provider_id)?;
+        let api_key_enc = encrypt_string(key)?;
+        let provider = self
+            .custom_provider_mut(provider_id)
+            .ok_or_else(|| "Провайдер не найден".to_string())?;
+        provider.accounts.push(ProviderApiAccount {
+            id,
+            label: label.to_string(),
+            api_key_enc,
+            enabled: true,
+        });
+        self.save();
+        Ok(())
+    }
+
+    pub fn update_provider_account(
+        &mut self,
+        provider_id: &str,
+        account_id: &str,
+        label: &str,
+        new_key: Option<&str>,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let label = label.trim();
+        if label.is_empty() {
+            return Err("Укажите название аккаунта".to_string());
+        }
+        // Encrypt BEFORE borrowing the provider: a DPAPI failure must not leave
+        // the account half-updated with a new label and the old key.
+        let api_key_enc = match new_key.map(str::trim).filter(|key| !key.is_empty()) {
+            Some(key) => Some(encrypt_string(key)?),
+            None => None,
+        };
+        let account = self
+            .custom_provider_mut(provider_id)
+            .ok_or_else(|| "Провайдер не найден".to_string())?
+            .accounts
+            .iter_mut()
+            .find(|account| account.id == account_id)
+            .ok_or_else(|| "Аккаунт не найден".to_string())?;
+        account.label = label.to_string();
+        account.enabled = enabled;
+        if let Some(encrypted) = api_key_enc {
+            account.api_key_enc = encrypted;
+        }
+        self.save();
+        Ok(())
+    }
+
+    pub fn remove_provider_account(&mut self, provider_id: &str, account_id: &str) {
+        if let Some(provider) = self.custom_provider_mut(provider_id) {
+            provider.accounts.retain(|account| account.id != account_id);
+            self.save();
+        }
+    }
+
+    /// Plaintext key of the first enabled account, for the GUI's own provider
+    /// traffic (the catalog refresh and the probes, §12a). The PowerShell
+    /// runtime decrypts its own — this is not a second key store, it is the
+    /// same DPAPI blob read by the other process that needs it.
+    pub fn first_enabled_provider_api_key(&self, provider_id: &str) -> String {
+        self.custom_provider(provider_id)
+            .into_iter()
+            .flat_map(|provider| provider.accounts.iter())
+            .find(|account| account.enabled)
+            .and_then(|account| decrypt_string(&account.api_key_enc).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn set_provider_model_enabled(&mut self, provider_id: &str, model: &str, enabled: bool) {
+        if self.apply_provider_model_enabled(provider_id, model, enabled) {
+            self.save();
+        }
+    }
+
+    /// The mutation without the write, so the rule is testable (`save` targets
+    /// the real config path). Returns whether anything changed.
+    fn apply_provider_model_enabled(
+        &mut self,
+        provider_id: &str,
+        model: &str,
+        enabled: bool,
+    ) -> bool {
+        let Some(provider) = self.custom_provider_mut(provider_id) else {
+            return false;
+        };
+        let mut changed = false;
+        if !provider.known_models.iter().any(|known| known == model) {
+            provider.known_models.push(model.to_string());
+            changed = true;
+        }
+        let already = provider.enabled_models.iter().any(|m| m == model);
+        if enabled && !already {
+            provider.enabled_models.push(model.to_string());
+            changed = true;
+        } else if !enabled && already {
+            provider.enabled_models.retain(|m| m != model);
+            changed = true;
+        }
+        changed
+    }
+
+    /// Every enabled model of every enabled provider, already prefixed
+    /// `<provider>/<model>` — the exact ids the runtime allowlist compares
+    /// against. A provider with no usable key contributes nothing: an id in the
+    /// pool that can only ever answer `401` costs a whole rung of the ladder.
+    pub fn enabled_custom_provider_models(&self) -> Vec<String> {
+        self.custom_providers
+            .iter()
+            .filter(|provider| provider.has_usable_key())
+            .flat_map(|provider| {
+                provider
+                    .enabled_models
+                    .iter()
+                    .map(move |model| format!("{}/{model}", provider.id))
+            })
+            .collect()
+    }
+
     /// Validated add path for a fully specified proxy. The «Прокси» tab adds
     /// blank rows via `add_empty_proxy` and edits them in place instead.
     #[allow(dead_code)]
@@ -780,6 +1155,54 @@ impl AppConfig {
         }
         self.configured_proxy_for(provider)
     }
+}
+
+/// Builds a provider row or says why it cannot exist. Split out of
+/// `add_custom_provider` for the same reason as `validated_proxy_entry`: the
+/// adder saves to the real config path, so the rules can only be tested here.
+fn validated_custom_provider(
+    id: &str,
+    label: &str,
+    base_url: &str,
+    models: &[String],
+) -> Result<CustomProvider, String> {
+    let id = id.trim().to_ascii_lowercase();
+    let label = label.trim();
+    let base_url = base_url.trim().trim_end_matches('/');
+    if !is_valid_provider_id(&id) {
+        return Err(
+            "Идентификатор провайдера: латиница в нижнем регистре, цифры, - _ .".to_string(),
+        );
+    }
+    // The prefix is a namespace shared with the built-in backends, so a
+    // provider called `opencode` or `openrouter` would silently capture their
+    // model ids in the runtime's split-on-first-slash.
+    if matches!(id.as_str(), "opencode" | "openrouter" | "gemini" | "google") {
+        return Err(format!(
+            "Идентификатор «{id}» уже занят встроенным бэкендом"
+        ));
+    }
+    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+        return Err("Адрес API должен начинаться с http:// или https://".to_string());
+    }
+    let models: Vec<String> = models
+        .iter()
+        .map(|model| model.trim().to_string())
+        .filter(|model| !model.is_empty())
+        .collect();
+    Ok(CustomProvider {
+        label: if label.is_empty() {
+            id.clone()
+        } else {
+            label.to_string()
+        },
+        id,
+        base_url: base_url.to_string(),
+        enabled: true,
+        accounts: Vec::new(),
+        known_models: models.clone(),
+        enabled_models: models,
+    })
 }
 
 fn validated_proxy_entry(label: &str, url: &str) -> Result<ProxyEntry, String> {
@@ -923,6 +1346,35 @@ fn default_known_opencode_models() -> Vec<String> {
         .collect()
 }
 
+/// Fixtures shared with other modules' unit tests. `gui::app` has to build a
+/// provider row to assert what the «API» tab offers, and duplicating the shape
+/// there is how the two drift.
+#[cfg(test)]
+pub mod tests_support {
+    use super::{CustomProvider, ProviderApiAccount};
+
+    pub fn provider(id: &str, label: &str) -> CustomProvider {
+        CustomProvider {
+            id: id.to_string(),
+            label: label.to_string(),
+            base_url: "https://api.example.com/v1".to_string(),
+            enabled: true,
+            accounts: Vec::new(),
+            enabled_models: Vec::new(),
+            known_models: Vec::new(),
+        }
+    }
+
+    pub fn account(id: &str, enabled: bool) -> ProviderApiAccount {
+        ProviderApiAccount {
+            id: id.to_string(),
+            label: id.to_string(),
+            api_key_enc: "opaque-dpapi-blob".to_string(),
+            enabled,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -930,7 +1382,7 @@ mod tests {
     #[test]
     fn defaults_enable_current_opencode_free_models() {
         let config = AppConfig::default();
-        assert_eq!(config.config_version, 12);
+        assert_eq!(config.config_version, 13);
         assert!(config.proxies.is_empty());
         assert_eq!(config.enabled_opencode_models, default_opencode_models());
         // Since v9 every known free Zen model ships enabled, big-pickle too.
@@ -1033,7 +1485,7 @@ mod tests {
         fs::write(&path, legacy).expect("write legacy config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 12);
+        assert_eq!(cfg.config_version, 13);
         assert_eq!(cfg.google_accounts.len(), 1);
         assert_eq!(cfg.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert!(cfg.google_accounts[0].enabled);
@@ -1063,7 +1515,7 @@ mod tests {
 
         // The migrated config is persisted and loads back cleanly.
         let reloaded = AppConfig::load_from_path(&path);
-        assert_eq!(reloaded.config_version, 12);
+        assert_eq!(reloaded.config_version, 13);
         assert_eq!(reloaded.google_accounts[0].api_key_enc, "opaque-dpapi-blob");
         assert_eq!(reloaded.proxies.len(), 1);
         cleanup(&path);
@@ -1076,7 +1528,7 @@ mod tests {
         fs::write(&path, garbage).expect("write corrupt config");
 
         let cfg = AppConfig::load_from_path(&path);
-        assert_eq!(cfg.config_version, 12);
+        assert_eq!(cfg.config_version, 13);
         assert!(cfg.google_accounts.is_empty());
 
         let dir = path.parent().expect("temp dir");
@@ -1096,7 +1548,7 @@ mod tests {
         // A fresh default config took the original path.
         let fresh = fs::read_to_string(&path).expect("read fresh config");
         let fresh: AppConfig = serde_json::from_str(&fresh).expect("fresh config parses");
-        assert_eq!(fresh.config_version, 12);
+        assert_eq!(fresh.config_version, 13);
         cleanup(&path);
     }
 
@@ -1146,7 +1598,7 @@ mod tests {
         config.migrate();
 
         // migrate() chains through v7/v8 up to the current version 9.
-        assert_eq!(config.config_version, 12);
+        assert_eq!(config.config_version, 13);
         assert_eq!(config.proxies.len(), 1);
         // v7 seeded known = enabled opencode/* ∪ built-in catalog; v9 then
         // enabled every one of them, the user's own alias included.
@@ -1255,7 +1707,7 @@ mod tests {
         // migrations at all. Found the hard way: config v10 on a fresh file with
         // the model missing, because only the v9→v10 path added it.
         let config = AppConfig::default();
-        assert_eq!(config.config_version, 12);
+        assert_eq!(config.config_version, 13);
         assert!(config
             .enabled_opencode_models
             .contains(&UNIVERSAL_FREE_MODEL.to_string()));
@@ -1319,7 +1771,7 @@ mod tests {
 
         config.migrate();
 
-        assert_eq!(config.config_version, 12);
+        assert_eq!(config.config_version, 13);
         for model in [
             "opencode/big-pickle",
             "opencode/nemotron-3-ultra-free",
@@ -1572,7 +2024,7 @@ mod tests {
         assert_eq!(config.config_version, 12);
         assert!(runtime_home.join("usage-counted-from.txt").exists());
         // And a brand-new config is already past it, so nothing runs at all.
-        assert_eq!(AppConfig::default().config_version, 12);
+        assert_eq!(AppConfig::default().config_version, 13);
 
         let _ = fs::remove_dir_all(&runtime_home);
     }
@@ -1739,6 +2191,282 @@ mod tests {
         for url in ["", "socks5://", "ftp://h:1", "h:1"] {
             assert!(!is_supported_proxy_url(url), "{url} must be rejected");
         }
+    }
+
+    fn provider_with_models(id: &str, models: &[&str]) -> CustomProvider {
+        validated_custom_provider(
+            id,
+            "",
+            "https://api.example.com/v1",
+            &models.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+        )
+        .expect("valid provider")
+    }
+
+    fn enabled_account() -> ProviderApiAccount {
+        ProviderApiAccount {
+            id: "acc-1".to_string(),
+            label: "Ключ 1".to_string(),
+            api_key_enc: "opaque-dpapi-blob".to_string(),
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn a_provider_id_may_never_shadow_a_builtin_backend() {
+        // `<provider>/<model>` is one namespace: a provider called `opencode`
+        // would capture every Zen id in the runtime's split-on-first-slash, and
+        // one called `openrouter` would capture the universal free route.
+        for taken in ["opencode", "openrouter", "gemini", "google", "OpenCode"] {
+            let error = validated_custom_provider(taken, "X", "https://h/v1", &[])
+                .expect_err("builtin prefix must be refused");
+            assert!(error.contains("встроенным"), "{taken}: {error}");
+        }
+        for bad in ["", "b ai", "b/ai", "провайдер", "b:ai"] {
+            assert!(
+                validated_custom_provider(bad, "X", "https://h/v1", &[]).is_err(),
+                "{bad} must be refused"
+            );
+        }
+        for bad_url in ["", "api.b.ai/v1", "ftp://h/v1"] {
+            assert!(
+                validated_custom_provider("bai", "B.AI", bad_url, &[]).is_err(),
+                "{bad_url} must be refused"
+            );
+        }
+
+        let provider = validated_custom_provider(
+            "  BAI ",
+            " B.AI ",
+            " https://api.b.ai/v1/ ",
+            &["hy3".to_string(), "  ".to_string()],
+        )
+        .expect("valid provider");
+        assert_eq!(provider.id, "bai");
+        assert_eq!(provider.label, "B.AI");
+        // The trailing slash is stripped so the runtime can append
+        // `/chat/completions` without producing a `//`.
+        assert_eq!(provider.base_url, "https://api.b.ai/v1");
+        assert_eq!(provider.enabled_models, vec!["hy3".to_string()]);
+        assert_eq!(provider.known_models, vec!["hy3".to_string()]);
+        assert!(provider.accounts.is_empty());
+    }
+
+    /// Every model a preset ships must have its OWN row in `model-ratings.json`
+    /// — a number, or an explicit `unrated`.
+    ///
+    /// This is G101 turned into a check. The table is matched by longest
+    /// substring, so a model with no row of its own silently inherits the score
+    /// of any shorter row it contains: `glm-5.3-flash` took the 150 of
+    /// `glm-5.3` and landed in the deep tier. A preset is the one place where
+    /// WE choose the ids, so this is also the one place the rule can be
+    /// enforced mechanically. Adding a preset now forces a sourcing decision:
+    /// find the number, or say `unrated` and mean it.
+    #[test]
+    fn every_preset_model_has_a_rating_row_of_its_own() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts")
+            .join("model-ratings.json");
+        let text = fs::read_to_string(&path).expect("model-ratings.json must be readable");
+        let table: serde_json::Value =
+            serde_json::from_str(text.trim_start_matches('\u{feff}')).expect("valid json");
+        let matches: Vec<String> = table["models"]
+            .as_array()
+            .expect("models array")
+            .iter()
+            .filter_map(|row| row["match"].as_str())
+            .map(|row| row.to_ascii_lowercase())
+            .collect();
+
+        for preset in PROVIDER_PRESETS {
+            for model in preset.models {
+                let id = model.to_ascii_lowercase();
+                assert!(
+                    matches.iter().any(|row| row == &id),
+                    "{}/{model} has no row in model-ratings.json, so its score comes from \
+                     whichever shorter row happens to be a substring of it (G101). Add a row \
+                     with a sourced dpr, or `\"dpr\": null, \"confidence\": \"unrated\"`.",
+                    preset.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_preset_is_addable_and_none_collides_with_a_builtin() {
+        for preset in PROVIDER_PRESETS {
+            let models: Vec<String> = preset.models.iter().map(|m| m.to_string()).collect();
+            let provider =
+                validated_custom_provider(preset.id, preset.label, preset.base_url, &models)
+                    .unwrap_or_else(|error| panic!("preset {} rejected: {error}", preset.id));
+            assert_eq!(provider.id, preset.id);
+            assert!(!provider.enabled_models.is_empty());
+        }
+    }
+
+    #[test]
+    fn only_a_provider_with_a_usable_key_contributes_models_to_the_pool() {
+        // An id in the pool that can only ever answer 401 costs a whole rung of
+        // the ladder, so a keyless or switched-off provider contributes nothing.
+        let mut config = AppConfig::default();
+        let mut with_key = provider_with_models("bai", &["hy3", "mimo-v2.5"]);
+        with_key.accounts.push(enabled_account());
+        let keyless = provider_with_models("tokenrouter", &["z-ai/glm-5.3-free"]);
+        let mut disabled_key = provider_with_models("third", &["m"]);
+        disabled_key.accounts.push(ProviderApiAccount {
+            enabled: false,
+            ..enabled_account()
+        });
+        let mut switched_off = provider_with_models("fourth", &["m"]);
+        switched_off.accounts.push(enabled_account());
+        switched_off.enabled = false;
+        config.custom_providers = vec![with_key, keyless, disabled_key, switched_off];
+
+        assert_eq!(
+            config.enabled_custom_provider_models(),
+            vec!["bai/hy3".to_string(), "bai/mimo-v2.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn toggling_a_model_records_it_as_known_even_when_switched_off() {
+        // `known_models` is the catalog's memory: it must remember a model the
+        // user deliberately disabled, or the next sync would re-enable it.
+        let mut config = AppConfig::default();
+        config.custom_providers = vec![provider_with_models("bai", &["hy3"])];
+
+        assert!(config.apply_provider_model_enabled("bai", "qwen3.8-flash", false));
+        let provider = config.custom_provider("bai").expect("provider");
+        assert!(provider.known_models.contains(&"qwen3.8-flash".to_string()));
+        assert!(!provider
+            .enabled_models
+            .contains(&"qwen3.8-flash".to_string()));
+
+        assert!(config.apply_provider_model_enabled("bai", "qwen3.8-flash", true));
+        assert!(config
+            .custom_provider("bai")
+            .expect("provider")
+            .enabled_models
+            .contains(&"qwen3.8-flash".to_string()));
+        // Idempotent: a repeated toggle must not dirty the file.
+        assert!(!config.apply_provider_model_enabled("bai", "qwen3.8-flash", true));
+        assert!(!config.apply_provider_model_enabled("nope", "hy3", true));
+    }
+
+    #[test]
+    fn migration_v12_to_v13_adds_providers_without_touching_the_keys() {
+        // v13 only ADDS a field. The DPAPI blobs are opaque here on purpose:
+        // the test asserts they come back byte-identical, which is the whole
+        // point of not moving them (I19).
+        let dir = std::env::temp_dir().join(format!("delegator-cfg-v13-{}", unix_now()));
+        fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("config.json");
+        fs::write(
+            &path,
+            r#"{
+                "config_version": 12,
+                "google_accounts": [
+                    {"id": "g1", "label": "Main", "api_key_enc": "opaque-google-blob"}
+                ],
+                "opencode_accounts": [
+                    {"id": "o1", "label": "OR", "api_key_enc": "opaque-openrouter-blob"}
+                ]
+            }"#,
+        )
+        .expect("write config");
+
+        let cfg = AppConfig::load_from_path(&path);
+        assert_eq!(cfg.config_version, 13);
+        assert!(cfg.custom_providers.is_empty());
+        assert_eq!(cfg.google_accounts[0].api_key_enc, "opaque-google-blob");
+        assert_eq!(
+            cfg.opencode_accounts[0].api_key_enc,
+            "opaque-openrouter-blob"
+        );
+
+        let reloaded = AppConfig::load_from_path(&path);
+        assert_eq!(reloaded.config_version, 13);
+        assert_eq!(
+            reloaded.google_accounts[0].api_key_enc,
+            "opaque-google-blob"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discovery_widens_the_list_to_choose_from_and_never_ticks_a_box() {
+        // I8 in one test. A model the provider started serving appears in the
+        // list UNTICKED; that is also what tells a brand-new upstream model
+        // apart from one the user deliberately switched off.
+        let mut config = AppConfig::default();
+        config.custom_providers = vec![provider_with_models("bai", &["hy3"])];
+
+        assert!(config.apply_known_provider_models(
+            "bai",
+            &[
+                "hy3".to_string(), // already known — no change
+                "glm-5.3-flash".to_string(),
+                "  ".to_string(), // blank ids are not models
+                "qwen3.8-flash".to_string(),
+            ],
+        ));
+        let provider = config.custom_provider("bai").expect("provider");
+        assert_eq!(
+            provider.known_models,
+            vec![
+                "hy3".to_string(),
+                "glm-5.3-flash".to_string(),
+                "qwen3.8-flash".to_string()
+            ]
+        );
+        // The decisive assertion: nothing new became enabled.
+        assert_eq!(provider.enabled_models, vec!["hy3".to_string()]);
+
+        // Idempotent, and an unknown provider is not an error.
+        assert!(!config.apply_known_provider_models("bai", &["hy3".to_string()]));
+        assert!(!config.apply_known_provider_models("nope", &["x".to_string()]));
+    }
+
+    #[test]
+    fn the_daily_round_is_due_only_when_there_is_something_to_ask() {
+        let now = 2_000_000u64;
+
+        // No providers, nothing to refresh — and firing anyway would mean a
+        // probe round on every start for every user who has none.
+        let mut config = AppConfig::default();
+        assert!(!config.provider_catalog_refresh_due(now));
+
+        // Providers nothing can be asked with. A round for one returns before
+        // it stamps, so "due" here meant a round on every poller tick.
+        let keyless = provider_with_models("bai", &["hy3"]);
+        let mut disabled_key = provider_with_models("bai", &["hy3"]);
+        disabled_key.accounts.push(ProviderApiAccount {
+            enabled: false,
+            ..enabled_account()
+        });
+        let mut switched_off = provider_with_models("bai", &["hy3"]);
+        switched_off.accounts.push(enabled_account());
+        switched_off.enabled = false;
+        for provider in [keyless, disabled_key, switched_off] {
+            config.custom_providers = vec![provider];
+            assert!(!config.provider_catalog_refresh_due(now));
+        }
+
+        let mut with_key = provider_with_models("bai", &["hy3"]);
+        with_key.accounts.push(enabled_account());
+        config.custom_providers = vec![with_key];
+        // Never refreshed: due immediately.
+        assert!(config.provider_catalog_refresh_due(now));
+
+        config.provider_catalog_refreshed_at = now;
+        assert!(!config.provider_catalog_refresh_due(now + PROVIDER_CATALOG_INTERVAL_SECS - 1));
+        assert!(config.provider_catalog_refresh_due(now + PROVIDER_CATALOG_INTERVAL_SECS));
+
+        // A stamp in the future is a clock that moved backwards, not a reason
+        // to stop refreshing forever.
+        config.provider_catalog_refreshed_at = now + 10_000;
+        assert!(config.provider_catalog_refresh_due(now));
     }
 
     #[test]

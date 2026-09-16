@@ -19,8 +19,10 @@
 //! repaint, which the GUI consumes whenever it runs again.
 
 use crate::config::AppConfig;
-use crate::gui::app::AppMessage;
+use crate::gui::app::{AppMessage, ProviderRefreshOutcome};
 use crate::ide_detector::IdeDetector;
+use crate::models_service::{fetch_provider_models, probe_provider_model};
+use crate::provider_verdicts::{classify_probe, VerdictStore};
 use crate::runtime_service::RuntimeService;
 use crate::update_check;
 use eframe::egui;
@@ -148,6 +150,191 @@ pub fn spawn_update_poller(tx: Sender<AppMessage>, ctx: egui::Context) {
     });
 }
 
+/// How often the provider round checks whether it is due. The round itself is
+/// daily (`PROVIDER_CATALOG_INTERVAL_SECS`); this is only the granularity at
+/// which a due one is noticed, which also decides how fast «Проверить модели»
+/// would fire if it ever fell back to the poller.
+const PROVIDER_POLL_INTERVAL: Duration = Duration::from_secs(120);
+
+/// True while a provider round is in flight. Process-global rather than GUI
+/// state because two owners can start one — the poller and the button — and a
+/// probe spends the provider's quota, so a race would spend it twice.
+static PROVIDER_ROUND_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Asks every configured provider what it serves, at most once a day
+/// (DEV_CONTRACTS §12a).
+///
+/// A self-scheduling tokio task, and that is the whole point of this rewrite:
+/// the first version was called once from `DelegatorApp::new`, which for a tray
+/// app means "on restart", not "daily". This module's opening paragraph says it
+/// outright — a hidden window is a frozen app — and the round walked straight
+/// into it. The release check next door is the shape that works.
+pub fn spawn_provider_catalog_poller(tx: Sender<AppMessage>, ctx: egui::Context) {
+    tokio::spawn(async move {
+        loop {
+            if stop_requested() {
+                return;
+            }
+            // Config is re-read from disk every tick, never cached: the user can
+            // add a provider or paste a key at any moment, and this task cannot
+            // see the GUI's copy.
+            // `load_readonly`, not `load`: the latter migrates and SAVES, and a
+            // timer that rewrites config.json every two minutes would race the
+            // GUI's own saves for nothing.
+            if AppConfig::load_readonly().provider_catalog_refresh_due(crate::config::unix_now()) {
+                run_provider_catalog_round(&tx, &ctx).await;
+            }
+            tokio::time::sleep(PROVIDER_POLL_INTERVAL).await;
+        }
+    });
+}
+
+/// One round: list what each provider offers, probe what has no live verdict,
+/// write both back. Shared by the daily poller and the «Проверить модели»
+/// button so there is exactly one implementation of what a round IS.
+///
+/// Writes config itself and bumps the generation counter, the same contract
+/// `toggle_delegator_enabled` uses: a worker that mutated config.json behind
+/// the GUI's back must say so, or the next checkbox click saves a stale copy
+/// over it.
+pub async fn run_provider_catalog_round(tx: &Sender<AppMessage>, ctx: &egui::Context) {
+    if PROVIDER_ROUND_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let outcomes = provider_catalog_round().await;
+    PROVIDER_ROUND_RUNNING.store(false, Ordering::SeqCst);
+    if stop_requested() {
+        return;
+    }
+    if tx
+        .send(AppMessage::ProviderCatalogRefreshed(outcomes))
+        .is_ok()
+    {
+        ctx.request_repaint();
+    }
+}
+
+/// True while a round is in flight, for the spinner and the disabled button.
+pub fn provider_round_running() -> bool {
+    PROVIDER_ROUND_RUNNING.load(Ordering::SeqCst)
+}
+
+async fn provider_catalog_round() -> Vec<ProviderRefreshOutcome> {
+    let mut config = AppConfig::load();
+    let jobs: Vec<(String, String, String)> = config
+        .custom_providers
+        .iter()
+        .filter(|provider| provider.enabled)
+        .map(|provider| {
+            (
+                provider.id.clone(),
+                provider.base_url.clone(),
+                config.first_enabled_provider_api_key(&provider.id),
+            )
+        })
+        .filter(|(_, base_url, key)| !base_url.is_empty() && !key.is_empty())
+        .collect();
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+
+    // Stamp the ATTEMPT before any request, exactly as the `opencode upgrade`
+    // round does: a provider that is permanently unreachable must not make
+    // every tick fire another probe round.
+    config.mark_provider_catalog_refresh(crate::config::unix_now());
+    // Say so at once, not at the end: the round takes seconds, and a checkbox
+    // saved meanwhile from the GUI's older copy would put the old stamp back —
+    // and the next tick would run the whole round again.
+    CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
+
+    // Custom providers ride the `opencode` proxy flag — the PowerShell runtime
+    // resolves them the same way, and a catalog probed from one egress while
+    // delegation leaves from another describes a route that does not exist.
+    let proxy = config.effective_proxy_for("opencode");
+    let runtime_home = crate::config::runtime_home_dir();
+    let live_ids: Vec<String> = config
+        .custom_providers
+        .iter()
+        .map(|provider| provider.id.clone())
+        .collect();
+
+    let mut store = VerdictStore::load(&runtime_home);
+    store.retain_providers(&live_ids);
+    let mut outcomes = Vec::new();
+    for (id, base_url, api_key) in jobs {
+        if stop_requested() {
+            break;
+        }
+        let (discovered, error) =
+            match fetch_provider_models(&base_url, &api_key, proxy.as_deref()).await {
+                Ok(ids) => (ids, None),
+                // A listing that failed to load changes nothing: the configured
+                // models stay authoritative. An outage must not empty a provider.
+                Err(error) => (Vec::new(), Some(error)),
+            };
+        let now = crate::config::unix_now();
+        // ENABLED models first, and that ordering is the whole value of the
+        // probe: an enabled model with no verdict is the one that costs a real
+        // rung of a delegation ladder to discover. The listing's own order put
+        // unknown premium models first and the per-round cap ate all eight of
+        // them, leaving the four the user actually ticked unasked — measured on
+        // the first live round. A model that is enabled but ABSENT from the
+        // listing is still asked: "withdrawn" is a verdict worth having.
+        let enabled: Vec<String> = config
+            .custom_provider(&id)
+            .map(|provider| provider.enabled_models.clone())
+            .unwrap_or_default();
+        let mut candidates: Vec<String> = enabled.clone();
+        candidates.extend(
+            discovered
+                .iter()
+                .filter(|model| !enabled.iter().any(|id| &id == model))
+                .cloned(),
+        );
+        let candidates = store.models_needing_probe(&id, &candidates, now);
+        let mut probed = 0usize;
+        let mut verdicts = 0usize;
+        for model in candidates {
+            if stop_requested() {
+                break;
+            }
+            let (status, body) =
+                probe_provider_model(&base_url, &api_key, &model, proxy.as_deref()).await;
+            probed += 1;
+            if let Some((verdict, reason)) = classify_probe(status, &body) {
+                store.record(
+                    &id,
+                    &model,
+                    verdict,
+                    status,
+                    reason,
+                    crate::config::unix_now(),
+                );
+                verdicts += 1;
+            }
+        }
+        outcomes.push(ProviderRefreshOutcome {
+            id,
+            discovered,
+            error,
+            probed,
+            verdicts,
+        });
+    }
+    store.save(&runtime_home);
+    // Discovery may only WIDEN the list the user chooses from (I8). It is
+    // written into config as it is NOW, never into `config` above: that copy
+    // was read before the network round, and saving it would undo whatever the
+    // user saved meanwhile — and the first round after a key is added runs
+    // exactly while they are ticking that provider's models.
+    let mut config = AppConfig::load();
+    for outcome in &outcomes {
+        config.add_known_provider_models(&outcome.id, &outcome.discovered);
+    }
+    CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
+    outcomes
+}
+
 /// Writes (or strips) the `DELEGATOR_HOOK_START/END` block of every configured
 /// IDE. Shared by the GUI and the tray so both produce the same result.
 pub fn apply_ide_hooks(config: &AppConfig) {
@@ -186,6 +373,33 @@ mod tests {
         assert!(stop_requested());
         if !was_stopped {
             STOP.store(false, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn only_one_provider_round_runs_at_a_time() {
+        // Two owners can start a round — the daily poller and «Проверить
+        // модели» — and a probe spends the provider's quota, so a race would
+        // spend it twice. The guard is process-global for exactly that reason.
+        assert!(!provider_round_running());
+        assert!(!PROVIDER_ROUND_RUNNING.swap(true, Ordering::SeqCst));
+        assert!(provider_round_running());
+        // A second starter sees the flag already set and gives up.
+        assert!(PROVIDER_ROUND_RUNNING.swap(true, Ordering::SeqCst));
+        PROVIDER_ROUND_RUNNING.store(false, Ordering::SeqCst);
+        assert!(!provider_round_running());
+    }
+
+    #[test]
+    fn the_poller_reads_config_without_writing_it() {
+        // `load` migrates and SAVES; a two-minute timer doing that would
+        // rewrite config.json all day and race the GUI's saves. This asserts
+        // the read-only path exists and answers the question a poller asks.
+        let config = AppConfig::load_readonly();
+        // No providers on a default/empty config means nothing is ever due, so
+        // a user who never added one pays nothing for this task existing.
+        if config.custom_providers.is_empty() {
+            assert!(!config.provider_catalog_refresh_due(crate::config::unix_now()));
         }
     }
 

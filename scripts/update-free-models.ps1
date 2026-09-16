@@ -164,10 +164,15 @@ function Get-DelegatorRatingRows {
             $script:DelegateRatingsVersion = [int]$parsed.version
             foreach ($entry in @($parsed.models)) {
                 if (-not $entry -or [string]::IsNullOrWhiteSpace([string]$entry.match)) { continue }
-                if ($null -eq $entry.dpr) { continue }
+                # An `unrated` row (dpr null) is KEPT, and that is the point: it is a
+                # statement that THIS id is unknown, so it must shadow a shorter rated
+                # substring of itself. Dropping it here let `glm-5.3-flash` inherit the
+                # 150 of `glm-5.3`, and a 100-DPR model was handed deep work.
+                $unrated = ($null -eq $entry.dpr)
                 $rows += [pscustomobject]@{
-                    match = ([string]$entry.match).ToLowerInvariant()
-                    dpr   = [int]$entry.dpr
+                    match   = ([string]$entry.match).ToLowerInvariant()
+                    dpr     = $(if ($unrated) { $null } else { [int]$entry.dpr })
+                    unrated = $unrated
                 }
             }
         }
@@ -181,7 +186,12 @@ function Get-DelegatorModelRating {
     if ([string]::IsNullOrWhiteSpace($ModelId)) { return $null }
     $name = ([string]$ModelId).ToLowerInvariant().Replace("_", "-").Replace(" ", "-")
     foreach ($row in (Get-DelegatorRatingRows)) {
-        if ($name.Contains($row.match)) { return [int]$row.dpr }
+        if (-not $name.Contains($row.match)) { continue }
+        # The FIRST hit is the most specific one (rows are sorted longest-first).
+        # When it is an `unrated` row the answer is "no number", never the number
+        # of some shorter row that happens to be a substring of it.
+        if ($row.unrated) { return $null }
+        return [int]$row.dpr
     }
     return $null
 }

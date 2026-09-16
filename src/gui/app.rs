@@ -1,4 +1,4 @@
-use crate::config::{is_supported_proxy_url, unix_now, AppConfig};
+use crate::config::{self, is_supported_proxy_url, unix_now, AppConfig};
 use crate::dependency_service::DependencyStatus;
 use crate::gui::background;
 use crate::gui::benchmark::{
@@ -18,6 +18,7 @@ use crate::ide_detector::IdeDetector;
 use crate::models_service::{
     fetch_gemini_models, fetch_opencode_models, ModelInfo, OpenCodeCatalog,
 };
+use crate::provider_verdicts::VerdictStore;
 use crate::runtime_service::RuntimeService;
 use crate::update_check::{self, UpdateStatus};
 use eframe::egui;
@@ -41,6 +42,17 @@ const APP_TITLE: &str = concat!("Delegator v", env!("CARGO_PKG_VERSION"));
 /// together with `DELEGATOR_UPDATE_API_URL`, see `crate::update_check`).
 const SELFTEST_UPDATE_ENV: &str = "DELEGATOR_SELFTEST_UPDATE";
 
+/// What one provider's refresh found. `discovered` is empty when the listing
+/// itself failed — which changes nothing on purpose: the configured models stay
+/// authoritative, so an outage cannot empty a provider.
+pub struct ProviderRefreshOutcome {
+    pub id: String,
+    pub discovered: Vec<String>,
+    pub error: Option<String>,
+    pub probed: usize,
+    pub verdicts: usize,
+}
+
 pub enum AppMessage {
     /// New status line from the core supervisor thread.
     CoreStatus(String),
@@ -54,6 +66,8 @@ pub enum AppMessage {
     OpenCodeInstallStep(InstallStep),
     /// The 8-hourly GitHub release check finished.
     UpdateChecked(UpdateStatus),
+    /// One daily provider catalog + probe round finished (§12a).
+    ProviderCatalogRefreshed(Vec<ProviderRefreshOutcome>),
     /// Last stored benchmark report (or the reason it could not be read).
     BenchmarkFetched(Result<Option<BenchmarkReport>, String>),
     /// Report written to the Desktop: the paths, or why it failed.
@@ -80,13 +94,31 @@ enum UpdateJobState {
 #[derive(Clone, Copy, PartialEq)]
 enum SelectedTab {
     Ides,
-    ApiKeys,
-    GeminiModels,
-    OpenCodeModels,
+    Api,
     Stats,
     Thinking,
     Benchmark,
     Proxies,
+}
+
+/// Which provider's panel the «API» tab is showing. A `String` for the
+/// user-added ones because they have no compile-time identity; the two built-ins
+/// get variants of their own because they have storage of their own and cannot
+/// be removed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ApiProvider {
+    Google,
+    OpenCode,
+    Custom(String),
+    Add,
+}
+
+/// Keys or models. Every provider has both, so the switch is shared rather than
+/// repeated per panel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ApiSection {
+    Keys,
+    Models,
 }
 
 #[derive(Clone)]
@@ -129,6 +161,17 @@ pub struct DelegatorApp {
     opencode_account_drafts: Vec<ApiAccountDraft>,
     new_opencode_label: String,
     new_opencode_key: String,
+    api_provider: ApiProvider,
+    api_section: ApiSection,
+    /// Edit drafts per user-added provider, keyed by provider id. Rebuilt by
+    /// `sync_provider_drafts` whenever they stop matching the stored accounts.
+    provider_account_drafts: HashMap<String, Vec<ApiAccountDraft>>,
+    new_provider_account_label: String,
+    new_provider_account_key: String,
+    new_provider_id: String,
+    new_provider_label: String,
+    new_provider_base_url: String,
+    new_provider_model: String,
     status_message: String,
 
     // Models Lists
@@ -206,6 +249,9 @@ pub struct DelegatorApp {
     egui_ctx: egui::Context,
     is_loading_gemini: bool,
     is_loading_opencode: bool,
+    /// Verdicts as of the last read; re-read after every round so the models
+    /// list shows what the provider actually said.
+    provider_verdicts: VerdictStore,
     tray_rx: Receiver<TrayAction>,
     quitting: bool,
     /// «Выйти» was accepted: paint the farewell screen instead of the tabs.
@@ -263,6 +309,16 @@ impl DelegatorApp {
             opencode_account_drafts,
             new_opencode_label: String::new(),
             new_opencode_key: String::new(),
+            provider_verdicts: VerdictStore::load(&crate::config::runtime_home_dir()),
+            api_provider: ApiProvider::Google,
+            api_section: ApiSection::Keys,
+            provider_account_drafts: HashMap::new(),
+            new_provider_account_label: String::new(),
+            new_provider_account_key: String::new(),
+            new_provider_id: String::new(),
+            new_provider_label: String::new(),
+            new_provider_base_url: String::new(),
+            new_provider_model: String::new(),
             status_message: runtime_status,
             gemini_models: Vec::new(),
             opencode_models: Vec::new(),
@@ -345,6 +401,7 @@ impl DelegatorApp {
             background::spawn_core_supervisor(runtime, app.tx.clone(), cc.egui_ctx.clone());
         }
         background::spawn_update_poller(app.tx.clone(), cc.egui_ctx.clone());
+        background::spawn_provider_catalog_poller(app.tx.clone(), cc.egui_ctx.clone());
 
         app
     }
@@ -496,6 +553,20 @@ impl DelegatorApp {
             let result = upgrade_opencode_cli(cli).await;
             let _ = tx.send(AppMessage::OpenCodeCliJob(CliJob::Upgrade, result));
             ctx.request_repaint();
+        });
+    }
+
+    /// «Проверить модели». The round itself lives in `gui::background`,
+    /// alongside the daily poller that also starts it — a hidden window is a
+    /// frozen app, so nothing that has to happen on a schedule may live here.
+    fn start_provider_catalog_refresh(&mut self) {
+        if background::provider_round_running() {
+            return;
+        }
+        let tx = self.tx.clone();
+        let ctx = self.egui_ctx.clone();
+        tokio::spawn(async move {
+            background::run_provider_catalog_round(&tx, &ctx).await;
         });
     }
 
@@ -682,6 +753,1006 @@ impl DelegatorApp {
                 .any(|model| model.starts_with("opencode/"))
                 && !self.dependencies.opencode_cli_available())
     }
+
+    /// Google AI Studio keys. Body unchanged from the old «API-ключи» tab, which
+    /// held Google and OpenCode side by side; each provider now owns its panel.
+    fn draw_google_keys(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.heading("Google AI Studio");
+            ui.label(
+                "Ключи нескольких аккаунтов переключаются автоматически при исчерпании квоты.",
+            );
+            if !self
+                .config
+                .google_accounts
+                .iter()
+                .any(|account| account.enabled)
+            {
+                ui.colored_label(self.theme.warning_color(), "Нет включённого Google-ключа.");
+            }
+
+            let mut save_account: Option<(String, String, String, bool)> = None;
+            let mut remove_account: Option<String> = None;
+            for draft in &mut self.google_account_drafts {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut draft.enabled, "Включён");
+                        ui.strong("Сохранённый Google-аккаунт");
+                    });
+                    ui.label("Название аккаунта:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.label)
+                            .desired_width(ui.available_width()),
+                    );
+                    ui.label("Новый ключ (пусто — оставить текущий):");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.new_key)
+                            .password(true)
+                            .desired_width(ui.available_width()),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Сохранить изменения").clicked() {
+                            save_account = Some((
+                                draft.id.clone(),
+                                draft.label.clone(),
+                                draft.new_key.clone(),
+                                draft.enabled,
+                            ));
+                        }
+                        if ui
+                            .button(
+                                egui::RichText::new("Удалить ключ").color(self.theme.error_color()),
+                            )
+                            .clicked()
+                        {
+                            remove_account = Some(draft.id.clone());
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+            }
+            if let Some((id, label, new_key, enabled)) = save_account {
+                let new_key = if new_key.trim().is_empty() {
+                    None
+                } else {
+                    Some(new_key.as_str())
+                };
+                match self
+                    .config
+                    .update_google_account(&id, &label, new_key, enabled)
+                {
+                    Ok(()) => {
+                        if let Some(draft) = self
+                            .google_account_drafts
+                            .iter_mut()
+                            .find(|draft| draft.id == id)
+                        {
+                            draft.new_key.clear();
+                        }
+                        self.status_message = "Google-аккаунт сохранён".to_string();
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
+            if let Some(id) = remove_account {
+                self.config.remove_google_account(&id);
+                self.google_account_drafts.retain(|draft| draft.id != id);
+                self.status_message = "Google-ключ удалён".to_string();
+            }
+
+            ui.group(|ui| {
+                ui.strong("Добавить Google-ключ");
+                ui.label("Название аккаунта:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_google_label)
+                        .hint_text("Например: Рабочий Google")
+                        .desired_width(ui.available_width()),
+                );
+                ui.label("API-ключ Google AI Studio:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_google_key)
+                        .password(true)
+                        .desired_width(ui.available_width()),
+                );
+                if ui.button("Добавить Google-ключ").clicked() {
+                    match self
+                        .config
+                        .add_google_account(&self.new_google_label, &self.new_google_key)
+                    {
+                        Ok(()) => {
+                            if let Some(account) = self.config.google_accounts.last() {
+                                self.google_account_drafts.push(ApiAccountDraft {
+                                    id: account.id.clone(),
+                                    label: account.label.clone(),
+                                    new_key: String::new(),
+                                    enabled: account.enabled,
+                                });
+                            }
+                            self.new_google_label.clear();
+                            self.new_google_key.clear();
+                            self.status_message = "Google-ключ добавлен".to_string();
+                        }
+                        Err(err) => self.status_message = err,
+                    }
+                }
+            });
+        });
+    }
+
+    /// OpenCode / OpenRouter keys. One key authorises both the CLI and the direct
+    /// OpenRouter path, which is why it never moved into `custom_providers`.
+    fn draw_opencode_keys(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(16.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.heading("OpenCode / OpenRouter");
+            ui.label("Ключи нужны для моделей openrouter/*; модели opencode/* авторизует сам OpenCode CLI.");
+
+            let mut save_opencode: Option<(String, String, String, bool)> = None;
+            let mut remove_opencode: Option<String> = None;
+            for draft in &mut self.opencode_account_drafts {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut draft.enabled, "Включён");
+                        ui.strong("Сохранённый OpenCode/OpenRouter-аккаунт");
+                    });
+                    ui.label("Название аккаунта:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.label)
+                            .desired_width(ui.available_width()),
+                    );
+                    ui.label("Новый ключ (пусто — оставить текущий):");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.new_key)
+                            .password(true)
+                            .desired_width(ui.available_width()),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Сохранить изменения").clicked() {
+                            save_opencode = Some((
+                                draft.id.clone(),
+                                draft.label.clone(),
+                                draft.new_key.clone(),
+                                draft.enabled,
+                            ));
+                        }
+                        if ui
+                            .button(egui::RichText::new("Удалить ключ").color(self.theme.error_color()))
+                            .clicked()
+                        {
+                            remove_opencode = Some(draft.id.clone());
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+            }
+
+            if let Some((id, label, new_key, enabled)) = save_opencode {
+                let new_key = if new_key.trim().is_empty() {
+                    None
+                } else {
+                    Some(new_key.as_str())
+                };
+                match self.config.update_opencode_account(
+                    &id,
+                    &label,
+                    new_key,
+                    enabled,
+                ) {
+                    Ok(()) => {
+                        if let Some(draft) = self
+                            .opencode_account_drafts
+                            .iter_mut()
+                            .find(|draft| draft.id == id)
+                        {
+                            draft.new_key.clear();
+                        }
+                        self.status_message =
+                            "OpenCode/OpenRouter-аккаунт сохранён".to_string();
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
+            if let Some(id) = remove_opencode {
+                self.config.remove_opencode_account(&id);
+                self.opencode_account_drafts
+                    .retain(|draft| draft.id != id);
+                self.status_message =
+                    "OpenCode/OpenRouter-ключ удалён".to_string();
+            }
+
+            ui.group(|ui| {
+                ui.strong("Добавить OpenCode/OpenRouter-ключ");
+                ui.label("Название аккаунта:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_opencode_label)
+                        .hint_text("Например: Основной OpenRouter")
+                        .desired_width(ui.available_width()),
+                );
+                ui.label("API-ключ:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_opencode_key)
+                        .password(true)
+                        .desired_width(ui.available_width()),
+                );
+                if ui.button("Добавить OpenCode/OpenRouter-ключ").clicked() {
+                    match self.config.add_opencode_account(
+                        &self.new_opencode_label,
+                        &self.new_opencode_key,
+                    ) {
+                        Ok(()) => {
+                            if let Some(account) = self.config.opencode_accounts.last()
+                            {
+                                self.opencode_account_drafts.push(ApiAccountDraft {
+                                    id: account.id.clone(),
+                                    label: account.label.clone(),
+                                    new_key: String::new(),
+                                    enabled: account.enabled,
+                                });
+                            }
+                            self.new_opencode_label.clear();
+                            self.new_opencode_key.clear();
+                            self.status_message =
+                                "OpenCode/OpenRouter-ключ добавлен".to_string();
+                        }
+                        Err(err) => self.status_message = err,
+                    }
+                }
+            });
+        });
+    }
+
+    /// The Gemini model allowlist — the old «Модели Gemini» tab.
+    fn draw_gemini_models(&mut self, ui: &mut egui::Ui) {
+        ui.label("Delegator использует только отмеченные модели Google.");
+        if let Some(limit) = self.gemini_limit.clone() {
+            limit_banner(ui, &self.theme, "Google AI Studio", &limit);
+        }
+        ui.horizontal(|ui| {
+            ui.label("Поиск:");
+            ui.text_edit_singleline(&mut self.gemini_search);
+            if self.is_loading_gemini {
+                ui.spinner();
+            }
+        });
+
+        ui.separator();
+
+        // `auto_shrink` off horizontally: without it the area is only
+        // as wide as its widest row, so widening the window leaves
+        // the scrollbar stranded in the middle instead of at the
+        // right edge where it belongs.
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for model in &self.gemini_models {
+                    if !self.gemini_search.is_empty()
+                        && !model
+                            .id
+                            .to_lowercase()
+                            .contains(&self.gemini_search.to_lowercase())
+                    {
+                        continue;
+                    }
+
+                    let mut checked = self.config.enabled_gemini_models.contains(&model.id);
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut checked, &model.name).changed() {
+                            if checked {
+                                self.config.enabled_gemini_models.push(model.id.clone());
+                            } else {
+                                self.config
+                                    .enabled_gemini_models
+                                    .retain(|id| id != &model.id);
+                            }
+                            self.config.save();
+                        }
+                        ui.colored_label(self.theme.weak_text_color(), format!("({})", model.id));
+                    });
+                }
+            });
+    }
+
+    /// The OpenCode model allowlist — the old «Модели OpenCode» tab.
+    fn draw_opencode_models(&mut self, ui: &mut egui::Ui) {
+        ui.label("Список берётся из OpenCode CLI: новые бесплатные модели включаются сами, сильные — сверху.");
+        if let Some(limit) = self.opencode_limit.clone() {
+            limit_banner(ui, &self.theme, "OpenCode", &limit);
+        }
+        let warning = self.theme.warning_color();
+        let success = self.theme.success_color();
+        let weak = self.theme.weak_text_color();
+        let cli_required = self
+            .config
+            .enabled_opencode_models
+            .iter()
+            .any(|model| model.starts_with("opencode/"));
+        // Deferred so the button handlers can take &mut self after
+        // the layout closures have released their borrows.
+        let mut install_request = false;
+        let mut upgrade_request = false;
+        let mut redetect_request = false;
+        let mut open_link: Option<&'static str> = None;
+        if cli_required && !self.dependencies.opencode_cli_available() {
+            let fill =
+                egui::Color32::from_rgba_unmultiplied(warning.r(), warning.g(), warning.b(), 28);
+            let installing = matches!(self.opencode_install, Some(InstallState::Running(_)));
+            // Without either installer nothing can be automated —
+            // the manual links are then the only way forward.
+            let can_install =
+                self.dependencies.winget_available() || self.dependencies.npm_available();
+            let failed = matches!(self.opencode_install, Some(InstallState::Done(Err(_))));
+            egui::Frame::none()
+                .fill(fill)
+                .stroke(egui::Stroke::new(1.5, warning))
+                .rounding(6.0)
+                .inner_margin(10.0)
+                .show(ui, |ui| {
+                    ui.colored_label(warning, "Нужен OpenCode CLI для моделей opencode/*.");
+                    ui.horizontal(|ui| {
+                        let install = ui
+                            .add_enabled(
+                                can_install && !installing,
+                                egui::Button::new("Установить"),
+                            )
+                            .on_hover_text(
+                                "winget install --id SST.opencode\nnpm install -g opencode-ai",
+                            )
+                            .on_disabled_hover_text(
+                                "Не найдены ни winget, ни npm — установите вручную",
+                            );
+                        if install.clicked() {
+                            install_request = true;
+                        }
+                        if ui
+                            .add_enabled(!installing, egui::Button::new("Проверить снова"))
+                            .clicked()
+                        {
+                            redetect_request = true;
+                        }
+                        match &self.opencode_install {
+                            Some(InstallState::Running(step)) => {
+                                ui.spinner();
+                                ui.label(step.status_line());
+                            }
+                            Some(InstallState::Done(Ok(()))) => {
+                                ui.colored_label(success, "Готово");
+                            }
+                            Some(InstallState::Done(Err(reason))) => {
+                                ui.colored_label(warning, "Не удалось установить")
+                                    .on_hover_text(reason.as_str());
+                            }
+                            None => {}
+                        }
+                    });
+                    ui.colored_label(weak, "Windows может запросить подтверждение (UAC).");
+                    if failed || !can_install {
+                        ui.horizontal(|ui| {
+                            if ui.link("Скачать Node.js").clicked() {
+                                open_link = Some(NODEJS_DOWNLOAD_URL);
+                            }
+                            if ui.link("Сайт OpenCode").clicked() {
+                                open_link = Some(OPENCODE_SITE_URL);
+                            }
+                        });
+                    }
+                });
+            ui.add_space(8.0);
+        } else if let Some(path) = &self.dependencies.opencode_cli_path {
+            ui.colored_label(success, "OpenCode CLI установлен")
+                .on_hover_text(path.display().to_string());
+        }
+        if self.dependencies.opencode_cli_available() {
+            let upgrading = matches!(self.opencode_upgrade, Some(CliJobState::Running));
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!upgrading, egui::Button::new("Обновить CLI"))
+                    .clicked()
+                {
+                    upgrade_request = true;
+                }
+                match &self.opencode_upgrade {
+                    Some(CliJobState::Running) => {
+                        ui.spinner();
+                        ui.label("Обновляю…");
+                    }
+                    Some(CliJobState::Done(Ok(()))) => {
+                        ui.colored_label(success, "Обновлено");
+                    }
+                    Some(CliJobState::Done(Err(reason))) => {
+                        ui.colored_label(warning, "Не удалось обновить")
+                            .on_hover_text(reason.as_str());
+                    }
+                    None => {}
+                }
+            });
+        }
+        if redetect_request {
+            self.dependencies = DependencyStatus::detect();
+        }
+        if install_request {
+            self.start_opencode_install();
+        }
+        if upgrade_request {
+            self.start_opencode_upgrade();
+        }
+        if let Some(url) = open_link {
+            open_url(url);
+        }
+        if self.config.enabled_opencode_models.is_empty() {
+            ui.colored_label(self.theme.warning_color(), "Не выбрана ни одна модель.");
+        }
+        if self.opencode_catalog_is_fallback {
+            ui.colored_label(
+                self.theme.warning_color(),
+                "Список не получен от OpenCode CLI — показан встроенный минимум.",
+            )
+            .on_hover_text(
+                "Запрос списка к CLI не успел или не удался, поэтому здесь только \
+                 встроенные модели OpenCode Zen плюс те, что вы уже включили. \
+                 Ваш выбор не потерян и делегирование работает как обычно. \
+                 Нажмите «Обновить CLI» или откройте вкладку заново.",
+            );
+        }
+        ui.horizontal(|ui| {
+            ui.label("Поиск:");
+            ui.text_edit_singleline(&mut self.opencode_search);
+            if self.is_loading_opencode {
+                ui.spinner();
+            }
+        });
+
+        ui.separator();
+
+        // `auto_shrink` off horizontally: without it the area is only
+        // as wide as its widest row, so widening the window leaves
+        // the scrollbar stranded in the middle instead of at the
+        // right edge where it belongs.
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for model in &self.opencode_models {
+                    if !self.opencode_search.is_empty()
+                        && !model
+                            .id
+                            .to_lowercase()
+                            .contains(&self.opencode_search.to_lowercase())
+                    {
+                        continue;
+                    }
+
+                    let mut checked = self.config.enabled_opencode_models.contains(&model.id);
+                    ui.horizontal(|ui| {
+                        let row = ui
+                            .checkbox(&mut checked, &model.name)
+                            .on_hover_text(crate::gui::opencode_setup::dpr_hint(&model.id));
+                        if row.changed() {
+                            if checked {
+                                self.config.enabled_opencode_models.push(model.id.clone());
+                            } else {
+                                self.config
+                                    .enabled_opencode_models
+                                    .retain(|id| id != &model.id);
+                            }
+                            self.config.save();
+                        }
+
+                        if crate::models_service::is_custom_provider_model(&model.id) {
+                            ui.colored_label(self.theme.accent_color(), "[СВОЙ]")
+                                .on_hover_text(format!(
+                                    "Провайдер из вашей конфигурации OpenCode: {}. \
+                                 Работает и в обычном делегировании, и в бенчмарке.",
+                                    model.provider
+                                ));
+                        } else if model.is_free {
+                            ui.colored_label(self.theme.success_color(), "[FREE]");
+                        }
+                        ui.colored_label(self.theme.weak_text_color(), format!("({})", model.id));
+                    });
+                }
+            });
+    }
+
+    /// The «API» tab: one button per provider, then that provider's keys or its
+    /// models. Before this the same three things lived in three top-level tabs
+    /// («API-ключи», «Модели Gemini», «Модели OpenCode»), so adding a fourth
+    /// provider meant adding two more tabs to a row that already had to wrap.
+    fn draw_api_tab(&mut self, ui: &mut egui::Ui) {
+        let providers = self.api_provider_buttons();
+        ui.horizontal_wrapped(|ui| {
+            for (key, label, warn) in &providers {
+                let selected = &self.api_provider == key;
+                let mut text = egui::RichText::new(label);
+                if *warn && !selected {
+                    text = text.color(self.theme.warning_color());
+                }
+                if ui.selectable_label(selected, text).clicked() {
+                    self.api_provider = key.clone();
+                }
+            }
+            if ui
+                .selectable_label(self.api_provider == ApiProvider::Add, "+ Добавить")
+                .clicked()
+            {
+                self.api_provider = ApiProvider::Add;
+            }
+        });
+
+        // A provider the user removed while looking at it would otherwise leave
+        // the tab pointing at nothing.
+        if !providers
+            .iter()
+            .any(|(key, _, _)| key == &self.api_provider)
+            && self.api_provider != ApiProvider::Add
+        {
+            self.api_provider = ApiProvider::Google;
+        }
+
+        if self.api_provider != ApiProvider::Add {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(self.api_section == ApiSection::Keys, "Ключи")
+                    .clicked()
+                {
+                    self.api_section = ApiSection::Keys;
+                }
+                if ui
+                    .selectable_label(self.api_section == ApiSection::Models, "Модели")
+                    .clicked()
+                {
+                    self.api_section = ApiSection::Models;
+                }
+                ui.separator();
+                if ui.button("Обновить списки моделей").clicked() {
+                    self.refresh_models();
+                }
+                ui.colored_label(self.theme.weak_text_color(), self.status_message.as_str());
+            });
+        }
+        ui.separator();
+
+        match (self.api_provider.clone(), self.api_section) {
+            (ApiProvider::Add, _) => self.draw_provider_picker(ui),
+            (ApiProvider::Google, ApiSection::Keys) => self.draw_google_keys(ui),
+            (ApiProvider::Google, ApiSection::Models) => self.draw_gemini_models(ui),
+            (ApiProvider::OpenCode, ApiSection::Keys) => self.draw_opencode_keys(ui),
+            (ApiProvider::OpenCode, ApiSection::Models) => self.draw_opencode_models(ui),
+            (ApiProvider::Custom(id), ApiSection::Keys) => self.draw_custom_keys(ui, &id),
+            (ApiProvider::Custom(id), ApiSection::Models) => self.draw_custom_models(ui, &id),
+        }
+    }
+
+    /// One row per provider: its key, its button label, and whether it wants
+    /// attention (no usable key). The two built-ins are always present — they
+    /// own storage of their own and cannot be removed.
+    fn api_provider_buttons(&self) -> Vec<(ApiProvider, String, bool)> {
+        api_provider_rows(&self.config)
+    }
+
+    /// «+ Добавить»: the presets, then a hand-written provider. Adding one only
+    /// creates the row — nothing is called until a key is pasted, so a preset
+    /// whose free tier has changed costs a listing, not a failed delegation.
+    fn draw_provider_picker(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.heading("Добавить провайдера");
+            ui.label(
+                "Любой сервис с OpenAI-совместимым /chat/completions. \
+                 Ключ вставляется здесь — настраивать OpenCode CLI не нужно.",
+            );
+            ui.add_space(10.0);
+
+            let mut add_request: Option<(String, String, String, Vec<String>)> = None;
+            for preset in config::PROVIDER_PRESETS {
+                let already = self.config.custom_provider(preset.id).is_some();
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.strong(preset.label);
+                        ui.colored_label(self.theme.weak_text_color(), preset.base_url);
+                    });
+                    ui.colored_label(
+                        self.theme.weak_text_color(),
+                        format!("Модели: {}", preset.models.join(", ")),
+                    );
+                    if already {
+                        ui.colored_label(self.theme.success_color(), "Уже добавлен");
+                    } else if ui.button(format!("Добавить {}", preset.label)).clicked() {
+                        add_request = Some((
+                            preset.id.to_string(),
+                            preset.label.to_string(),
+                            preset.base_url.to_string(),
+                            preset.models.iter().map(|m| m.to_string()).collect(),
+                        ));
+                    }
+                });
+                ui.add_space(6.0);
+            }
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.strong("Свой провайдер");
+            ui.horizontal(|ui| {
+                ui.label("Идентификатор:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_provider_id)
+                        .desired_width(140.0)
+                        .hint_text("bai"),
+                );
+                ui.label("Название:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_provider_label).desired_width(160.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Адрес API:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_provider_base_url)
+                        .desired_width(320.0)
+                        .hint_text("https://api.example.com/v1"),
+                );
+            });
+            ui.colored_label(
+                self.theme.weak_text_color(),
+                "Идентификатор становится префиксом моделей: bai/hy3.",
+            );
+            if ui.button("Добавить провайдера").clicked() {
+                add_request = Some((
+                    self.new_provider_id.clone(),
+                    self.new_provider_label.clone(),
+                    self.new_provider_base_url.clone(),
+                    Vec::new(),
+                ));
+            }
+
+            if let Some((id, label, base_url, models)) = add_request {
+                match self
+                    .config
+                    .add_custom_provider(&id, &label, &base_url, &models)
+                {
+                    Ok(()) => {
+                        let id = id.trim().to_ascii_lowercase();
+                        self.new_provider_id.clear();
+                        self.new_provider_label.clear();
+                        self.new_provider_base_url.clear();
+                        self.status_message = format!("Провайдер «{id}» добавлен");
+                        self.api_provider = ApiProvider::Custom(id);
+                        self.api_section = ApiSection::Keys;
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
+            ui.add_space(8.0);
+            ui.colored_label(self.theme.weak_text_color(), self.status_message.as_str());
+        });
+    }
+
+    /// Keys of one user-added provider. Same shape as the two built-in key
+    /// panels on purpose: one place to learn, three providers.
+    fn draw_custom_keys(&mut self, ui: &mut egui::Ui, provider_id: &str) {
+        let Some(provider) = self.config.custom_provider(provider_id) else {
+            return;
+        };
+        let title = if provider.label.is_empty() {
+            provider.id.clone()
+        } else {
+            provider.label.clone()
+        };
+        let base_url = provider.base_url.clone();
+        let has_enabled_key = provider.accounts.iter().any(|account| account.enabled);
+        let mut provider_enabled = provider.enabled;
+        self.sync_provider_drafts(provider_id);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.heading(&title);
+            ui.colored_label(self.theme.weak_text_color(), &base_url);
+            ui.label("Ключи хранятся только здесь и шифруются Windows DPAPI.");
+            if ui
+                .checkbox(&mut provider_enabled, "Провайдер включён")
+                .changed()
+            {
+                self.config
+                    .set_custom_provider_enabled(provider_id, provider_enabled);
+            }
+            if !has_enabled_key {
+                ui.colored_label(
+                    self.theme.warning_color(),
+                    "Нет включённого ключа — модели этого провайдера не участвуют в делегировании.",
+                );
+            }
+            ui.add_space(8.0);
+
+            let mut save_account: Option<(String, String, String, bool)> = None;
+            let mut remove_account: Option<String> = None;
+            let drafts = self
+                .provider_account_drafts
+                .entry(provider_id.to_string())
+                .or_default();
+            for draft in drafts.iter_mut() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut draft.enabled, "Включён");
+                        ui.label("Название:");
+                        ui.add(egui::TextEdit::singleline(&mut draft.label).desired_width(180.0));
+                    });
+                    ui.label("Новый ключ (пусто — оставить текущий):");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.new_key)
+                            .password(true)
+                            .desired_width(320.0),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Сохранить").clicked() {
+                            save_account = Some((
+                                draft.id.clone(),
+                                draft.label.clone(),
+                                draft.new_key.clone(),
+                                draft.enabled,
+                            ));
+                        }
+                        if ui
+                            .button(
+                                egui::RichText::new("Удалить ключ").color(self.theme.error_color()),
+                            )
+                            .clicked()
+                        {
+                            remove_account = Some(draft.id.clone());
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+            }
+
+            if let Some((id, label, new_key, enabled)) = save_account {
+                let key = if new_key.trim().is_empty() {
+                    None
+                } else {
+                    Some(new_key.as_str())
+                };
+                match self
+                    .config
+                    .update_provider_account(provider_id, &id, &label, key, enabled)
+                {
+                    Ok(()) => {
+                        if let Some(drafts) = self.provider_account_drafts.get_mut(provider_id) {
+                            if let Some(draft) = drafts.iter_mut().find(|draft| draft.id == id) {
+                                draft.new_key.clear();
+                            }
+                        }
+                        self.status_message = "Ключ сохранён".to_string();
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
+            if let Some(id) = remove_account {
+                self.config.remove_provider_account(provider_id, &id);
+                if let Some(drafts) = self.provider_account_drafts.get_mut(provider_id) {
+                    drafts.retain(|draft| draft.id != id);
+                }
+                self.status_message = "Ключ удалён".to_string();
+            }
+
+            ui.add_space(8.0);
+            ui.strong("Добавить ключ");
+            ui.horizontal(|ui| {
+                ui.label("Название:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_provider_account_label)
+                        .desired_width(180.0),
+                );
+            });
+            ui.label("API-ключ:");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.new_provider_account_key)
+                    .password(true)
+                    .desired_width(320.0),
+            );
+            if ui.button("Добавить ключ").clicked() {
+                let label = if self.new_provider_account_label.trim().is_empty() {
+                    format!("{title} 1")
+                } else {
+                    self.new_provider_account_label.clone()
+                };
+                match self.config.add_provider_account(
+                    provider_id,
+                    &label,
+                    &self.new_provider_account_key.clone(),
+                ) {
+                    Ok(()) => {
+                        self.new_provider_account_label.clear();
+                        self.new_provider_account_key.clear();
+                        self.provider_account_drafts.remove(provider_id);
+                        self.status_message = "Ключ добавлен".to_string();
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
+
+            ui.add_space(14.0);
+            ui.separator();
+            if ui
+                .button(egui::RichText::new("Удалить провайдера").color(self.theme.error_color()))
+                .clicked()
+            {
+                self.config.remove_custom_provider(provider_id);
+                self.provider_account_drafts.remove(provider_id);
+                self.api_provider = ApiProvider::Google;
+                self.status_message = format!("Провайдер «{provider_id}» удалён");
+            }
+        });
+    }
+
+    /// Models of one user-added provider. The list is `known_models` and the
+    /// ticks are `enabled_models`: I8 says the GUI selection is the mandatory
+    /// allowlist, so discovery may extend the list but never tick a box.
+    fn draw_custom_models(&mut self, ui: &mut egui::Ui, provider_id: &str) {
+        let Some(provider) = self.config.custom_provider(provider_id) else {
+            return;
+        };
+        let known: Vec<String> = provider.known_models.clone();
+        let enabled: Vec<String> = provider.enabled_models.clone();
+        let base_url = provider.base_url.clone();
+
+        ui.label(
+            "Отмеченные модели участвуют в делегировании. \
+             Идентификатор в пуле — «провайдер/модель».",
+        );
+        ui.colored_label(self.theme.weak_text_color(), &base_url);
+        // Counted the way the RUNTIME counts: ticked, reachable (the provider
+        // has a key), and not refused by the provider itself. A number that
+        // ignored the verdicts would claim models that never get a turn.
+        let counted_now = unix_now();
+        let in_pool = self
+            .config
+            .enabled_custom_provider_models()
+            .iter()
+            .filter(|id| id.starts_with(&format!("{provider_id}/")))
+            .filter(|id| {
+                id.split_once('/').is_some_and(|(_, model)| {
+                    self.provider_verdicts
+                        .get(provider_id, model, counted_now)
+                        .is_none_or(|verdict| verdict.verdict.usable())
+                })
+            })
+            .count();
+        ui.colored_label(
+            self.theme.weak_text_color(),
+            format!("Сейчас участвуют в делегировании: {in_pool}"),
+        );
+        let mut recheck = false;
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !background::provider_round_running(),
+                    egui::Button::new("Проверить модели"),
+                )
+                .on_hover_text(
+                    "Спрашивает провайдера, что он отдаёт по этому ключу. \
+                     Проверка сама раз в сутки; ответ кэшируется, \
+                     отрицательный — на 48 часов.",
+                )
+                .clicked()
+            {
+                recheck = true;
+            }
+            if background::provider_round_running() {
+                ui.spinner();
+            }
+        });
+        ui.separator();
+        let now = unix_now();
+
+        let mut toggle: Option<(String, bool)> = None;
+        let mut add_model = false;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if known.is_empty() {
+                    ui.colored_label(
+                        self.theme.weak_text_color(),
+                        "Список пуст — добавьте модель вручную.",
+                    );
+                }
+                for model in &known {
+                    let mut checked = enabled.iter().any(|id| id == model);
+                    let verdict = self.provider_verdicts.get(provider_id, model, now);
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut checked, model).changed() {
+                            toggle = Some((model.clone(), checked));
+                        }
+                        ui.colored_label(
+                            self.theme.weak_text_color(),
+                            format!("({provider_id}/{model})"),
+                        );
+                        // The provider's own answer, quoted. A ticked model
+                        // that will only ever reply 403 looks identical to a
+                        // working one until something says so.
+                        if let Some(verdict) = verdict {
+                            let color = if verdict.verdict.usable() {
+                                self.theme.success_color()
+                            } else {
+                                self.theme.warning_color()
+                            };
+                            let label = ui.colored_label(color, verdict.verdict.label());
+                            if !verdict.reason.is_empty() {
+                                label.on_hover_text(&verdict.reason);
+                            }
+                        }
+                    });
+                }
+                ui.add_space(10.0);
+                ui.separator();
+                ui.strong("Добавить модель");
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.new_provider_model)
+                            .desired_width(240.0)
+                            .hint_text("hy3"),
+                    );
+                    if ui.button("Добавить").clicked() {
+                        add_model = true;
+                    }
+                });
+            });
+
+        if let Some((model, checked)) = toggle {
+            self.config
+                .set_provider_model_enabled(provider_id, &model, checked);
+        }
+        if add_model {
+            let model = self.new_provider_model.trim().to_string();
+            if !model.is_empty() {
+                self.config
+                    .set_provider_model_enabled(provider_id, &model, true);
+                self.new_provider_model.clear();
+                self.status_message = format!("Модель «{model}» добавлена");
+            }
+        }
+        if recheck {
+            self.start_provider_catalog_refresh();
+        }
+    }
+
+    /// Rebuilds the edit drafts for one provider when they do not match the
+    /// stored accounts. Without it, a key added on another panel — or a
+    /// provider removed and re-added — would edit rows that no longer exist.
+    fn sync_provider_drafts(&mut self, provider_id: &str) {
+        let Some(provider) = self.config.custom_provider(provider_id) else {
+            self.provider_account_drafts.remove(provider_id);
+            return;
+        };
+        let stored: Vec<String> = provider
+            .accounts
+            .iter()
+            .map(|account| account.id.clone())
+            .collect();
+        let drafts = self
+            .provider_account_drafts
+            .entry(provider_id.to_string())
+            .or_default();
+        let current: Vec<String> = drafts.iter().map(|draft| draft.id.clone()).collect();
+        if current == stored {
+            return;
+        }
+        let accounts = self
+            .config
+            .custom_provider(provider_id)
+            .map(|provider| provider.accounts.clone())
+            .unwrap_or_default();
+        self.provider_account_drafts.insert(
+            provider_id.to_string(),
+            accounts
+                .iter()
+                .map(|account| ApiAccountDraft {
+                    id: account.id.clone(),
+                    label: account.label.clone(),
+                    new_key: String::new(),
+                    enabled: account.enabled,
+                })
+                .collect(),
+        );
+    }
 }
 
 /// One-word verdict chip: a filled, outlined label so the winning side of a row
@@ -751,20 +1822,59 @@ fn limit_banner(ui: &mut egui::Ui, theme: &ThemeConfig, provider: &str, limit: &
         .show(ui, |ui| {
             ui.colored_label(colour, limit_line(provider, limit))
                 .on_hover_text(format!(
-                    "Причина по данным провайдера: {}. Пока лимит держится, Delegator                      обращается к другому провайдеру, если там остались модели.",
+                    "Причина по данным провайдера: {}. Пока лимит держится, Delegator \
+                     обращается к другому провайдеру, если там остались модели.",
                     limit.reason
                 ));
         });
     ui.add_space(4.0);
 }
 
-/// The four tabs that can light up; the rest are always plain.
+/// The two tabs that can light up; the rest are always plain. «API» carries
+/// one accent for every provider under it — which one wants attention is shown
+/// on its own button inside the tab, where the fix also lives.
 #[derive(Debug, Clone, Copy)]
 struct TabAccents {
     api: TabAccent,
-    gemini: TabAccent,
-    opencode: TabAccent,
     benchmark: TabAccent,
+}
+
+/// One row per provider for the «API» tab: its key, its button label, and
+/// whether it wants attention (no enabled account). The two built-ins are always
+/// present — they own storage of their own and cannot be removed.
+///
+/// A free function over `AppConfig` rather than a method, because screen access
+/// is denied on the machine this ships from (D7): what the tab offers has to be
+/// assertable without anyone looking at it.
+fn api_provider_rows(config: &AppConfig) -> Vec<(ApiProvider, String, bool)> {
+    let mut rows = vec![
+        (
+            ApiProvider::Google,
+            "Google AI Studio".to_string(),
+            !config.google_accounts.iter().any(|account| account.enabled),
+        ),
+        (
+            ApiProvider::OpenCode,
+            "OpenCode / OpenRouter".to_string(),
+            !config
+                .opencode_accounts
+                .iter()
+                .any(|account| account.enabled),
+        ),
+    ];
+    for provider in &config.custom_providers {
+        let label = if provider.label.is_empty() {
+            provider.id.clone()
+        } else {
+            provider.label.clone()
+        };
+        rows.push((
+            ApiProvider::Custom(provider.id.clone()),
+            label,
+            !provider.accounts.iter().any(|account| account.enabled),
+        ));
+    }
+    rows
 }
 
 /// The navigation row. One function because it is drawn in two layouts — see
@@ -779,13 +1889,7 @@ fn navigation_tabs(
 ) {
     let tabs = [
         (SelectedTab::Ides, "Интеграция", TabAccent::None),
-        (SelectedTab::ApiKeys, "API-ключи", accents.api),
-        (SelectedTab::GeminiModels, "Модели Gemini", accents.gemini),
-        (
-            SelectedTab::OpenCodeModels,
-            "Модели OpenCode",
-            accents.opencode,
-        ),
+        (SelectedTab::Api, "API", accents.api),
         (SelectedTab::Stats, "Статистика", TabAccent::None),
         (SelectedTab::Thinking, "Мышление", TabAccent::None),
         (SelectedTab::Benchmark, "Бенчмарк", accents.benchmark),
@@ -1059,6 +2163,41 @@ impl eframe::App for DelegatorApp {
                     self.benchmark_was_running = running;
                     self.benchmark_status = status;
                 }
+                AppMessage::ProviderCatalogRefreshed(outcomes) => {
+                    // `config` was written by the worker and the generation
+                    // counter already told the loop above to reload it, so
+                    // nothing here touches config — doing it twice is how a
+                    // discovered model would be added on top of itself.
+                    self.provider_verdicts = VerdictStore::load(&crate::config::runtime_home_dir());
+                    let mut probed = 0usize;
+                    let mut answered = 0usize;
+                    let mut discovered = 0usize;
+                    let mut failures = Vec::new();
+                    for outcome in outcomes {
+                        probed += outcome.probed;
+                        answered += outcome.verdicts;
+                        discovered += outcome.discovered.len();
+                        if let Some(error) = outcome.error {
+                            // Naming the provider matters: the usual cause is
+                            // the proxy, and that is one setting away.
+                            failures.push(format!("{}: {error}", outcome.id));
+                        }
+                    }
+                    self.status_message = if !failures.is_empty() {
+                        format!("Провайдеры обновлены частично — {}", failures.join("; "))
+                    } else if answered == probed {
+                        format!("Провайдеры обновлены: {discovered} моделей, проверено {probed}")
+                    } else {
+                        // Probed and answered differ exactly when a probe came
+                        // back saying nothing (429, a timeout, a bad key), and
+                        // that is the case worth seeing: nothing was learned and
+                        // the models will be asked again next round.
+                        format!(
+                            "Провайдеры обновлены: {discovered} моделей, проверено {probed}, \
+                             ответили {answered} — остальные спросим ещё раз"
+                        )
+                    };
+                }
                 AppMessage::UpdateChecked(status) => {
                     // A failed check keeps the previous button (if any) instead
                     // of replacing it with an error the user cannot act on.
@@ -1151,9 +2290,7 @@ impl eframe::App for DelegatorApp {
                 TabAccent::None
             };
             let accents = TabAccents {
-                api: TabAccent::warn(api_warning),
-                gemini: TabAccent::warn(gemini_warning),
-                opencode: TabAccent::warn(opencode_warning),
+                api: TabAccent::warn(api_warning || gemini_warning || opencode_warning),
                 benchmark: benchmark_accent,
             };
             // Narrowing the window used to push the last tabs past the right
@@ -1263,530 +2400,7 @@ impl eframe::App for DelegatorApp {
                         }
                     });
                 }
-                SelectedTab::ApiKeys => {
-                    egui::ScrollArea::vertical()
-                        .show(ui, |ui| {
-                            ui.heading("API-ключи Delegator");
-                            ui.label("Ключи хранятся только здесь и шифруются Windows DPAPI.")
-                                .on_hover_text(
-                                    "Системные GEMINI_API_KEY и GOOGLE_API_KEY не читаются.",
-                                );
-                            ui.add_space(12.0);
-
-                            ui.heading("Google AI Studio");
-                            ui.label("Ключи нескольких аккаунтов переключаются автоматически при исчерпании квоты.");
-                            if !self.config.google_accounts.iter().any(|account| account.enabled) {
-                                ui.colored_label(
-                                    self.theme.warning_color(),
-                                    "Нет включённого Google-ключа.",
-                                );
-                            }
-
-                            let mut save_account: Option<(String, String, String, bool)> = None;
-                            let mut remove_account: Option<String> = None;
-                            for draft in &mut self.google_account_drafts {
-                                ui.group(|ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.checkbox(&mut draft.enabled, "Включён");
-                                        ui.strong("Сохранённый Google-аккаунт");
-                                    });
-                                    ui.label("Название аккаунта:");
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut draft.label)
-                                            .desired_width(ui.available_width()),
-                                    );
-                                    ui.label("Новый ключ (пусто — оставить текущий):");
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut draft.new_key)
-                                            .password(true)
-                                            .desired_width(ui.available_width()),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        if ui.button("Сохранить изменения").clicked() {
-                                            save_account = Some((
-                                                draft.id.clone(),
-                                                draft.label.clone(),
-                                                draft.new_key.clone(),
-                                                draft.enabled,
-                                            ));
-                                        }
-                                        if ui
-                                            .button(egui::RichText::new("Удалить ключ").color(self.theme.error_color()))
-                                            .clicked()
-                                        {
-                                            remove_account = Some(draft.id.clone());
-                                        }
-                                    });
-                                });
-                                ui.add_space(4.0);
-                            }
-                            if let Some((id, label, new_key, enabled)) = save_account {
-                                let new_key = if new_key.trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(new_key.as_str())
-                                };
-                                match self.config.update_google_account(
-                                    &id,
-                                    &label,
-                                    new_key,
-                                    enabled,
-                                ) {
-                                    Ok(()) => {
-                                        if let Some(draft) = self
-                                            .google_account_drafts
-                                            .iter_mut()
-                                            .find(|draft| draft.id == id)
-                                        {
-                                            draft.new_key.clear();
-                                        }
-                                        self.status_message =
-                                            "Google-аккаунт сохранён".to_string();
-                                    }
-                                    Err(err) => self.status_message = err,
-                                }
-                            }
-                            if let Some(id) = remove_account {
-                                self.config.remove_google_account(&id);
-                                self.google_account_drafts.retain(|draft| draft.id != id);
-                                self.status_message = "Google-ключ удалён".to_string();
-                            }
-
-                            ui.group(|ui| {
-                                ui.strong("Добавить Google-ключ");
-                                ui.label("Название аккаунта:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.new_google_label)
-                                        .hint_text("Например: Рабочий Google")
-                                        .desired_width(ui.available_width()),
-                                );
-                                ui.label("API-ключ Google AI Studio:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.new_google_key)
-                                        .password(true)
-                                        .desired_width(ui.available_width()),
-                                );
-                                if ui.button("Добавить Google-ключ").clicked() {
-                                    match self.config.add_google_account(
-                                        &self.new_google_label,
-                                        &self.new_google_key,
-                                    ) {
-                                        Ok(()) => {
-                                            if let Some(account) = self.config.google_accounts.last()
-                                            {
-                                                self.google_account_drafts.push(ApiAccountDraft {
-                                                    id: account.id.clone(),
-                                                    label: account.label.clone(),
-                                                    new_key: String::new(),
-                                                    enabled: account.enabled,
-                                                });
-                                            }
-                                            self.new_google_label.clear();
-                                            self.new_google_key.clear();
-                                            self.status_message =
-                                                "Google-ключ добавлен".to_string();
-                                        }
-                                        Err(err) => self.status_message = err,
-                                    }
-                                }
-                            });
-
-                            ui.add_space(16.0);
-                            ui.separator();
-                            ui.add_space(8.0);
-                            ui.heading("OpenCode / OpenRouter");
-                            ui.label("Ключи нужны для моделей openrouter/*; модели opencode/* авторизует сам OpenCode CLI.");
-
-                            let mut save_opencode: Option<(String, String, String, bool)> = None;
-                            let mut remove_opencode: Option<String> = None;
-                            for draft in &mut self.opencode_account_drafts {
-                                ui.group(|ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.checkbox(&mut draft.enabled, "Включён");
-                                        ui.strong("Сохранённый OpenCode/OpenRouter-аккаунт");
-                                    });
-                                    ui.label("Название аккаунта:");
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut draft.label)
-                                            .desired_width(ui.available_width()),
-                                    );
-                                    ui.label("Новый ключ (пусто — оставить текущий):");
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut draft.new_key)
-                                            .password(true)
-                                            .desired_width(ui.available_width()),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        if ui.button("Сохранить изменения").clicked() {
-                                            save_opencode = Some((
-                                                draft.id.clone(),
-                                                draft.label.clone(),
-                                                draft.new_key.clone(),
-                                                draft.enabled,
-                                            ));
-                                        }
-                                        if ui
-                                            .button(egui::RichText::new("Удалить ключ").color(self.theme.error_color()))
-                                            .clicked()
-                                        {
-                                            remove_opencode = Some(draft.id.clone());
-                                        }
-                                    });
-                                });
-                                ui.add_space(6.0);
-                            }
-
-                            if let Some((id, label, new_key, enabled)) = save_opencode {
-                                let new_key = if new_key.trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(new_key.as_str())
-                                };
-                                match self.config.update_opencode_account(
-                                    &id,
-                                    &label,
-                                    new_key,
-                                    enabled,
-                                ) {
-                                    Ok(()) => {
-                                        if let Some(draft) = self
-                                            .opencode_account_drafts
-                                            .iter_mut()
-                                            .find(|draft| draft.id == id)
-                                        {
-                                            draft.new_key.clear();
-                                        }
-                                        self.status_message =
-                                            "OpenCode/OpenRouter-аккаунт сохранён".to_string();
-                                    }
-                                    Err(err) => self.status_message = err,
-                                }
-                            }
-                            if let Some(id) = remove_opencode {
-                                self.config.remove_opencode_account(&id);
-                                self.opencode_account_drafts
-                                    .retain(|draft| draft.id != id);
-                                self.status_message =
-                                    "OpenCode/OpenRouter-ключ удалён".to_string();
-                            }
-
-                            ui.group(|ui| {
-                                ui.strong("Добавить OpenCode/OpenRouter-ключ");
-                                ui.label("Название аккаунта:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.new_opencode_label)
-                                        .hint_text("Например: Основной OpenRouter")
-                                        .desired_width(ui.available_width()),
-                                );
-                                ui.label("API-ключ:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.new_opencode_key)
-                                        .password(true)
-                                        .desired_width(ui.available_width()),
-                                );
-                                if ui.button("Добавить OpenCode/OpenRouter-ключ").clicked() {
-                                    match self.config.add_opencode_account(
-                                        &self.new_opencode_label,
-                                        &self.new_opencode_key,
-                                    ) {
-                                        Ok(()) => {
-                                            if let Some(account) = self.config.opencode_accounts.last()
-                                            {
-                                                self.opencode_account_drafts.push(ApiAccountDraft {
-                                                    id: account.id.clone(),
-                                                    label: account.label.clone(),
-                                                    new_key: String::new(),
-                                                    enabled: account.enabled,
-                                                });
-                                            }
-                                            self.new_opencode_label.clear();
-                                            self.new_opencode_key.clear();
-                                            self.status_message =
-                                                "OpenCode/OpenRouter-ключ добавлен".to_string();
-                                        }
-                                        Err(err) => self.status_message = err,
-                                    }
-                                }
-                            });
-
-                            ui.add_space(14.0);
-                            if ui.button("Обновить списки моделей").clicked() {
-                                self.refresh_models();
-                            }
-                            ui.colored_label(
-                                self.theme.weak_text_color(),
-                                self.status_message.as_str(),
-                            );
-                        });
-                }
-                SelectedTab::GeminiModels => {
-                    ui.label("Delegator использует только отмеченные модели Google.");
-                    if let Some(limit) = self.gemini_limit.clone() {
-                        limit_banner(ui, &self.theme, "Google AI Studio", &limit);
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label("Поиск:");
-                        ui.text_edit_singleline(&mut self.gemini_search);
-                        if self.is_loading_gemini {
-                            ui.spinner();
-                        }
-                    });
-
-                    ui.separator();
-
-                    // `auto_shrink` off horizontally: without it the area is only
-                    // as wide as its widest row, so widening the window leaves
-                    // the scrollbar stranded in the middle instead of at the
-                    // right edge where it belongs.
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                        for model in &self.gemini_models {
-                            if !self.gemini_search.is_empty()
-                                && !model
-                                    .id
-                                    .to_lowercase()
-                                    .contains(&self.gemini_search.to_lowercase())
-                            {
-                                continue;
-                            }
-
-                            let mut checked = self.config.enabled_gemini_models.contains(&model.id);
-                            ui.horizontal(|ui| {
-                                if ui.checkbox(&mut checked, &model.name).changed() {
-                                    if checked {
-                                        self.config.enabled_gemini_models.push(model.id.clone());
-                                    } else {
-                                        self.config
-                                            .enabled_gemini_models
-                                            .retain(|id| id != &model.id);
-                                    }
-                                    self.config.save();
-                                }
-                                ui.colored_label(
-                                    self.theme.weak_text_color(),
-                                    format!("({})", model.id),
-                                );
-                            });
-                        }
-                    });
-                }
-                SelectedTab::OpenCodeModels => {
-                    ui.label("Список берётся из OpenCode CLI: новые бесплатные модели включаются сами, сильные — сверху.");
-                    if let Some(limit) = self.opencode_limit.clone() {
-                        limit_banner(ui, &self.theme, "OpenCode", &limit);
-                    }
-                    let warning = self.theme.warning_color();
-                    let success = self.theme.success_color();
-                    let weak = self.theme.weak_text_color();
-                    let cli_required = self
-                        .config
-                        .enabled_opencode_models
-                        .iter()
-                        .any(|model| model.starts_with("opencode/"));
-                    // Deferred so the button handlers can take &mut self after
-                    // the layout closures have released their borrows.
-                    let mut install_request = false;
-                    let mut upgrade_request = false;
-                    let mut redetect_request = false;
-                    let mut open_link: Option<&'static str> = None;
-                    if cli_required && !self.dependencies.opencode_cli_available() {
-                        let fill = egui::Color32::from_rgba_unmultiplied(
-                            warning.r(),
-                            warning.g(),
-                            warning.b(),
-                            28,
-                        );
-                        let installing =
-                            matches!(self.opencode_install, Some(InstallState::Running(_)));
-                        // Without either installer nothing can be automated —
-                        // the manual links are then the only way forward.
-                        let can_install = self.dependencies.winget_available()
-                            || self.dependencies.npm_available();
-                        let failed =
-                            matches!(self.opencode_install, Some(InstallState::Done(Err(_))));
-                        egui::Frame::none()
-                            .fill(fill)
-                            .stroke(egui::Stroke::new(1.5, warning))
-                            .rounding(6.0)
-                            .inner_margin(10.0)
-                            .show(ui, |ui| {
-                                ui.colored_label(warning, "Нужен OpenCode CLI для моделей opencode/*.");
-                                ui.horizontal(|ui| {
-                                    let install = ui
-                                        .add_enabled(
-                                            can_install && !installing,
-                                            egui::Button::new("Установить"),
-                                        )
-                                        .on_hover_text(
-                                            "winget install --id SST.opencode\nnpm install -g opencode-ai",
-                                        )
-                                        .on_disabled_hover_text(
-                                            "Не найдены ни winget, ни npm — установите вручную",
-                                        );
-                                    if install.clicked() {
-                                        install_request = true;
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !installing,
-                                            egui::Button::new("Проверить снова"),
-                                        )
-                                        .clicked()
-                                    {
-                                        redetect_request = true;
-                                    }
-                                    match &self.opencode_install {
-                                        Some(InstallState::Running(step)) => {
-                                            ui.spinner();
-                                            ui.label(step.status_line());
-                                        }
-                                        Some(InstallState::Done(Ok(()))) => {
-                                            ui.colored_label(success, "Готово");
-                                        }
-                                        Some(InstallState::Done(Err(reason))) => {
-                                            ui.colored_label(warning, "Не удалось установить")
-                                                .on_hover_text(reason.as_str());
-                                        }
-                                        None => {}
-                                    }
-                                });
-                                ui.colored_label(weak, "Windows может запросить подтверждение (UAC).");
-                                if failed || !can_install {
-                                    ui.horizontal(|ui| {
-                                        if ui.link("Скачать Node.js").clicked() {
-                                            open_link = Some(NODEJS_DOWNLOAD_URL);
-                                        }
-                                        if ui.link("Сайт OpenCode").clicked() {
-                                            open_link = Some(OPENCODE_SITE_URL);
-                                        }
-                                    });
-                                }
-                            });
-                        ui.add_space(8.0);
-                    } else if let Some(path) = &self.dependencies.opencode_cli_path {
-                        ui.colored_label(success, "OpenCode CLI установлен")
-                            .on_hover_text(path.display().to_string());
-                    }
-                    if self.dependencies.opencode_cli_available() {
-                        let upgrading =
-                            matches!(self.opencode_upgrade, Some(CliJobState::Running));
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(!upgrading, egui::Button::new("Обновить CLI"))
-                                .clicked()
-                            {
-                                upgrade_request = true;
-                            }
-                            match &self.opencode_upgrade {
-                                Some(CliJobState::Running) => {
-                                    ui.spinner();
-                                    ui.label("Обновляю…");
-                                }
-                                Some(CliJobState::Done(Ok(()))) => {
-                                    ui.colored_label(success, "Обновлено");
-                                }
-                                Some(CliJobState::Done(Err(reason))) => {
-                                    ui.colored_label(warning, "Не удалось обновить")
-                                        .on_hover_text(reason.as_str());
-                                }
-                                None => {}
-                            }
-                        });
-                    }
-                    if redetect_request {
-                        self.dependencies = DependencyStatus::detect();
-                    }
-                    if install_request {
-                        self.start_opencode_install();
-                    }
-                    if upgrade_request {
-                        self.start_opencode_upgrade();
-                    }
-                    if let Some(url) = open_link {
-                        open_url(url);
-                    }
-                    if self.config.enabled_opencode_models.is_empty() {
-                        ui.colored_label(
-                            self.theme.warning_color(),
-                            "Не выбрана ни одна модель.",
-                        );
-                    }
-                    if self.opencode_catalog_is_fallback {
-                        ui.colored_label(
-                            self.theme.warning_color(),
-                            "Список не получен от OpenCode CLI — показан встроенный минимум.",
-                        )
-                        .on_hover_text(
-                            "Запрос списка к CLI не успел или не удался, поэтому здесь только \
-                             встроенные модели OpenCode Zen плюс те, что вы уже включили. \
-                             Ваш выбор не потерян и делегирование работает как обычно. \
-                             Нажмите «Обновить CLI» или откройте вкладку заново.",
-                        );
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label("Поиск:");
-                        ui.text_edit_singleline(&mut self.opencode_search);
-                        if self.is_loading_opencode {
-                            ui.spinner();
-                        }
-                    });
-
-                    ui.separator();
-
-                    // `auto_shrink` off horizontally: without it the area is only
-                    // as wide as its widest row, so widening the window leaves
-                    // the scrollbar stranded in the middle instead of at the
-                    // right edge where it belongs.
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                        for model in &self.opencode_models {
-                            if !self.opencode_search.is_empty()
-                                && !model
-                                    .id
-                                    .to_lowercase()
-                                    .contains(&self.opencode_search.to_lowercase())
-                            {
-                                continue;
-                            }
-
-                            let mut checked =
-                                self.config.enabled_opencode_models.contains(&model.id);
-                            ui.horizontal(|ui| {
-                                let row = ui
-                                    .checkbox(&mut checked, &model.name)
-                                    .on_hover_text(crate::gui::opencode_setup::dpr_hint(
-                                        &model.id,
-                                    ));
-                                if row.changed() {
-                                    if checked {
-                                        self.config.enabled_opencode_models.push(model.id.clone());
-                                    } else {
-                                        self.config
-                                            .enabled_opencode_models
-                                            .retain(|id| id != &model.id);
-                                    }
-                                    self.config.save();
-                                }
-
-                                if crate::models_service::is_custom_provider_model(&model.id) {
-                                    ui.colored_label(self.theme.accent_color(), "[СВОЙ]")
-                                        .on_hover_text(format!(
-                                            "Провайдер из вашей конфигурации OpenCode: {}.                                              Работает и в обычном делегировании, и в бенчмарке.",
-                                            model.provider
-                                        ));
-                                } else if model.is_free {
-                                    ui.colored_label(self.theme.success_color(), "[FREE]");
-                                }
-                                ui.colored_label(
-                                    self.theme.weak_text_color(),
-                                    format!("({})", model.id),
-                                );
-                            });
-                        }
-                    });
-                }
+                SelectedTab::Api => self.draw_api_tab(ui),
                 SelectedTab::Stats => {
                     ui.horizontal(|ui| {
                         ui.label("Использование за последние 7 дней.");
@@ -2501,8 +3115,6 @@ mod tests {
         let theme = ThemeConfig::load();
         let accents = TabAccents {
             api: TabAccent::None,
-            gemini: TabAccent::None,
-            opencode: TabAccent::None,
             benchmark: TabAccent::None,
         };
         let mut active = SelectedTab::Ides;
@@ -2520,13 +3132,74 @@ mod tests {
         rect
     }
 
-    /// The window can be dragged down to `min_inner_size`, and at that width
-    /// eight tabs do not fit on one line. They used to be drawn past the right
-    /// edge — visible in no way, clickable in no way, and the only route back to
-    /// «Прокси» was widening the window again.
+    /// The «API» tab has never been on screen and cannot be (D7), so what it
+    /// OFFERS is asserted here instead: which providers get a button, what each
+    /// is called, and which of them is asking for attention.
+    #[test]
+    fn the_api_tab_offers_both_builtins_plus_every_added_provider() {
+        use crate::config::tests_support::{account, provider};
+        use crate::config::{GoogleApiAccount, OpenCodeApiAccount};
+
+        let mut config = AppConfig::default();
+
+        // Empty config: the two built-ins are still there — they own storage of
+        // their own and cannot be removed — and both want attention, because
+        // neither has a key.
+        let rows = api_provider_rows(&config);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, ApiProvider::Google);
+        assert_eq!(rows[0].1, "Google AI Studio");
+        assert!(rows[0].2, "no Google key must show as needing attention");
+        assert_eq!(rows[1].0, ApiProvider::OpenCode);
+        assert!(rows[1].2);
+
+        config.google_accounts.push(GoogleApiAccount {
+            id: "g1".into(),
+            label: "Main".into(),
+            api_key_enc: "blob".into(),
+            enabled: true,
+        });
+        // A key that exists but is switched OFF is not a key: the runtime skips
+        // disabled accounts, so the row must keep asking.
+        config.opencode_accounts.push(OpenCodeApiAccount {
+            id: "o1".into(),
+            label: "OR".into(),
+            api_key_enc: "blob".into(),
+            enabled: false,
+        });
+        let rows = api_provider_rows(&config);
+        assert!(!rows[0].2, "an enabled Google key clears the warning");
+        assert!(rows[1].2, "a disabled key must still warn");
+
+        // Added providers follow, in config order, keyed by id.
+        let mut with_key = provider("bai", "B.AI");
+        with_key.accounts.push(account("a1", true));
+        let unlabelled = provider("tokenrouter", "");
+        config.custom_providers = vec![with_key, unlabelled];
+
+        let rows = api_provider_rows(&config);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[2].0, ApiProvider::Custom("bai".to_string()));
+        assert_eq!(rows[2].1, "B.AI");
+        assert!(!rows[2].2);
+        // No label falls back to the id, so a row can never be a blank button.
+        assert_eq!(rows[3].1, "tokenrouter");
+        assert!(rows[3].2, "a provider with no key must ask for one");
+    }
+
+    /// Tabs used to be drawn past the right edge — visible in no way, clickable
+    /// in no way, and the only route back to «Прокси» was widening the window
+    /// again (G96).
+    ///
+    /// The width that provoked it was `min_inner_size` itself, back when eight
+    /// tabs had to fit there. Folding «API-ключи», «Модели Gemini» and «Модели
+    /// OpenCode» into one «API» tab left six, and six fit — so the overflow now
+    /// has to be provoked at a width the user cannot even drag to. The
+    /// behaviour under test is unchanged; only the width that triggers it is.
     #[test]
     fn narrowing_the_window_wraps_the_tabs_instead_of_putting_them_out_of_reach() {
-        const NARROW: f32 = 650.0;
+        // Narrower than `min_inner_size`, purely to force the wrap.
+        const NARROW: f32 = 300.0;
 
         let flat = tabs_rect(NARROW, false);
         assert!(
@@ -2552,6 +3225,22 @@ mod tests {
             "only the unwrapped row reports the width the fit needs: {} vs {}",
             flat.width(),
             wrapped.width()
+        );
+    }
+
+    /// What the «API» tab bought: at the narrowest the user can actually make
+    /// the window, the row fits on one line. This is the assertion that fails
+    /// first if the row grows back to eight tabs.
+    #[test]
+    fn the_tab_row_fits_on_one_line_at_the_minimum_window_width() {
+        const MIN_INNER_WIDTH: f32 = 650.0;
+
+        let flat = tabs_rect(MIN_INNER_WIDTH, false);
+        assert!(
+            flat.width() <= MIN_INNER_WIDTH,
+            "the tab row no longer fits at the minimum width ({} > {MIN_INNER_WIDTH}); \
+             it still wraps rather than overflowing, but a second line is back",
+            flat.width()
         );
     }
 }

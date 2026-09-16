@@ -45,6 +45,8 @@ $Suites = @(
     @{ Tests = "caller-strength.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "ping-report.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "attempt-attribution.tests.ps1"; Script = "scripts\opencode-delegate.ps1" }
+    @{ Tests = "custom-providers.tests.ps1"; Script = "scripts\opencode-delegate.ps1" }
+    @{ Tests = "build-outputs.tests.ps1"; Script = "scripts\prune-build-outputs.ps1" }
 )
 
 $script:Passed = 0
