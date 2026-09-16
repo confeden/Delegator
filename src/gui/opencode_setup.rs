@@ -1,4 +1,4 @@
-//! OpenCode CLI support for the «Модели OpenCode» tab:
+//! OpenCode CLI support for the OpenCode models of the «API» tab:
 //! * strength ordering of the Zen (`opencode/*`) block,
 //! * background install of the missing dependencies (winget/npm chain),
 //! * background update (`opencode upgrade`),

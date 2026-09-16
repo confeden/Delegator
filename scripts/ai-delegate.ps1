@@ -1476,14 +1476,14 @@ function Get-PingAdvice {
     $out = New-Object System.Collections.Generic.List[string]
     if ($set.Count -eq 0) {
         $out.Add("Обычно это дневная квота провайдера, отсутствующий ключ или нет сети.")
-        $out.Add("Загляните в окне Delegator во вкладки «API-ключи» и «Модели».")
+        $out.Add("Загляните в окне Delegator во вкладку «API»: разделы «Ключи» и «Модели».")
         return $out.ToArray()
     }
     if ($set -contains "auth") {
-        $out.Add("Ключ не принят - откройте вкладку «API-ключи».")
+        $out.Add("Ключ не принят - откройте вкладку «API», раздел «Ключи».")
     }
     if ($set -contains "rate_limit") {
-        $out.Add("Похоже на дневную квоту: она обнулится сама, а пока помогут другие модели во вкладке «Модели».")
+        $out.Add("Похоже на дневную квоту: она обнулится сама, а пока помогут другие модели во вкладке «API», раздел «Модели».")
     }
     if ($set -contains "network") {
         # G98: a proxy that has stopped tunnelling looks EXACTLY like this, and
@@ -1494,7 +1494,7 @@ function Get-PingAdvice {
         # Only server / timeout / unknown: the models were reached, they just
         # did not deliver. Nothing of the user's is broken.
         $out.Add("Похоже на временные неполадки у провайдера, а не на вашу настройку.")
-        $out.Add("Если это надолго, эти модели можно снять во вкладке «Модели» - перебор сразу пойдёт по остальным.")
+        $out.Add("Если это надолго, эти модели можно снять во вкладке «API», раздел «Модели» - перебор сразу пойдёт по остальным.")
     }
     return $out.ToArray()
 }
@@ -1591,7 +1591,7 @@ function Format-PingReport {
         # provider that died before writing a record leaves nothing to report.
         [string[]]$TriedReasons = @(),
         # The raw errorClass values behind those reasons. The ADVICE is chosen
-        # from these, never guessed: sending someone to the «API-ключи» tab over
+        # from these, never guessed: sending someone to the «API» keys over
         # a provider's 503 is worse than saying nothing.
         [string[]]$FailureClasses = @(),
         [double]$Seconds = 0,

@@ -82,7 +82,7 @@ Test-Case "the verdict is the LAST thing the user reads in the working case" {
 
 Test-Case "an auth failure sends the user to the keys tab and nowhere else" {
     $text = (Get-PingAdvice @("auth")) -join "`n"
-    Assert-Match "API-ключи" $text
+    Assert-Match "«API», раздел «Ключи»" $text
     Assert-False ($text -match "квота провайдера, отсутствующий ключ или нет сети") "the blanket guess must not survive a KNOWN cause"
 }
 
@@ -97,12 +97,22 @@ Test-Case "a network failure names the proxy, because a dead proxy looks exactly
 Test-Case "a provider-side failure does not send the user to fix settings that are fine" {
     $text = (Get-PingAdvice @("server", "timeout")) -join "`n"
     Assert-Match "временные неполадки у провайдера" $text
-    Assert-False ($text -match "API-ключи") "nothing of the user's is broken when the provider 503s"
+    Assert-False ($text -match "«Ключи»") "nothing of the user's is broken when the provider 503s"
 }
 
 Test-Case "with nothing recorded the report still guesses out loud" {
     $text = (Get-PingAdvice @()) -join "`n"
     Assert-Match "квота" $text "an honest guess beats silence when there is no evidence"
+}
+
+Test-Case "the advice names only tabs that exist" {
+    # G114: 0.8.4 folded «API-ключи», «Модели Gemini» and «Модели OpenCode»
+    # into one «API» tab, and this advice kept sending users to the old ones.
+    foreach ($class in @("", "auth", "rate_limit", "network", "server")) {
+        $classes = if ($class) { @($class) } else { @() }
+        $text = (Get-PingAdvice $classes) -join "`n"
+        Assert-False ($text -match "API-ключи|вкладк\w* «Модели") "a tab that no longer exists, for [$class]: $text"
+    }
 }
 
 Test-Case "each model that refused is listed with its own reason" {

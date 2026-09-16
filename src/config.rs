@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -281,6 +282,33 @@ impl Default for AppConfig {
 /// "Delegator stopped working".
 pub const UNIVERSAL_FREE_MODEL: &str = "openrouter/openrouter/free";
 
+/// Held by every write of config.json in this process, and by a load for its
+/// whole read-migrate-write.
+///
+/// The writers — the GUI thread, the tray toggle, the provider round on a tokio
+/// worker — all publish through the same `config.json.tmp`. Two saves that
+/// interleave end with one renaming a tmp the other already moved; the
+/// fallback in `write_locked` then removes config.json and fails its retry, and
+/// the DPAPI-encrypted keys are gone for good (G112). A load writes back what
+/// it read, so it holds the lock from the read on: a save landing in between
+/// would be overwritten with the older copy, a load could take the fallback's
+/// remove-and-retry for a missing file and write defaults over it, and two
+/// loads could both migrate the same old file (G73).
+///
+/// `load_readonly` does not take it: it never writes.
+static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Never nested — std's `Mutex` is not reentrant. Code that already holds the
+/// guard passes it to `write_locked` instead of calling `save_to_path`.
+fn lock_config_file() -> MutexGuard<'static, ()> {
+    // The lock guards the order of file operations, not data, so a poisoned
+    // one is as good as a clean one; refusing every later save over one panic
+    // would drop every later change.
+    CONFIG_FILE_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
 impl AppConfig {
     fn config_path() -> Option<PathBuf> {
         let proj_dirs = ProjectDirs::from("com", "Delegator", "DelegatorWin")?;
@@ -315,6 +343,8 @@ impl AppConfig {
     }
 
     fn load_from_path(path: &Path) -> Self {
+        // From the existence check to the write-back: see `CONFIG_FILE_LOCK`.
+        let lock = lock_config_file();
         if path.exists() {
             let content = match fs::read_to_string(path) {
                 Ok(content) => content,
@@ -331,7 +361,7 @@ impl AppConfig {
             match serde_json::from_str::<AppConfig>(&content) {
                 Ok(mut cfg) => {
                     cfg.migrate();
-                    cfg.save_to_path(path);
+                    cfg.write_locked(path, &lock);
                     return cfg;
                 }
                 Err(error) => {
@@ -348,7 +378,7 @@ impl AppConfig {
             }
         }
         let default_cfg = Self::default();
-        default_cfg.save_to_path(path);
+        default_cfg.write_locked(path, &lock);
         default_cfg
     }
 
@@ -748,6 +778,13 @@ impl AppConfig {
     }
 
     fn save_to_path(&self, path: &Path) {
+        let lock = lock_config_file();
+        self.write_locked(path, &lock);
+    }
+
+    /// The save itself. `_lock` is the caller's `CONFIG_FILE_LOCK` guard, so
+    /// this can neither run unlocked nor lock a second time.
+    fn write_locked(&self, path: &Path, _lock: &MutexGuard<'static, ()>) {
         let json = match serde_json::to_string_pretty(self) {
             Ok(json) => json,
             Err(error) => {
@@ -1578,6 +1615,106 @@ mod tests {
             .filter_map(Result::ok)
             .any(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"));
         assert!(!leftover_tmp, "no temp file must remain after save");
+        cleanup(&path);
+    }
+
+    fn config_with_account(id: &str) -> AppConfig {
+        let mut config = AppConfig::default();
+        config.google_accounts.push(GoogleApiAccount {
+            id: id.to_string(),
+            label: id.to_string(),
+            api_key_enc: "opaque-dpapi-blob".to_string(),
+            enabled: true,
+        });
+        config
+    }
+
+    /// Every writer in the process — the GUI thread, the tray toggle, the
+    /// provider round on a tokio worker — saves through the same
+    /// `config.json.tmp`. Unserialized, one save renames the tmp another save
+    /// is about to rename, the loser's fallback removes config.json and its
+    /// retry fails: the file is gone and the DPAPI keys with it (G112).
+    ///
+    /// One save per writer per round, released together, and the file is read
+    /// only after every writer has returned: a later save in the same round
+    /// would recreate a deleted file before anyone looked.
+    #[test]
+    fn concurrent_saves_never_delete_or_tear_config_json() {
+        const WRITERS: usize = 4;
+        const ROUNDS: usize = 300;
+        let path = temp_config_path("concurrent-saves");
+        let writers: Vec<AppConfig> = (0..WRITERS)
+            .map(|writer| config_with_account(&format!("writer-{writer}")))
+            .collect();
+        // From the very instances the threads save: `ide_states` is a HashMap,
+        // and only the same instance serializes to the same bytes.
+        let whole: Vec<String> = writers
+            .iter()
+            .map(|config| serde_json::to_string_pretty(config).expect("serialize writer config"))
+            .collect();
+
+        for round in 0..ROUNDS {
+            let start = std::sync::Barrier::new(WRITERS);
+            std::thread::scope(|scope| {
+                for config in &writers {
+                    let (start, path) = (&start, &path);
+                    scope.spawn(move || {
+                        start.wait();
+                        config.save_to_path(path);
+                    });
+                }
+            });
+            let stored = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("round {round}: config.json is gone: {error}"));
+            if let Err(error) = serde_json::from_str::<AppConfig>(&stored) {
+                panic!("round {round}: config.json no longer parses: {error}");
+            }
+            assert!(
+                whole.contains(&stored),
+                "round {round}: config.json parses but is no single writer's config"
+            );
+        }
+        cleanup(&path);
+    }
+
+    /// A load writes back what it read. A save landing between that read and
+    /// that write is overwritten with the OLDER copy — a background
+    /// `AppConfig::load()` undoing a tick the GUI just saved, G112 in
+    /// miniature. So the lock spans the whole load, not only its write.
+    #[test]
+    fn a_load_never_writes_back_a_copy_older_than_a_concurrent_save() {
+        const ROUNDS: usize = 300;
+        let path = temp_config_path("load-vs-save");
+        let older = config_with_account("older");
+        let newer = config_with_account("newer");
+
+        for round in 0..ROUNDS {
+            older.save_to_path(&path);
+            let start = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    start.wait();
+                    let _ = AppConfig::load_from_path(&path);
+                });
+                scope.spawn(|| {
+                    start.wait();
+                    newer.save_to_path(&path);
+                });
+            });
+            let stored = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("round {round}: config.json is gone: {error}"));
+            let stored: AppConfig = serde_json::from_str(&stored).unwrap_or_else(|error| {
+                panic!("round {round}: config.json no longer parses: {error}")
+            });
+            assert_eq!(
+                stored
+                    .google_accounts
+                    .first()
+                    .map(|account| account.id.as_str()),
+                Some("newer"),
+                "round {round}: a load wrote back the copy it read before a concurrent save"
+            );
+        }
         cleanup(&path);
     }
 
