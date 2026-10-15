@@ -1,5 +1,5 @@
 #define MyAppName "Delegator"
-#define MyAppVersion "0.8.4"
+#define MyAppVersion "0.9.0"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -57,6 +57,7 @@ Name: "desktopicon"; Description: "{cm:DesktopShortcut}"; GroupDescription: "{cm
 Source: "..\target\release\delegator.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\target\release\delegator-core.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\theme.json"; DestDir: "{app}\resources"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\*"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\DELEGATOR.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\BENCHMARK.md"; DestDir: "{app}\runtime"; Flags: ignoreversion

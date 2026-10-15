@@ -2351,6 +2351,22 @@ impl eframe::App for DelegatorApp {
                     let detected = IdeDetector::detect_all(&self.config.ide_states);
 
                     egui::ScrollArea::vertical().show(ui, |ui| {
+                        if ui
+                            .checkbox(
+                                &mut self.config.gemini_web_enabled,
+                                "Gemini Web (через Chrome)",
+                            )
+                            .on_hover_text(
+                                "Запросы gemini-web/* идут через вашу сессию Gemini в Chrome. \
+                                 Нужно расширение из папки extensions\\gemini-web-bridge \
+                                 (один раз: chrome://extensions → Загрузить распакованное). \
+                                 Окно Gemini расширение открывает и закрывает само.",
+                            )
+                            .changed()
+                        {
+                            self.config.save();
+                        }
+                        ui.add_space(5.0);
                         for ide in detected {
                             let mut is_enabled = self
                                 .config

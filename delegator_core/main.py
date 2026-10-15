@@ -15,8 +15,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -41,6 +40,7 @@ from .db import connect
 from .importers import import_codex_sessions, import_antigravity_sessions
 from .models import (
     ChatTaskEvent,
+    GeminiWebResultRequest,
     ImportSessionsResponse,
     ChatTurnRequest,
     ChatTurnResponse,
@@ -52,6 +52,7 @@ from .models import (
     WorkspacePreferredSessionResponse,
 )
 from .providers import ProviderResult, ProviderUsage, ShellDelegateProvider
+from .providers.gemini_web import GeminiWebBridge, gemini_web_flags
 from .session_store import SessionStore
 from .usage import build_usage_report
 
@@ -123,6 +124,7 @@ class AppState:
             command=config.shell_delegate_cmd,
             timeout_sec=config.shell_timeout_sec,
         )
+        self.gemini_web = GeminiWebBridge()
         self.static_dir = Path(__file__).parent / "static"
         self.index_file = self.static_dir / "index.html"
         self.upload_dir = self.config.home_dir / "uploads"
@@ -943,14 +945,22 @@ async def _run_chat_task(
 
         try:
             core.logger.info(f"Running stream request for task {task_id} with provider {model or 'auto'}")
-            result = await asyncio.to_thread(
-                core.provider.run_stream,
-                mode=effective_mode,
-                text=prompt,
-                model=model,
-                reasoning=reasoning,
-                on_stdout=publish_stream_chunk,
-            )
+            if model and model.startswith("gemini-web/"):
+                result = await core.gemini_web.request(
+                    mode=effective_mode,
+                    text=prompt,
+                    model=model,
+                    reasoning=reasoning,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    core.provider.run_stream,
+                    mode=effective_mode,
+                    text=prompt,
+                    model=model,
+                    reasoning=reasoning,
+                    on_stdout=publish_stream_chunk,
+                )
             core.logger.info(f"Stream request completed successfully for task {task_id}")
         except Exception as exc:
             core.logger.exception(f"Delegate provider execution failed for task {task_id}")
@@ -1474,6 +1484,35 @@ def create_app() -> FastAPI:
         media_type, _ = mimetypes.guess_type(str(target))
         return FileResponse(target, media_type=media_type or "application/octet-stream", filename=target.name.split("_", 1)[-1])
 
+    @app.get("/api/gemini-web/state")
+    def gemini_web_state() -> dict[str, bool]:
+        core: AppState = app.state.core
+        enabled, active = gemini_web_flags()
+        return {"enabled": enabled, "wanted": enabled and active, "connected": core.gemini_web.is_connected()}
+
+    @app.get("/api/gemini-web/next")
+    async def gemini_web_next():
+        core: AppState = app.state.core
+        if not gemini_web_flags()[0]:
+            await asyncio.sleep(2)
+            return Response(status_code=204)
+        request = await core.gemini_web.next_request()
+        if request is None:
+            return Response(status_code=204)
+        return request
+
+    @app.post("/api/gemini-web/result")
+    def gemini_web_result(payload: GeminiWebResultRequest) -> dict[str, bool]:
+        core: AppState = app.state.core
+        resolved = core.gemini_web.resolve(
+            payload.request_id,
+            text=payload.text,
+            error=payload.error,
+        )
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Gemini Web request is no longer active")
+        return {"ok": True}
+
     @app.get("/api/chat/tasks/{task_id}")
     def get_chat_task(task_id: str):
         core: AppState = app.state.core
@@ -1626,7 +1665,7 @@ def create_app() -> FastAPI:
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     @app.post("/api/chat/turn")
-    def chat_turn(payload: ChatTurnRequest) -> ChatTurnResponse:
+    async def chat_turn(payload: ChatTurnRequest) -> ChatTurnResponse:
         core: AppState = app.state.core
         try:
             session = core.sessions.get_session(payload.session_id)
@@ -1669,7 +1708,21 @@ def create_app() -> FastAPI:
             )
         try:
             prompt = _build_delegate_prompt(core, session, core.sessions.list_messages(session.id), payload.text)
-            result = core.provider.run(mode=effective_mode, text=prompt, model=payload.model, reasoning=payload.reasoning)
+            if payload.model and payload.model.startswith("gemini-web/"):
+                result = await core.gemini_web.request(
+                    mode=effective_mode,
+                    text=prompt,
+                    model=payload.model,
+                    reasoning=payload.reasoning,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    core.provider.run,
+                    mode=effective_mode,
+                    text=prompt,
+                    model=payload.model,
+                    reasoning=payload.reasoning,
+                )
         except Exception as exc:
             assistant_message = core.sessions.append_message(
                 session_id=session.id,

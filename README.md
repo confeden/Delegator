@@ -114,7 +114,7 @@ Hooks обновляются без перезапуска IDE. Деинстал
 http://127.0.0.1:1380/health
 ```
 
-Ответ содержит версию `0.8.4` и путь к установленному runtime, поэтому старый Core на порту 1380 не принимается за текущий.
+Ответ содержит версию `0.9.0` и путь к установленному runtime, поэтому старый Core на порту 1380 не принимается за текущий.
 
 ## Сборка
 
@@ -124,13 +124,13 @@ http://127.0.0.1:1380/health
 .\build-installer.ps1
 ```
 
-Скрипт создаёт build-only Python-окружение, устанавливает закреплённые версии из `requirements-build.txt`, запускает Rust-тесты, собирает GUI и автономный Core, затем создаёт Inno Setup установщик `dist\DelegatorSetup-0.8.4.exe`.
+Скрипт создаёт build-only Python-окружение, устанавливает закреплённые версии из `requirements-build.txt`, запускает Rust-тесты, собирает GUI и автономный Core, затем создаёт Inno Setup установщик `dist\DelegatorSetup-0.9.0.exe`.
 
 Полезные проверки:
 
 ```powershell
 cargo test --locked
-.\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.8.4.exe
+.\scripts\audit-release.ps1 -InstallerPath .\dist\DelegatorSetup-0.9.0.exe
 & "$env:LOCALAPPDATA\Programs\Delegator\runtime\ai-delegate.cmd" models
 Invoke-RestMethod http://127.0.0.1:1380/health
 ```

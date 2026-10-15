@@ -18,6 +18,10 @@ Runtime читает только DPAPI-аккаунты, сохранённые
 
 Документация: <https://ai.google.dev/gemini-api/docs/latest-model>, <https://ai.google.dev/gemini-api/docs/models>, <https://ai.google.dev/api/models>, <https://ai.google.dev/api/generate-content>.
 
+## Gemini Web через Chrome
+
+Для личной веб-сессии отдельный пул `gemini-web/*` обращается к уже авторизованному Gemini через расширение `extensions/gemini-web-bridge`; это не API-протокол. Доступны модели, видимые в текущем UI: Gemini 4 Argon, 3.1 Pro, 3.8 Flash и 3.5 Flash-Lite. Уровни рассуждений выставляются в меню Gemini: low, medium и high; `auto` выбирает уровень эвристикой Delegator по содержимому запроса. Расширение запускает каждый запрос в новом чате, чтобы не смешивать его с открытыми личными беседами. Передаются текст и контекст, который Delegator собрал для текущей сессии; вложения не поддерживаются.
+
 ## OpenCode Zen
 
 В GUI доступны семь бесплатных alias Zen. `opencode/big-pickle` выключена по умолчанию; остальные шесть включены. Runtime передаёт выбранную модель установленному OpenCode CLI. CLI сам управляет протоколом Zen и собственной авторизацией.

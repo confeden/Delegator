@@ -253,6 +253,11 @@ pub struct AppConfig {
     pub ide_states: HashMap<String, bool>,
     #[serde(default = "default_true")]
     pub delegator_enabled: bool,
+    /// «Gemini Web (через Chrome)»: the Chrome extension opens a hidden Gemini
+    /// window and the Core routes `gemini-web/*` chats through it. Off by
+    /// default: it is the only path that uses a browser session, not a key.
+    #[serde(default)]
+    pub gemini_web_enabled: bool,
 }
 
 impl Default for AppConfig {
@@ -272,6 +277,7 @@ impl Default for AppConfig {
             provider_catalog_refreshed_at: 0,
             ide_states: default_ide_states(),
             delegator_enabled: true,
+            gemini_web_enabled: false,
         }
     }
 }

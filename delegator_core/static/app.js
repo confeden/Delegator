@@ -13,6 +13,15 @@ const MODEL_GROUPS = [
     ],
   },
   {
+    label: "Gemini Web (Chrome)",
+    options: [
+      { value: "gemini-web/argon", label: "Gemini 4 Argon · Web" },
+      { value: "gemini-web/3.1-pro", label: "Gemini 3.1 Pro · Web" },
+      { value: "gemini-web/3.8-flash", label: "Gemini 3.8 Flash · Web" },
+      { value: "gemini-web/3.5-flash-lite", label: "Gemini 3.5 Flash-Lite · Web" },
+    ],
+  },
+  {
     label: "Codex",
     options: [
       { value: "gpt-5.5", label: "GPT-5.5" },
@@ -81,6 +90,12 @@ const REASONING_OPTIONS = {
     { value: "low", label: "low" },
     { value: "high", label: "high" },
   ],
+  gemini_web: [
+    { value: "auto", label: "auto" },
+    { value: "low", label: "низкий" },
+    { value: "medium", label: "средний" },
+    { value: "high", label: "высокий" },
+  ],
 };
 
 const THEME_KEY = "delegator-core:theme";
@@ -138,15 +153,18 @@ const state = {
 const els = {
   configSummary: document.getElementById("configSummary"),
   navNew: document.getElementById("navNew"),
+  navGemini: document.getElementById("navGemini"),
   navSearch: document.getElementById("navSearch"),
   navProjects: document.getElementById("navProjects"),
   panelNew: document.getElementById("panelNew"),
   searchPopover: document.getElementById("searchPopover"),
   panelProjects: document.getElementById("panelProjects"),
+  panelGemini: document.getElementById("panelGemini"),
   newSessionForm: document.getElementById("newSessionForm"),
   sessionTitle: document.getElementById("sessionTitle"),
   searchInput: document.getElementById("searchInput"),
   resumeWorkspaceButton: document.getElementById("resumeWorkspaceButton"),
+  selectGeminiModelButton: document.getElementById("selectGeminiModelButton"),
   workspaceHint: document.getElementById("workspaceHint"),
   importCodexButton: document.getElementById("importCodexButton"),
   quickNewChatButton: document.getElementById("quickNewChatButton"),
@@ -454,6 +472,7 @@ function getModelLabel(value) {
 
 function getReasoningProfile(model) {
   if (!model || model === "auto") return REASONING_OPTIONS.auto;
+  if (model.startsWith("gemini-web/")) return REASONING_OPTIONS.gemini_web;
   if (model.startsWith("gpt-5.") || model.startsWith("gpt-5.3-codex")) return REASONING_OPTIONS.codex;
   if (model.includes("gpt-5-nano")) return REASONING_OPTIONS.opencode_gpt5nano;
   if (model.includes("gpt-oss-")) return REASONING_OPTIONS.opencode_gptoss;
@@ -983,11 +1002,12 @@ function fitComposerControls() {
 function switchNav(name) {
   state.activeNav = name;
   saveUiPref(NAV_KEY, name);
-  for (const [key, button] of [["new", els.navNew], ["search", els.navSearch], ["projects", els.navProjects]]) {
+  for (const [key, button] of [["new", els.navNew], ["gemini", els.navGemini], ["search", els.navSearch], ["projects", els.navProjects]]) {
     button.dataset.active = key === name ? "true" : "false";
   }
   els.panelNew.hidden = name !== "new";
   els.panelProjects.hidden = name !== "projects";
+  els.panelGemini.hidden = name !== "gemini";
   if (name !== "search") {
     hideSearchPopover();
   }
@@ -1761,6 +1781,10 @@ async function sendMessage(text, mode) {
   const draftSnapshot = text;
   const selectedModel = getSelectedModel();
   const selectedReasoning = getSelectedReasoning() || resolveAutoReasoning(selectedModel || "auto", mode, text);
+  if (selectedModel?.startsWith("gemini-web/") && state.attachments.length) {
+    setStatus("Gemini Web через Chrome пока принимает только текст. Удалите вложения или выберите API-модель.", true);
+    return;
+  }
   setSending(true);
   setStatus("Подготавливаю контекст и ставлю запрос в очередь...", false, { busy: true, phase: "prepare" });
   try {
@@ -2142,6 +2166,22 @@ function applyFont(font) {
 }
 
 els.navNew.addEventListener("click", () => switchNav("new"));
+function selectGeminiWebModel() {
+  const selected = state.selectedModel?.startsWith("gemini-web/")
+    ? state.selectedModel
+    : "gemini-web/argon";
+  state.selectedModel = selected;
+  els.modelSelect.value = selected;
+  saveUiPref(MODEL_KEY, selected);
+  renderReasoningOptions();
+  updateTopbar();
+  setStatus(`Выбрана модель: ${getModelLabel(selected)}`);
+}
+els.navGemini.addEventListener("click", () => {
+  switchNav("gemini");
+  selectGeminiWebModel();
+});
+els.selectGeminiModelButton.addEventListener("click", selectGeminiWebModel);
 els.navSearch.addEventListener("mouseenter", showSearchPopover);
 els.navSearch.addEventListener("mouseleave", hideSearchPopoverDelayed);
 els.navSearch.addEventListener("click", (event) => {

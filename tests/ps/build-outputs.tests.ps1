@@ -458,18 +458,18 @@ Test-Case "installers are left alone when the one to keep is not this build's" {
     # other one" would put the installer just built in the Recycle Bin.
     $dist = Join-Path $script:Sandbox ("dist-" + [Guid]::NewGuid().ToString("n").Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
-    foreach ($name in @("DelegatorSetup-0.8.4.exe", "DelegatorSetup-0.8.5.exe")) {
+    foreach ($name in @("DelegatorSetup-0.9.0.exe", "DelegatorSetup-0.9.1.exe")) {
         [System.IO.File]::WriteAllText((Join-Path $dist $name), "")
     }
-    $keep = Join-Path $dist "DelegatorSetup-0.8.4.exe"
+    $keep = Join-Path $dist "DelegatorSetup-0.9.0.exe"
     [System.IO.File]::SetLastWriteTimeUtc($keep, $script:PruneNow.AddHours(-3))
     $stale = Invoke-InstallerPrune -DistDir $dist -KeepInstaller $keep -BuiltAfterUtc $script:PruneNow.AddMinutes(-10) -DryRun
     Assert-Equal "skipped" $stale.Status
     Assert-Equal 0 @($stale.Moved).Count
     $fresh = Invoke-InstallerPrune -DistDir $dist -KeepInstaller $keep -BuiltAfterUtc $script:PruneNow.AddHours(-4) -DryRun
     Assert-Equal "pruned" $fresh.Status
-    Assert-Equal "DelegatorSetup-0.8.5.exe" (@($fresh.Moved) -join ",")
-    Assert-True (Test-Path -LiteralPath (Join-Path $dist "DelegatorSetup-0.8.5.exe")) "a dry run moves nothing"
+    Assert-Equal "DelegatorSetup-0.9.1.exe" (@($fresh.Moved) -join ",")
+    Assert-True (Test-Path -LiteralPath (Join-Path $dist "DelegatorSetup-0.9.1.exe")) "a dry run moves nothing"
 }
 
 Test-Case "the Recycle Bin check answers for a real file without throwing" {
@@ -483,10 +483,10 @@ Test-Case "the Recycle Bin check answers for a real file without throwing" {
 Test-Case "stale installers are every installer but the one just built" {
     $dist = Join-Path $script:Sandbox ("dist-" + [Guid]::NewGuid().ToString("n").Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
-    foreach ($name in @("DelegatorSetup-0.8.2.exe", "DelegatorSetup-0.8.3.exe", "DelegatorSetup-0.8.4.exe", "notes.txt")) {
+    foreach ($name in @("DelegatorSetup-0.8.2.exe", "DelegatorSetup-0.8.3.exe", "DelegatorSetup-0.8.4.exe", "DelegatorSetup-0.9.0.exe", "notes.txt")) {
         [System.IO.File]::WriteAllText((Join-Path $dist $name), "")
     }
-    $stale = @(Get-StaleInstallers -DistDir $dist -KeepInstaller (Join-Path $dist "DelegatorSetup-0.8.4.exe") | ForEach-Object { $_.Name } | Sort-Object)
+    $stale = @(Get-StaleInstallers -DistDir $dist -KeepInstaller (Join-Path $dist "DelegatorSetup-0.9.0.exe") | ForEach-Object { $_.Name } | Sort-Object)
     Assert-Equal "DelegatorSetup-0.8.2.exe,DelegatorSetup-0.8.3.exe" ($stale -join ",")
-    Assert-Equal 0 @(Get-StaleInstallers -DistDir (Join-Path $dist "missing") -KeepInstaller (Join-Path $dist "DelegatorSetup-0.8.4.exe")).Count
+    Assert-Equal 0 @(Get-StaleInstallers -DistDir (Join-Path $dist "missing") -KeepInstaller (Join-Path $dist "DelegatorSetup-0.9.0.exe")).Count
 }

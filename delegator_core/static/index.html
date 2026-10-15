@@ -20,6 +20,7 @@
 
         <nav class="sidebar-nav">
           <button id="navNew" class="nav-button" type="button">Новый чат</button>
+          <button id="navGemini" class="nav-button" type="button">Gemini</button>
           <button id="navSearch" class="nav-button" type="button">Поиск</button>
           <button id="navProjects" class="nav-button" type="button">Проекты</button>
         </nav>
@@ -45,6 +46,16 @@
             <div class="stack-actions">
               <button id="resumeWorkspaceButton" class="primary-button" type="button">Продолжить основной чат проекта</button>
               <button id="importCodexButton" class="ghost-button" type="button">Импортировать чаты IDE</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="panelGemini" class="sidebar-panel" hidden>
+          <div class="project-card">
+            <div class="field-label">Gemini через Chrome</div>
+            <div class="field-hint">Включите «Gemini Web (через Chrome)» на вкладке «Интеграция» в Delegator и один раз установите расширение Delegator Gemini Bridge из папки extensions\gemini-web-bridge (chrome://extensions → Загрузить распакованное). Дальше расширение само открывает свёрнутое окно Gemini и закрывает его, когда настройка выключена.</div>
+            <div class="stack-actions">
+              <button id="selectGeminiModelButton" class="primary-button" type="button">Выбрать Gemini Web</button>
             </div>
           </div>
         </section>

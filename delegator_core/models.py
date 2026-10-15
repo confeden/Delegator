@@ -59,6 +59,12 @@ class ChatTurnRequest(BaseModel):
     reasoning: str | None = Field(default=None, max_length=40)
 
 
+class GeminiWebResultRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(default="", max_length=500_000)
+    error: str | None = Field(default=None, max_length=2_000)
+
+
 class ChatTurnResponse(BaseModel):
     session: SessionRecord
     user_message: MessageRecord

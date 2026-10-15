@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Delegator Gemini Bridge",
+  "version": "0.13.0",
+  "description": "Sends selected Delegator chat requests to a dedicated signed-in Gemini Web tab.",
+  "permissions": ["alarms", "scripting", "debugger"],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "http://127.0.0.1:1380/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/app*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
