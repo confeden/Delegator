@@ -230,11 +230,13 @@ Delegator gives you free access to stronger models through `{entry}`. It costs y
 & \"{entry}\" assist -PromptFile \"$env:TEMP\\dg-task.txt\" -CallerModel \"<your model id>\" [-DraftFile \"$env:TEMP\\dg-draft.md\"] [-ContextFile \"<path>;<path>\"]\n\
 ```\n\
 \n\
-Run it in PowerShell (`&` is the call operator). Allow up to 6 minutes per call and do not set a shorter tool timeout.\n\
+Run it in PowerShell (`&` is the call operator). Allow up to 10 minutes per call and do not set a shorter tool timeout.\n\
 \n\
 ## When to call it\n\
-- **You already have an answer** — pass it as `-DraftFile` whenever it contains code, a root-cause claim, an API or config recipe, or a migration plan. Delegator will review it, or say it is fine, or decide a review is not worth the wait.\n\
-- **You have work to hand over** — call it with `-PromptFile` only: bulk or boilerplate code, summaries of long files and logs, research questions, test generation, translations.\n\
+**Every user request goes through Delegator FIRST — before you answer, read files or act.** The only exceptions are a greeting or small talk (`hi`, `привет`, `thanks`), `-ping` and `-benchmark`. This holds for every message of a conversation — the 20th message of an old one as much as the first — and for short follow-ups that carry work (`continue`, `fix that`, `yes, do it`).\n\
+- **You have no answer yet** — call it with `-PromptFile` only. The file must stand on its own: Delegator sees nothing of this conversation, so write what the user wants NOW plus the facts from earlier turns that it depends on (a bare `continue` means nothing to it).\n\
+- **You already have an answer** — pass it as `-DraftFile` as well whenever it contains code, a root-cause claim, an API or config recipe, or a migration plan. Delegator will review it, or say it is fine, or decide a review is not worth the wait.\n\
+- Doing the work stays with you (editing files, running commands): ask Delegator for the thinking first, then act on its answer.\n\
 Write both files as UTF-8. `-ContextFile` lists files you actually read; a wrong path is skipped, never fatal.\n\
 \n\
 ## `-CallerModel` — always pass it\n\
@@ -258,7 +260,7 @@ If the user's message is exactly `-ping`, run:\n\
 and print its output as your ENTIRE answer, unchanged. It is written for the user, in their language — do not summarise it, translate it or comment on it. Never answer `-ping` from memory: it reports whether Delegator can still reach a model right now, and a report you did not run proves nothing. It usually takes a few seconds — it makes one real call, and at most one more if the first provider is silent.\n\
 \n\
 ## `-benchmark`\n\
-If the user's message is exactly `-benchmark`, open `{runtime}\\BENCHMARK.md` and follow it literally. It measures the user's own model against the same model with Delegator, and it grades mechanically — never grade the answers yourself and never invent a result.\n\
+If the user's message is exactly `-benchmark` or `-benchmark d` (also written `/benchmark` or `/benchmark d`), open `{runtime}\\BENCHMARK.md` and follow it literally. It is a coding benchmark: plain `-benchmark` measures your own model alone, `-benchmark d` measures the same model boosted by Delegator. It grades mechanically — never grade anything yourself and never invent a result. For the whole run `BENCHMARK.md` overrides this file: in plain `-benchmark` do NOT call Delegator at all.\n\
 \n\
 ## Rules\n\
 - `assist` is the entry point. The old verbs (`improve`, `delegate`, `boost`) still work if you pin one deliberately, but the default is to let Delegator choose.\n\

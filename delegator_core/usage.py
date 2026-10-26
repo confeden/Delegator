@@ -27,7 +27,7 @@ def is_benchmark_record(record: dict[str, Any]) -> bool:
     It deliberately solves twelve tasks twice, so counting it would inflate
     "spent" by the price of the measurement and "saved" by work the user never
     asked for -- the counter would end up rewarding running the benchmark.
-    `benchmark.ps1` marks these records via `<RT>\\benchmark-active.json`; records
+    `coding-bench/start.py` marks these records via `<RT>\\benchmark-active.json`; records
     written before 0.7 carry no flag at all and are simply not benchmarks as far
     as this function can tell, which is why 0.7 resets the log.
     """

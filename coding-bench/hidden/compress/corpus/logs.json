@@ -1,0 +1,1227 @@
+{"tx_id": "TX-8775", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 205}
+{"tx_id": "TX-1177", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 363}
+{"tx_id": "TX-4729", "items": ["apple", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 183}
+{"tx_id": "TX-4444", "items": ["cherry"], "success": true, "latency_ms": 48}
+{"tx_id": "TX-9413", "items": ["cherry", "banana", "apple"], "success": false, "latency_ms": 41}
+{"tx_id": "TX-9338", "items": ["apple", "banana"], "success": true, "latency_ms": 67}
+{"tx_id": "TX-7933", "items": ["cherry", "banana"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-3679", "items": ["cherry"], "success": true, "latency_ms": 427}
+{"tx_id": "TX-2369", "items": ["cherry", "banana", "cherry", "cherry"], "success": true, "latency_ms": 321}
+{"tx_id": "TX-7300", "items": ["apple", "cherry", "cherry", "apple", "apple"], "success": true, "latency_ms": 349}
+{"tx_id": "TX-5285", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 68}
+{"tx_id": "TX-5134", "items": ["banana", "banana"], "success": true, "latency_ms": 303}
+{"tx_id": "TX-9192", "items": ["apple", "banana"], "success": true, "latency_ms": 230}
+{"tx_id": "TX-1535", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-2681", "items": ["apple", "apple", "apple", "cherry", "banana"], "success": false, "latency_ms": 151}
+{"tx_id": "TX-9164", "items": ["cherry", "cherry", "cherry"], "success": false, "latency_ms": 245}
+{"tx_id": "TX-7034", "items": ["banana", "banana"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-8881", "items": ["apple", "banana"], "success": true, "latency_ms": 196}
+{"tx_id": "TX-3980", "items": ["cherry", "apple"], "success": true, "latency_ms": 13}
+{"tx_id": "TX-5395", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 136}
+{"tx_id": "TX-2901", "items": ["cherry", "cherry", "apple"], "success": false, "latency_ms": 175}
+{"tx_id": "TX-5578", "items": ["apple"], "success": true, "latency_ms": 267}
+{"tx_id": "TX-8821", "items": ["cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 467}
+{"tx_id": "TX-3656", "items": ["banana", "cherry", "apple", "banana"], "success": true, "latency_ms": 451}
+{"tx_id": "TX-9440", "items": ["cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 24}
+{"tx_id": "TX-1060", "items": ["apple"], "success": true, "latency_ms": 146}
+{"tx_id": "TX-7886", "items": ["apple", "apple"], "success": true, "latency_ms": 40}
+{"tx_id": "TX-5225", "items": ["banana"], "success": true, "latency_ms": 57}
+{"tx_id": "TX-7631", "items": ["cherry", "cherry"], "success": true, "latency_ms": 198}
+{"tx_id": "TX-7308", "items": ["apple", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 418}
+{"tx_id": "TX-1621", "items": ["banana"], "success": true, "latency_ms": 414}
+{"tx_id": "TX-7217", "items": ["cherry"], "success": true, "latency_ms": 169}
+{"tx_id": "TX-5435", "items": ["banana", "cherry", "cherry", "apple", "apple"], "success": true, "latency_ms": 368}
+{"tx_id": "TX-7457", "items": ["apple", "apple", "banana", "banana", "banana"], "success": false, "latency_ms": 180}
+{"tx_id": "TX-3323", "items": ["cherry"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-3944", "items": ["banana", "apple", "apple", "apple"], "success": true, "latency_ms": 237}
+{"tx_id": "TX-8952", "items": ["apple", "cherry"], "success": true, "latency_ms": 243}
+{"tx_id": "TX-4905", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 197}
+{"tx_id": "TX-5582", "items": ["cherry", "banana"], "success": true, "latency_ms": 274}
+{"tx_id": "TX-3403", "items": ["cherry", "banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 266}
+{"tx_id": "TX-5093", "items": ["banana", "apple", "apple", "banana"], "success": true, "latency_ms": 399}
+{"tx_id": "TX-7476", "items": ["cherry", "banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 358}
+{"tx_id": "TX-6112", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 468}
+{"tx_id": "TX-6912", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 288}
+{"tx_id": "TX-3203", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 156}
+{"tx_id": "TX-7693", "items": ["banana", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 338}
+{"tx_id": "TX-1533", "items": ["banana", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 218}
+{"tx_id": "TX-7220", "items": ["banana", "banana", "apple", "apple"], "success": true, "latency_ms": 437}
+{"tx_id": "TX-5172", "items": ["banana"], "success": true, "latency_ms": 37}
+{"tx_id": "TX-6878", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 450}
+{"tx_id": "TX-1402", "items": ["banana", "apple", "apple", "apple", "apple"], "success": true, "latency_ms": 376}
+{"tx_id": "TX-5859", "items": ["apple", "banana"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-2676", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-9643", "items": ["cherry"], "success": true, "latency_ms": 211}
+{"tx_id": "TX-9278", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 208}
+{"tx_id": "TX-7797", "items": ["apple", "cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 448}
+{"tx_id": "TX-7003", "items": ["cherry"], "success": true, "latency_ms": 290}
+{"tx_id": "TX-7649", "items": ["banana", "apple", "apple", "banana", "apple"], "success": true, "latency_ms": 226}
+{"tx_id": "TX-2380", "items": ["apple"], "success": true, "latency_ms": 25}
+{"tx_id": "TX-2854", "items": ["cherry", "cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 310}
+{"tx_id": "TX-8789", "items": ["banana", "banana"], "success": true, "latency_ms": 288}
+{"tx_id": "TX-6176", "items": ["banana", "apple"], "success": true, "latency_ms": 182}
+{"tx_id": "TX-1962", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 317}
+{"tx_id": "TX-3239", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 233}
+{"tx_id": "TX-6572", "items": ["banana", "banana", "cherry", "banana"], "success": true, "latency_ms": 461}
+{"tx_id": "TX-8946", "items": ["apple", "cherry", "cherry"], "success": true, "latency_ms": 195}
+{"tx_id": "TX-2054", "items": ["banana", "banana"], "success": true, "latency_ms": 298}
+{"tx_id": "TX-3078", "items": ["cherry", "banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 62}
+{"tx_id": "TX-2953", "items": ["cherry", "banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 327}
+{"tx_id": "TX-5525", "items": ["banana", "banana", "banana", "banana"], "success": true, "latency_ms": 479}
+{"tx_id": "TX-6412", "items": ["cherry", "banana", "apple", "apple", "cherry"], "success": true, "latency_ms": 114}
+{"tx_id": "TX-6281", "items": ["banana", "cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-7508", "items": ["cherry"], "success": true, "latency_ms": 285}
+{"tx_id": "TX-2207", "items": ["apple", "banana", "apple", "banana", "apple"], "success": true, "latency_ms": 97}
+{"tx_id": "TX-8180", "items": ["banana", "apple"], "success": true, "latency_ms": 129}
+{"tx_id": "TX-4075", "items": ["banana", "cherry"], "success": true, "latency_ms": 118}
+{"tx_id": "TX-3998", "items": ["cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 210}
+{"tx_id": "TX-8231", "items": ["banana", "banana", "banana", "cherry"], "success": true, "latency_ms": 110}
+{"tx_id": "TX-4918", "items": ["cherry", "cherry", "banana", "cherry", "cherry"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-6564", "items": ["banana", "banana", "apple"], "success": false, "latency_ms": 465}
+{"tx_id": "TX-5784", "items": ["cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 276}
+{"tx_id": "TX-7895", "items": ["banana", "apple", "banana", "banana", "banana"], "success": true, "latency_ms": 82}
+{"tx_id": "TX-1826", "items": ["apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 72}
+{"tx_id": "TX-7220", "items": ["banana", "banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 126}
+{"tx_id": "TX-7224", "items": ["banana", "cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 401}
+{"tx_id": "TX-2774", "items": ["banana", "apple"], "success": true, "latency_ms": 474}
+{"tx_id": "TX-8267", "items": ["banana"], "success": true, "latency_ms": 104}
+{"tx_id": "TX-1947", "items": ["banana", "apple", "banana", "banana"], "success": true, "latency_ms": 214}
+{"tx_id": "TX-2392", "items": ["cherry"], "success": true, "latency_ms": 277}
+{"tx_id": "TX-8454", "items": ["cherry", "banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 471}
+{"tx_id": "TX-3315", "items": ["banana"], "success": true, "latency_ms": 280}
+{"tx_id": "TX-5537", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 273}
+{"tx_id": "TX-7450", "items": ["apple", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 196}
+{"tx_id": "TX-5698", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 68}
+{"tx_id": "TX-3305", "items": ["cherry"], "success": true, "latency_ms": 412}
+{"tx_id": "TX-9249", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 19}
+{"tx_id": "TX-3368", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-3749", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 232}
+{"tx_id": "TX-4376", "items": ["apple", "cherry"], "success": true, "latency_ms": 159}
+{"tx_id": "TX-2540", "items": ["banana", "banana", "banana", "banana", "banana"], "success": false, "latency_ms": 164}
+{"tx_id": "TX-9827", "items": ["cherry", "cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 171}
+{"tx_id": "TX-3282", "items": ["banana"], "success": true, "latency_ms": 289}
+{"tx_id": "TX-4349", "items": ["apple"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-3873", "items": ["cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-7124", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 461}
+{"tx_id": "TX-6163", "items": ["apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 352}
+{"tx_id": "TX-8849", "items": ["apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 283}
+{"tx_id": "TX-7388", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 96}
+{"tx_id": "TX-9685", "items": ["cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 220}
+{"tx_id": "TX-4495", "items": ["banana", "cherry"], "success": false, "latency_ms": 250}
+{"tx_id": "TX-8384", "items": ["apple", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 442}
+{"tx_id": "TX-3935", "items": ["apple", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 330}
+{"tx_id": "TX-3788", "items": ["apple"], "success": true, "latency_ms": 446}
+{"tx_id": "TX-8942", "items": ["apple", "apple"], "success": true, "latency_ms": 245}
+{"tx_id": "TX-4761", "items": ["banana", "apple"], "success": true, "latency_ms": 274}
+{"tx_id": "TX-9996", "items": ["apple", "cherry", "cherry", "banana", "banana"], "success": false, "latency_ms": 93}
+{"tx_id": "TX-9984", "items": ["cherry", "cherry", "cherry"], "success": false, "latency_ms": 317}
+{"tx_id": "TX-1678", "items": ["cherry", "apple", "apple", "cherry"], "success": true, "latency_ms": 451}
+{"tx_id": "TX-3996", "items": ["cherry"], "success": true, "latency_ms": 14}
+{"tx_id": "TX-3002", "items": ["apple", "banana", "banana", "cherry", "apple"], "success": false, "latency_ms": 343}
+{"tx_id": "TX-9780", "items": ["cherry"], "success": true, "latency_ms": 161}
+{"tx_id": "TX-2131", "items": ["banana", "apple"], "success": true, "latency_ms": 15}
+{"tx_id": "TX-3472", "items": ["apple"], "success": false, "latency_ms": 398}
+{"tx_id": "TX-7079", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-3769", "items": ["cherry", "cherry", "apple", "cherry"], "success": true, "latency_ms": 411}
+{"tx_id": "TX-7656", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-4773", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 71}
+{"tx_id": "TX-2393", "items": ["apple", "apple", "apple", "banana"], "success": true, "latency_ms": 357}
+{"tx_id": "TX-9801", "items": ["cherry", "cherry", "banana", "cherry"], "success": false, "latency_ms": 465}
+{"tx_id": "TX-3572", "items": ["banana", "apple", "cherry", "cherry", "banana"], "success": true, "latency_ms": 162}
+{"tx_id": "TX-4868", "items": ["apple"], "success": true, "latency_ms": 171}
+{"tx_id": "TX-9086", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 421}
+{"tx_id": "TX-2084", "items": ["apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 13}
+{"tx_id": "TX-6216", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 20}
+{"tx_id": "TX-2769", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 222}
+{"tx_id": "TX-3209", "items": ["cherry", "cherry"], "success": true, "latency_ms": 388}
+{"tx_id": "TX-4715", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 372}
+{"tx_id": "TX-3351", "items": ["banana"], "success": true, "latency_ms": 55}
+{"tx_id": "TX-7025", "items": ["apple", "banana"], "success": true, "latency_ms": 56}
+{"tx_id": "TX-2326", "items": ["banana", "banana", "apple", "apple", "cherry"], "success": true, "latency_ms": 264}
+{"tx_id": "TX-6527", "items": ["apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 396}
+{"tx_id": "TX-2858", "items": ["apple"], "success": true, "latency_ms": 36}
+{"tx_id": "TX-9415", "items": ["banana", "cherry"], "success": false, "latency_ms": 169}
+{"tx_id": "TX-3715", "items": ["banana", "cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 30}
+{"tx_id": "TX-8971", "items": ["apple"], "success": true, "latency_ms": 338}
+{"tx_id": "TX-7916", "items": ["banana", "cherry", "cherry", "banana", "banana"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-4984", "items": ["banana", "banana", "apple", "cherry", "apple"], "success": true, "latency_ms": 491}
+{"tx_id": "TX-8627", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 153}
+{"tx_id": "TX-9618", "items": ["cherry", "apple", "apple", "apple", "apple"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-3793", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-7739", "items": ["apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 291}
+{"tx_id": "TX-9134", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 20}
+{"tx_id": "TX-9835", "items": ["apple"], "success": true, "latency_ms": 141}
+{"tx_id": "TX-7733", "items": ["banana", "banana", "banana", "cherry", "banana"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-1091", "items": ["cherry"], "success": true, "latency_ms": 277}
+{"tx_id": "TX-2929", "items": ["cherry", "cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 479}
+{"tx_id": "TX-2019", "items": ["apple"], "success": true, "latency_ms": 234}
+{"tx_id": "TX-1488", "items": ["banana", "banana", "apple", "apple", "banana"], "success": false, "latency_ms": 495}
+{"tx_id": "TX-7538", "items": ["banana"], "success": true, "latency_ms": 336}
+{"tx_id": "TX-5585", "items": ["cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 135}
+{"tx_id": "TX-2779", "items": ["apple", "cherry"], "success": true, "latency_ms": 242}
+{"tx_id": "TX-4155", "items": ["cherry", "apple"], "success": true, "latency_ms": 56}
+{"tx_id": "TX-3406", "items": ["banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 435}
+{"tx_id": "TX-9135", "items": ["cherry", "banana", "apple", "cherry", "apple"], "success": true, "latency_ms": 425}
+{"tx_id": "TX-8935", "items": ["apple", "cherry", "banana", "banana"], "success": false, "latency_ms": 132}
+{"tx_id": "TX-9218", "items": ["cherry", "cherry", "apple", "apple"], "success": false, "latency_ms": 217}
+{"tx_id": "TX-1450", "items": ["cherry", "banana", "banana", "apple", "apple"], "success": false, "latency_ms": 326}
+{"tx_id": "TX-8310", "items": ["cherry", "banana", "apple", "cherry", "banana"], "success": false, "latency_ms": 396}
+{"tx_id": "TX-1168", "items": ["banana", "cherry"], "success": true, "latency_ms": 477}
+{"tx_id": "TX-9032", "items": ["apple", "banana"], "success": true, "latency_ms": 298}
+{"tx_id": "TX-1582", "items": ["banana"], "success": true, "latency_ms": 403}
+{"tx_id": "TX-7516", "items": ["cherry", "banana"], "success": true, "latency_ms": 372}
+{"tx_id": "TX-6148", "items": ["apple"], "success": true, "latency_ms": 79}
+{"tx_id": "TX-7480", "items": ["cherry", "cherry", "apple"], "success": false, "latency_ms": 395}
+{"tx_id": "TX-4743", "items": ["apple"], "success": true, "latency_ms": 403}
+{"tx_id": "TX-7863", "items": ["banana"], "success": true, "latency_ms": 66}
+{"tx_id": "TX-2581", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 340}
+{"tx_id": "TX-5021", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 360}
+{"tx_id": "TX-4053", "items": ["cherry", "cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 453}
+{"tx_id": "TX-8526", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 461}
+{"tx_id": "TX-9626", "items": ["cherry", "cherry"], "success": true, "latency_ms": 320}
+{"tx_id": "TX-6312", "items": ["apple"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-9272", "items": ["banana"], "success": true, "latency_ms": 411}
+{"tx_id": "TX-3853", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 423}
+{"tx_id": "TX-2954", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 377}
+{"tx_id": "TX-7631", "items": ["banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 373}
+{"tx_id": "TX-6051", "items": ["banana", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-5601", "items": ["apple", "banana", "cherry", "cherry"], "success": true, "latency_ms": 223}
+{"tx_id": "TX-9889", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-2478", "items": ["cherry", "banana", "apple", "apple", "banana"], "success": true, "latency_ms": 151}
+{"tx_id": "TX-9327", "items": ["apple", "apple", "apple", "cherry"], "success": true, "latency_ms": 441}
+{"tx_id": "TX-7991", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 203}
+{"tx_id": "TX-8841", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 275}
+{"tx_id": "TX-2743", "items": ["cherry", "cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 450}
+{"tx_id": "TX-2967", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 263}
+{"tx_id": "TX-7942", "items": ["cherry", "banana", "apple", "apple", "apple"], "success": true, "latency_ms": 248}
+{"tx_id": "TX-5920", "items": ["cherry", "cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-9411", "items": ["cherry"], "success": true, "latency_ms": 184}
+{"tx_id": "TX-1516", "items": ["apple", "apple"], "success": true, "latency_ms": 94}
+{"tx_id": "TX-9442", "items": ["cherry", "cherry"], "success": true, "latency_ms": 30}
+{"tx_id": "TX-8920", "items": ["apple", "cherry", "banana", "cherry", "cherry"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-5470", "items": ["banana"], "success": true, "latency_ms": 106}
+{"tx_id": "TX-9361", "items": ["banana"], "success": true, "latency_ms": 469}
+{"tx_id": "TX-6174", "items": ["cherry"], "success": true, "latency_ms": 498}
+{"tx_id": "TX-6647", "items": ["banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 485}
+{"tx_id": "TX-8107", "items": ["cherry", "banana", "banana", "apple", "apple"], "success": true, "latency_ms": 425}
+{"tx_id": "TX-9923", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 469}
+{"tx_id": "TX-3140", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 432}
+{"tx_id": "TX-9385", "items": ["apple", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 39}
+{"tx_id": "TX-5275", "items": ["banana", "apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 177}
+{"tx_id": "TX-1819", "items": ["cherry", "apple", "apple", "banana", "banana"], "success": false, "latency_ms": 221}
+{"tx_id": "TX-6995", "items": ["cherry", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 379}
+{"tx_id": "TX-9640", "items": ["cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 226}
+{"tx_id": "TX-6954", "items": ["cherry", "apple", "banana", "banana", "apple"], "success": true, "latency_ms": 440}
+{"tx_id": "TX-1617", "items": ["cherry", "banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 192}
+{"tx_id": "TX-2618", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 36}
+{"tx_id": "TX-5786", "items": ["cherry", "cherry"], "success": true, "latency_ms": 162}
+{"tx_id": "TX-7871", "items": ["banana"], "success": true, "latency_ms": 151}
+{"tx_id": "TX-6676", "items": ["banana"], "success": false, "latency_ms": 278}
+{"tx_id": "TX-9100", "items": ["cherry"], "success": false, "latency_ms": 185}
+{"tx_id": "TX-8677", "items": ["apple"], "success": true, "latency_ms": 400}
+{"tx_id": "TX-1046", "items": ["banana", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 451}
+{"tx_id": "TX-3053", "items": ["apple", "banana", "banana", "banana"], "success": true, "latency_ms": 202}
+{"tx_id": "TX-6419", "items": ["banana", "apple"], "success": true, "latency_ms": 460}
+{"tx_id": "TX-2803", "items": ["apple", "banana"], "success": true, "latency_ms": 37}
+{"tx_id": "TX-2518", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 414}
+{"tx_id": "TX-2837", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 444}
+{"tx_id": "TX-1784", "items": ["banana", "apple"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-5168", "items": ["cherry", "cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 353}
+{"tx_id": "TX-6770", "items": ["cherry", "apple"], "success": true, "latency_ms": 223}
+{"tx_id": "TX-9644", "items": ["apple"], "success": true, "latency_ms": 68}
+{"tx_id": "TX-3514", "items": ["cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 261}
+{"tx_id": "TX-9238", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-2195", "items": ["cherry", "apple"], "success": true, "latency_ms": 174}
+{"tx_id": "TX-6668", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 320}
+{"tx_id": "TX-1551", "items": ["banana", "apple", "banana", "banana"], "success": true, "latency_ms": 80}
+{"tx_id": "TX-3289", "items": ["banana", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 101}
+{"tx_id": "TX-6205", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 289}
+{"tx_id": "TX-5814", "items": ["banana", "cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 273}
+{"tx_id": "TX-1285", "items": ["cherry", "banana"], "success": true, "latency_ms": 472}
+{"tx_id": "TX-6732", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 328}
+{"tx_id": "TX-4384", "items": ["apple", "banana"], "success": true, "latency_ms": 84}
+{"tx_id": "TX-7841", "items": ["cherry", "cherry"], "success": true, "latency_ms": 98}
+{"tx_id": "TX-9325", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 170}
+{"tx_id": "TX-1477", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 445}
+{"tx_id": "TX-7581", "items": ["apple", "banana", "banana", "cherry"], "success": false, "latency_ms": 300}
+{"tx_id": "TX-5779", "items": ["apple"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-5946", "items": ["cherry", "cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 148}
+{"tx_id": "TX-2196", "items": ["banana", "banana", "cherry", "apple", "banana"], "success": true, "latency_ms": 179}
+{"tx_id": "TX-2604", "items": ["cherry", "apple"], "success": true, "latency_ms": 451}
+{"tx_id": "TX-9083", "items": ["banana", "apple"], "success": true, "latency_ms": 396}
+{"tx_id": "TX-1824", "items": ["cherry", "cherry", "cherry", "banana"], "success": true, "latency_ms": 73}
+{"tx_id": "TX-4709", "items": ["apple", "apple", "apple", "cherry"], "success": true, "latency_ms": 134}
+{"tx_id": "TX-9172", "items": ["cherry", "apple"], "success": false, "latency_ms": 110}
+{"tx_id": "TX-8424", "items": ["apple", "banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 83}
+{"tx_id": "TX-6758", "items": ["apple", "apple", "cherry"], "success": false, "latency_ms": 283}
+{"tx_id": "TX-3876", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 402}
+{"tx_id": "TX-3490", "items": ["apple"], "success": true, "latency_ms": 427}
+{"tx_id": "TX-3544", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 37}
+{"tx_id": "TX-9934", "items": ["cherry", "cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 262}
+{"tx_id": "TX-2101", "items": ["cherry", "banana", "apple", "apple", "banana"], "success": true, "latency_ms": 248}
+{"tx_id": "TX-2883", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 323}
+{"tx_id": "TX-6019", "items": ["apple", "apple", "banana", "apple"], "success": true, "latency_ms": 278}
+{"tx_id": "TX-2094", "items": ["banana", "banana", "apple", "apple"], "success": true, "latency_ms": 10}
+{"tx_id": "TX-4434", "items": ["banana", "cherry"], "success": true, "latency_ms": 473}
+{"tx_id": "TX-5616", "items": ["banana", "banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 307}
+{"tx_id": "TX-1706", "items": ["banana", "cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-3123", "items": ["cherry"], "success": true, "latency_ms": 141}
+{"tx_id": "TX-6437", "items": ["cherry", "cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 157}
+{"tx_id": "TX-4479", "items": ["cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-7107", "items": ["banana", "apple", "banana", "apple", "apple"], "success": false, "latency_ms": 430}
+{"tx_id": "TX-3151", "items": ["apple", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-1120", "items": ["banana", "apple", "banana", "apple"], "success": true, "latency_ms": 358}
+{"tx_id": "TX-5719", "items": ["apple", "banana"], "success": true, "latency_ms": 62}
+{"tx_id": "TX-5961", "items": ["banana", "apple"], "success": true, "latency_ms": 26}
+{"tx_id": "TX-8194", "items": ["cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 447}
+{"tx_id": "TX-5699", "items": ["banana"], "success": true, "latency_ms": 350}
+{"tx_id": "TX-3522", "items": ["cherry"], "success": true, "latency_ms": 46}
+{"tx_id": "TX-1675", "items": ["cherry", "banana"], "success": true, "latency_ms": 426}
+{"tx_id": "TX-9004", "items": ["apple", "banana"], "success": true, "latency_ms": 228}
+{"tx_id": "TX-5194", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 378}
+{"tx_id": "TX-8143", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 371}
+{"tx_id": "TX-9620", "items": ["banana"], "success": true, "latency_ms": 400}
+{"tx_id": "TX-4082", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-5120", "items": ["banana"], "success": true, "latency_ms": 226}
+{"tx_id": "TX-5189", "items": ["cherry", "apple", "banana", "apple", "banana"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-8947", "items": ["cherry"], "success": true, "latency_ms": 225}
+{"tx_id": "TX-2770", "items": ["cherry", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 115}
+{"tx_id": "TX-1466", "items": ["banana", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 17}
+{"tx_id": "TX-4398", "items": ["apple", "apple", "banana", "apple", "banana"], "success": true, "latency_ms": 195}
+{"tx_id": "TX-5398", "items": ["cherry", "apple", "banana", "apple"], "success": true, "latency_ms": 42}
+{"tx_id": "TX-2109", "items": ["cherry", "banana", "banana", "banana", "apple"], "success": true, "latency_ms": 94}
+{"tx_id": "TX-4772", "items": ["cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 218}
+{"tx_id": "TX-8335", "items": ["banana", "cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 196}
+{"tx_id": "TX-4661", "items": ["apple", "banana"], "success": true, "latency_ms": 495}
+{"tx_id": "TX-3955", "items": ["banana", "cherry"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-4897", "items": ["apple", "cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-1955", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 154}
+{"tx_id": "TX-1770", "items": ["cherry", "apple", "apple", "apple", "banana"], "success": false, "latency_ms": 453}
+{"tx_id": "TX-1515", "items": ["banana", "banana"], "success": true, "latency_ms": 39}
+{"tx_id": "TX-9658", "items": ["cherry"], "success": true, "latency_ms": 236}
+{"tx_id": "TX-9991", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-2593", "items": ["cherry"], "success": true, "latency_ms": 375}
+{"tx_id": "TX-3652", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 296}
+{"tx_id": "TX-8134", "items": ["banana", "banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 284}
+{"tx_id": "TX-5197", "items": ["apple"], "success": true, "latency_ms": 446}
+{"tx_id": "TX-9731", "items": ["apple", "apple"], "success": false, "latency_ms": 83}
+{"tx_id": "TX-9959", "items": ["cherry", "apple", "cherry", "banana", "banana"], "success": true, "latency_ms": 58}
+{"tx_id": "TX-4906", "items": ["banana", "apple", "apple"], "success": false, "latency_ms": 186}
+{"tx_id": "TX-4907", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-2390", "items": ["banana", "apple"], "success": true, "latency_ms": 221}
+{"tx_id": "TX-3676", "items": ["apple", "banana", "apple", "apple", "apple"], "success": true, "latency_ms": 138}
+{"tx_id": "TX-3330", "items": ["apple", "banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 257}
+{"tx_id": "TX-9097", "items": ["banana", "apple", "cherry", "cherry"], "success": true, "latency_ms": 427}
+{"tx_id": "TX-3593", "items": ["apple", "apple"], "success": true, "latency_ms": 448}
+{"tx_id": "TX-6444", "items": ["banana"], "success": true, "latency_ms": 47}
+{"tx_id": "TX-2782", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 83}
+{"tx_id": "TX-9210", "items": ["banana", "banana"], "success": true, "latency_ms": 441}
+{"tx_id": "TX-5632", "items": ["banana", "banana", "apple", "cherry", "apple"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-9711", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 249}
+{"tx_id": "TX-3041", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 122}
+{"tx_id": "TX-9471", "items": ["cherry", "apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 420}
+{"tx_id": "TX-6311", "items": ["banana", "apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 443}
+{"tx_id": "TX-3715", "items": ["banana", "apple", "apple", "apple"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-5735", "items": ["banana", "banana", "banana", "apple"], "success": true, "latency_ms": 385}
+{"tx_id": "TX-5084", "items": ["banana", "cherry", "apple"], "success": true, "latency_ms": 351}
+{"tx_id": "TX-7967", "items": ["cherry", "apple"], "success": true, "latency_ms": 63}
+{"tx_id": "TX-4417", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 438}
+{"tx_id": "TX-1115", "items": ["banana", "cherry"], "success": true, "latency_ms": 289}
+{"tx_id": "TX-2518", "items": ["banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 302}
+{"tx_id": "TX-1705", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 477}
+{"tx_id": "TX-3834", "items": ["cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 322}
+{"tx_id": "TX-9612", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 233}
+{"tx_id": "TX-6807", "items": ["cherry"], "success": true, "latency_ms": 269}
+{"tx_id": "TX-1279", "items": ["cherry", "apple"], "success": true, "latency_ms": 302}
+{"tx_id": "TX-3786", "items": ["cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 349}
+{"tx_id": "TX-9001", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-2878", "items": ["apple", "banana"], "success": true, "latency_ms": 288}
+{"tx_id": "TX-9587", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 380}
+{"tx_id": "TX-8960", "items": ["apple", "banana", "banana", "apple"], "success": true, "latency_ms": 153}
+{"tx_id": "TX-2118", "items": ["apple", "cherry"], "success": false, "latency_ms": 11}
+{"tx_id": "TX-9151", "items": ["apple"], "success": true, "latency_ms": 255}
+{"tx_id": "TX-1191", "items": ["apple", "banana", "apple"], "success": false, "latency_ms": 498}
+{"tx_id": "TX-1030", "items": ["banana", "cherry"], "success": true, "latency_ms": 52}
+{"tx_id": "TX-4580", "items": ["cherry"], "success": false, "latency_ms": 150}
+{"tx_id": "TX-2493", "items": ["banana"], "success": true, "latency_ms": 486}
+{"tx_id": "TX-6573", "items": ["apple"], "success": true, "latency_ms": 108}
+{"tx_id": "TX-3726", "items": ["apple"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-4913", "items": ["cherry"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-3727", "items": ["banana", "apple", "apple"], "success": true, "latency_ms": 159}
+{"tx_id": "TX-4736", "items": ["banana", "apple"], "success": true, "latency_ms": 253}
+{"tx_id": "TX-7464", "items": ["apple", "cherry"], "success": true, "latency_ms": 270}
+{"tx_id": "TX-8402", "items": ["banana", "cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 71}
+{"tx_id": "TX-2516", "items": ["cherry", "banana"], "success": true, "latency_ms": 336}
+{"tx_id": "TX-1763", "items": ["banana", "cherry", "apple"], "success": true, "latency_ms": 145}
+{"tx_id": "TX-3878", "items": ["cherry", "banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 87}
+{"tx_id": "TX-5261", "items": ["banana"], "success": true, "latency_ms": 343}
+{"tx_id": "TX-3811", "items": ["cherry"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-8308", "items": ["apple", "apple"], "success": true, "latency_ms": 403}
+{"tx_id": "TX-7540", "items": ["banana", "banana"], "success": true, "latency_ms": 24}
+{"tx_id": "TX-9689", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 26}
+{"tx_id": "TX-6488", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 137}
+{"tx_id": "TX-2864", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 213}
+{"tx_id": "TX-3235", "items": ["banana", "banana"], "success": true, "latency_ms": 136}
+{"tx_id": "TX-9276", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 42}
+{"tx_id": "TX-6451", "items": ["banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 58}
+{"tx_id": "TX-9741", "items": ["cherry", "apple", "apple", "apple", "cherry"], "success": true, "latency_ms": 118}
+{"tx_id": "TX-9874", "items": ["apple"], "success": true, "latency_ms": 461}
+{"tx_id": "TX-5500", "items": ["apple", "banana", "banana", "cherry"], "success": true, "latency_ms": 383}
+{"tx_id": "TX-9538", "items": ["apple"], "success": true, "latency_ms": 165}
+{"tx_id": "TX-6527", "items": ["banana", "apple", "banana", "banana", "cherry"], "success": true, "latency_ms": 279}
+{"tx_id": "TX-4206", "items": ["apple", "apple"], "success": true, "latency_ms": 46}
+{"tx_id": "TX-5664", "items": ["banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 376}
+{"tx_id": "TX-6248", "items": ["banana", "banana", "apple", "banana", "apple"], "success": true, "latency_ms": 391}
+{"tx_id": "TX-6829", "items": ["cherry", "cherry", "apple"], "success": true, "latency_ms": 39}
+{"tx_id": "TX-7046", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 294}
+{"tx_id": "TX-5718", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 463}
+{"tx_id": "TX-8529", "items": ["banana"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-9333", "items": ["apple"], "success": true, "latency_ms": 183}
+{"tx_id": "TX-8768", "items": ["apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 170}
+{"tx_id": "TX-3911", "items": ["cherry", "banana"], "success": true, "latency_ms": 138}
+{"tx_id": "TX-5124", "items": ["apple", "apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 481}
+{"tx_id": "TX-4717", "items": ["cherry"], "success": true, "latency_ms": 404}
+{"tx_id": "TX-1567", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 184}
+{"tx_id": "TX-7688", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-3866", "items": ["apple", "banana"], "success": true, "latency_ms": 208}
+{"tx_id": "TX-1066", "items": ["cherry"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-4198", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 280}
+{"tx_id": "TX-6625", "items": ["banana", "apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 126}
+{"tx_id": "TX-8577", "items": ["cherry"], "success": true, "latency_ms": 324}
+{"tx_id": "TX-1145", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 467}
+{"tx_id": "TX-2772", "items": ["apple", "banana", "banana", "cherry", "banana"], "success": true, "latency_ms": 65}
+{"tx_id": "TX-9674", "items": ["apple", "banana", "apple", "banana"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-4078", "items": ["apple", "cherry"], "success": true, "latency_ms": 401}
+{"tx_id": "TX-4460", "items": ["apple", "apple", "banana"], "success": false, "latency_ms": 224}
+{"tx_id": "TX-7568", "items": ["banana", "cherry"], "success": true, "latency_ms": 294}
+{"tx_id": "TX-5259", "items": ["cherry"], "success": true, "latency_ms": 301}
+{"tx_id": "TX-5827", "items": ["banana", "apple", "cherry"], "success": false, "latency_ms": 416}
+{"tx_id": "TX-5428", "items": ["apple", "apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 136}
+{"tx_id": "TX-4454", "items": ["banana", "banana"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-6103", "items": ["banana", "cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 85}
+{"tx_id": "TX-3405", "items": ["apple"], "success": true, "latency_ms": 409}
+{"tx_id": "TX-6205", "items": ["cherry", "apple"], "success": true, "latency_ms": 118}
+{"tx_id": "TX-2921", "items": ["banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 489}
+{"tx_id": "TX-4245", "items": ["apple", "banana"], "success": true, "latency_ms": 340}
+{"tx_id": "TX-5825", "items": ["banana", "banana", "banana", "banana", "apple"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-4010", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 350}
+{"tx_id": "TX-4850", "items": ["banana", "cherry", "cherry", "cherry"], "success": false, "latency_ms": 500}
+{"tx_id": "TX-4575", "items": ["apple"], "success": true, "latency_ms": 448}
+{"tx_id": "TX-4214", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 337}
+{"tx_id": "TX-6245", "items": ["apple", "cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 484}
+{"tx_id": "TX-9795", "items": ["apple", "banana"], "success": true, "latency_ms": 186}
+{"tx_id": "TX-8428", "items": ["banana", "banana", "banana", "banana", "cherry"], "success": true, "latency_ms": 219}
+{"tx_id": "TX-4734", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-1412", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-4791", "items": ["cherry"], "success": true, "latency_ms": 433}
+{"tx_id": "TX-8061", "items": ["apple", "apple", "apple", "apple", "apple"], "success": true, "latency_ms": 38}
+{"tx_id": "TX-3523", "items": ["banana", "banana"], "success": true, "latency_ms": 181}
+{"tx_id": "TX-2997", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 391}
+{"tx_id": "TX-8742", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 333}
+{"tx_id": "TX-5934", "items": ["apple"], "success": true, "latency_ms": 67}
+{"tx_id": "TX-9963", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 432}
+{"tx_id": "TX-7192", "items": ["banana", "cherry"], "success": true, "latency_ms": 37}
+{"tx_id": "TX-8352", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": false, "latency_ms": 234}
+{"tx_id": "TX-1793", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 373}
+{"tx_id": "TX-2004", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 393}
+{"tx_id": "TX-8465", "items": ["banana", "banana", "apple", "apple", "apple"], "success": true, "latency_ms": 118}
+{"tx_id": "TX-6722", "items": ["apple", "banana", "apple", "apple", "banana"], "success": true, "latency_ms": 426}
+{"tx_id": "TX-1954", "items": ["banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 217}
+{"tx_id": "TX-4523", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 467}
+{"tx_id": "TX-1459", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 383}
+{"tx_id": "TX-8374", "items": ["banana", "apple", "cherry", "apple", "banana"], "success": false, "latency_ms": 23}
+{"tx_id": "TX-9547", "items": ["apple", "banana", "banana", "apple"], "success": true, "latency_ms": 471}
+{"tx_id": "TX-7634", "items": ["banana", "banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 332}
+{"tx_id": "TX-5830", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 431}
+{"tx_id": "TX-9715", "items": ["apple"], "success": true, "latency_ms": 94}
+{"tx_id": "TX-9985", "items": ["banana", "apple", "apple", "banana"], "success": true, "latency_ms": 135}
+{"tx_id": "TX-2613", "items": ["cherry"], "success": true, "latency_ms": 176}
+{"tx_id": "TX-8273", "items": ["apple"], "success": true, "latency_ms": 361}
+{"tx_id": "TX-3215", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 239}
+{"tx_id": "TX-5726", "items": ["apple", "apple", "banana", "apple"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-6870", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 333}
+{"tx_id": "TX-8072", "items": ["cherry"], "success": true, "latency_ms": 48}
+{"tx_id": "TX-3188", "items": ["cherry"], "success": true, "latency_ms": 428}
+{"tx_id": "TX-6148", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-4761", "items": ["apple", "apple"], "success": true, "latency_ms": 381}
+{"tx_id": "TX-7509", "items": ["apple", "cherry"], "success": true, "latency_ms": 358}
+{"tx_id": "TX-6750", "items": ["apple", "banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 490}
+{"tx_id": "TX-5667", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 333}
+{"tx_id": "TX-7833", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 268}
+{"tx_id": "TX-1682", "items": ["cherry"], "success": true, "latency_ms": 446}
+{"tx_id": "TX-3736", "items": ["apple", "banana", "apple", "banana"], "success": true, "latency_ms": 142}
+{"tx_id": "TX-3607", "items": ["apple"], "success": true, "latency_ms": 387}
+{"tx_id": "TX-6628", "items": ["apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 487}
+{"tx_id": "TX-3741", "items": ["cherry"], "success": true, "latency_ms": 307}
+{"tx_id": "TX-3333", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 419}
+{"tx_id": "TX-1021", "items": ["cherry"], "success": true, "latency_ms": 360}
+{"tx_id": "TX-1367", "items": ["cherry", "cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 253}
+{"tx_id": "TX-8142", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 431}
+{"tx_id": "TX-5097", "items": ["banana", "apple", "banana", "cherry", "banana"], "success": false, "latency_ms": 381}
+{"tx_id": "TX-3737", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 274}
+{"tx_id": "TX-2556", "items": ["cherry", "apple"], "success": true, "latency_ms": 407}
+{"tx_id": "TX-6179", "items": ["banana", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-1716", "items": ["banana"], "success": true, "latency_ms": 256}
+{"tx_id": "TX-9083", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 375}
+{"tx_id": "TX-7560", "items": ["cherry"], "success": true, "latency_ms": 178}
+{"tx_id": "TX-8816", "items": ["cherry", "cherry", "cherry", "apple", "cherry"], "success": true, "latency_ms": 458}
+{"tx_id": "TX-6843", "items": ["cherry", "apple", "apple"], "success": false, "latency_ms": 430}
+{"tx_id": "TX-8459", "items": ["cherry", "banana"], "success": true, "latency_ms": 365}
+{"tx_id": "TX-8857", "items": ["cherry", "banana", "banana", "banana", "banana"], "success": true, "latency_ms": 45}
+{"tx_id": "TX-8173", "items": ["banana", "cherry"], "success": true, "latency_ms": 402}
+{"tx_id": "TX-7793", "items": ["cherry", "banana", "banana", "banana", "banana"], "success": true, "latency_ms": 341}
+{"tx_id": "TX-5068", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 268}
+{"tx_id": "TX-1941", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 459}
+{"tx_id": "TX-2837", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 61}
+{"tx_id": "TX-7764", "items": ["banana", "apple"], "success": true, "latency_ms": 212}
+{"tx_id": "TX-4912", "items": ["apple"], "success": true, "latency_ms": 94}
+{"tx_id": "TX-3922", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 245}
+{"tx_id": "TX-8205", "items": ["cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 162}
+{"tx_id": "TX-8128", "items": ["apple"], "success": false, "latency_ms": 147}
+{"tx_id": "TX-2132", "items": ["banana", "apple", "banana", "apple"], "success": true, "latency_ms": 498}
+{"tx_id": "TX-1132", "items": ["cherry"], "success": true, "latency_ms": 251}
+{"tx_id": "TX-6224", "items": ["banana"], "success": false, "latency_ms": 220}
+{"tx_id": "TX-5659", "items": ["cherry", "apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 486}
+{"tx_id": "TX-3089", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 417}
+{"tx_id": "TX-8804", "items": ["cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 420}
+{"tx_id": "TX-2461", "items": ["banana"], "success": true, "latency_ms": 16}
+{"tx_id": "TX-7916", "items": ["banana", "apple"], "success": true, "latency_ms": 297}
+{"tx_id": "TX-3665", "items": ["cherry"], "success": true, "latency_ms": 347}
+{"tx_id": "TX-2665", "items": ["cherry"], "success": true, "latency_ms": 211}
+{"tx_id": "TX-1453", "items": ["banana", "cherry"], "success": true, "latency_ms": 107}
+{"tx_id": "TX-7204", "items": ["apple"], "success": true, "latency_ms": 491}
+{"tx_id": "TX-8368", "items": ["banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 238}
+{"tx_id": "TX-2824", "items": ["apple", "cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 475}
+{"tx_id": "TX-7433", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 298}
+{"tx_id": "TX-9555", "items": ["apple", "apple", "apple", "apple", "apple"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-9329", "items": ["cherry", "cherry"], "success": true, "latency_ms": 418}
+{"tx_id": "TX-7108", "items": ["banana", "apple", "apple", "apple"], "success": true, "latency_ms": 448}
+{"tx_id": "TX-3300", "items": ["banana"], "success": true, "latency_ms": 70}
+{"tx_id": "TX-2931", "items": ["cherry"], "success": true, "latency_ms": 437}
+{"tx_id": "TX-5947", "items": ["banana", "banana", "cherry", "cherry", "banana"], "success": false, "latency_ms": 328}
+{"tx_id": "TX-9749", "items": ["banana"], "success": true, "latency_ms": 119}
+{"tx_id": "TX-7120", "items": ["apple", "cherry", "cherry", "banana", "cherry"], "success": true, "latency_ms": 22}
+{"tx_id": "TX-1169", "items": ["cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 285}
+{"tx_id": "TX-2024", "items": ["apple", "cherry"], "success": true, "latency_ms": 162}
+{"tx_id": "TX-8459", "items": ["cherry"], "success": true, "latency_ms": 473}
+{"tx_id": "TX-2767", "items": ["cherry"], "success": true, "latency_ms": 38}
+{"tx_id": "TX-6047", "items": ["banana", "apple"], "success": true, "latency_ms": 499}
+{"tx_id": "TX-2386", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 165}
+{"tx_id": "TX-5324", "items": ["apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 255}
+{"tx_id": "TX-2298", "items": ["banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 183}
+{"tx_id": "TX-5336", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 433}
+{"tx_id": "TX-4351", "items": ["apple", "banana", "cherry", "apple"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-4328", "items": ["banana", "cherry", "apple"], "success": true, "latency_ms": 211}
+{"tx_id": "TX-8459", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 424}
+{"tx_id": "TX-3357", "items": ["cherry", "cherry"], "success": true, "latency_ms": 281}
+{"tx_id": "TX-5296", "items": ["cherry", "cherry", "apple", "apple"], "success": true, "latency_ms": 223}
+{"tx_id": "TX-9181", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 204}
+{"tx_id": "TX-8782", "items": ["cherry"], "success": true, "latency_ms": 25}
+{"tx_id": "TX-9856", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 235}
+{"tx_id": "TX-3967", "items": ["banana"], "success": true, "latency_ms": 492}
+{"tx_id": "TX-5419", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 392}
+{"tx_id": "TX-5334", "items": ["banana", "apple", "banana", "apple", "apple"], "success": true, "latency_ms": 292}
+{"tx_id": "TX-8807", "items": ["cherry", "banana"], "success": true, "latency_ms": 87}
+{"tx_id": "TX-1007", "items": ["apple", "apple"], "success": true, "latency_ms": 472}
+{"tx_id": "TX-3942", "items": ["banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 100}
+{"tx_id": "TX-1892", "items": ["cherry", "apple", "banana", "apple", "apple"], "success": true, "latency_ms": 104}
+{"tx_id": "TX-6338", "items": ["cherry"], "success": true, "latency_ms": 38}
+{"tx_id": "TX-7970", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 165}
+{"tx_id": "TX-6404", "items": ["apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 375}
+{"tx_id": "TX-8923", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 302}
+{"tx_id": "TX-7514", "items": ["apple", "apple", "apple", "banana"], "success": true, "latency_ms": 41}
+{"tx_id": "TX-3732", "items": ["apple"], "success": true, "latency_ms": 83}
+{"tx_id": "TX-3242", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 161}
+{"tx_id": "TX-5242", "items": ["cherry", "banana", "cherry", "cherry", "banana"], "success": true, "latency_ms": 231}
+{"tx_id": "TX-3243", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 198}
+{"tx_id": "TX-9415", "items": ["banana", "apple"], "success": true, "latency_ms": 484}
+{"tx_id": "TX-2378", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 199}
+{"tx_id": "TX-5748", "items": ["cherry", "cherry"], "success": true, "latency_ms": 318}
+{"tx_id": "TX-8622", "items": ["banana", "apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 416}
+{"tx_id": "TX-9822", "items": ["banana", "cherry"], "success": true, "latency_ms": 389}
+{"tx_id": "TX-8601", "items": ["apple", "banana", "apple", "banana"], "success": true, "latency_ms": 209}
+{"tx_id": "TX-9917", "items": ["banana", "cherry"], "success": true, "latency_ms": 285}
+{"tx_id": "TX-5246", "items": ["apple", "apple", "apple", "banana", "banana"], "success": true, "latency_ms": 33}
+{"tx_id": "TX-1947", "items": ["apple", "banana", "banana", "apple"], "success": true, "latency_ms": 22}
+{"tx_id": "TX-1315", "items": ["banana", "banana"], "success": false, "latency_ms": 360}
+{"tx_id": "TX-8304", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 102}
+{"tx_id": "TX-2166", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 359}
+{"tx_id": "TX-5001", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 32}
+{"tx_id": "TX-1650", "items": ["apple", "apple"], "success": true, "latency_ms": 417}
+{"tx_id": "TX-8101", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 71}
+{"tx_id": "TX-6374", "items": ["cherry"], "success": true, "latency_ms": 349}
+{"tx_id": "TX-9153", "items": ["apple"], "success": true, "latency_ms": 54}
+{"tx_id": "TX-5438", "items": ["banana", "cherry"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-3615", "items": ["banana", "apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 175}
+{"tx_id": "TX-3634", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 333}
+{"tx_id": "TX-3344", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 109}
+{"tx_id": "TX-5845", "items": ["banana", "cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 78}
+{"tx_id": "TX-4072", "items": ["cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 207}
+{"tx_id": "TX-8829", "items": ["apple", "apple", "cherry", "apple", "apple"], "success": true, "latency_ms": 291}
+{"tx_id": "TX-4662", "items": ["banana", "apple"], "success": true, "latency_ms": 285}
+{"tx_id": "TX-4923", "items": ["banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-2231", "items": ["apple", "apple", "cherry", "apple", "apple"], "success": true, "latency_ms": 414}
+{"tx_id": "TX-5308", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 51}
+{"tx_id": "TX-9575", "items": ["banana", "apple", "banana", "apple", "banana"], "success": true, "latency_ms": 50}
+{"tx_id": "TX-1260", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 261}
+{"tx_id": "TX-4070", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 290}
+{"tx_id": "TX-9563", "items": ["banana", "banana", "apple", "cherry", "banana"], "success": false, "latency_ms": 155}
+{"tx_id": "TX-7313", "items": ["banana", "cherry", "cherry", "banana"], "success": true, "latency_ms": 61}
+{"tx_id": "TX-4030", "items": ["cherry", "cherry"], "success": false, "latency_ms": 179}
+{"tx_id": "TX-5110", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 396}
+{"tx_id": "TX-7586", "items": ["banana", "cherry", "banana", "cherry", "cherry"], "success": false, "latency_ms": 264}
+{"tx_id": "TX-8613", "items": ["banana", "banana", "apple", "apple"], "success": true, "latency_ms": 164}
+{"tx_id": "TX-2067", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 387}
+{"tx_id": "TX-5342", "items": ["banana", "apple", "banana", "apple"], "success": true, "latency_ms": 421}
+{"tx_id": "TX-4808", "items": ["cherry", "cherry"], "success": true, "latency_ms": 10}
+{"tx_id": "TX-4469", "items": ["apple", "cherry"], "success": true, "latency_ms": 128}
+{"tx_id": "TX-5121", "items": ["apple"], "success": false, "latency_ms": 346}
+{"tx_id": "TX-5315", "items": ["banana"], "success": true, "latency_ms": 300}
+{"tx_id": "TX-3581", "items": ["apple", "banana", "banana", "banana"], "success": true, "latency_ms": 26}
+{"tx_id": "TX-6436", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 460}
+{"tx_id": "TX-1610", "items": ["banana"], "success": true, "latency_ms": 204}
+{"tx_id": "TX-3629", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 106}
+{"tx_id": "TX-2630", "items": ["apple", "apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 40}
+{"tx_id": "TX-9666", "items": ["apple", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 456}
+{"tx_id": "TX-7927", "items": ["cherry", "cherry", "apple"], "success": true, "latency_ms": 73}
+{"tx_id": "TX-5040", "items": ["cherry", "banana"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-9031", "items": ["apple", "apple", "cherry"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-4054", "items": ["apple", "apple"], "success": true, "latency_ms": 361}
+{"tx_id": "TX-5496", "items": ["apple"], "success": true, "latency_ms": 367}
+{"tx_id": "TX-9153", "items": ["banana", "banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 216}
+{"tx_id": "TX-7981", "items": ["banana", "banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 129}
+{"tx_id": "TX-2434", "items": ["cherry", "apple", "apple", "cherry", "cherry"], "success": true, "latency_ms": 123}
+{"tx_id": "TX-3757", "items": ["banana", "banana", "cherry", "apple"], "success": true, "latency_ms": 297}
+{"tx_id": "TX-6483", "items": ["cherry"], "success": true, "latency_ms": 364}
+{"tx_id": "TX-1102", "items": ["cherry"], "success": true, "latency_ms": 52}
+{"tx_id": "TX-1429", "items": ["banana", "banana", "cherry", "banana"], "success": true, "latency_ms": 384}
+{"tx_id": "TX-8986", "items": ["apple", "cherry", "cherry", "banana", "banana"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-8577", "items": ["apple", "banana", "apple", "banana", "apple"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-5509", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 156}
+{"tx_id": "TX-6603", "items": ["apple", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 34}
+{"tx_id": "TX-6949", "items": ["apple"], "success": true, "latency_ms": 465}
+{"tx_id": "TX-3123", "items": ["cherry", "banana"], "success": true, "latency_ms": 279}
+{"tx_id": "TX-6086", "items": ["apple", "banana"], "success": true, "latency_ms": 454}
+{"tx_id": "TX-4221", "items": ["apple", "cherry"], "success": false, "latency_ms": 22}
+{"tx_id": "TX-9564", "items": ["cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 200}
+{"tx_id": "TX-7990", "items": ["cherry"], "success": true, "latency_ms": 86}
+{"tx_id": "TX-9633", "items": ["cherry", "cherry", "banana", "cherry"], "success": true, "latency_ms": 452}
+{"tx_id": "TX-2353", "items": ["cherry", "apple"], "success": true, "latency_ms": 170}
+{"tx_id": "TX-4594", "items": ["banana", "banana", "cherry", "apple"], "success": true, "latency_ms": 109}
+{"tx_id": "TX-5061", "items": ["apple", "apple", "cherry", "cherry"], "success": true, "latency_ms": 434}
+{"tx_id": "TX-3115", "items": ["banana", "cherry", "cherry", "cherry", "banana"], "success": true, "latency_ms": 352}
+{"tx_id": "TX-8418", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 294}
+{"tx_id": "TX-5004", "items": ["apple", "cherry", "banana"], "success": false, "latency_ms": 254}
+{"tx_id": "TX-3955", "items": ["apple", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 324}
+{"tx_id": "TX-9025", "items": ["apple"], "success": true, "latency_ms": 432}
+{"tx_id": "TX-7233", "items": ["cherry"], "success": true, "latency_ms": 278}
+{"tx_id": "TX-7015", "items": ["apple", "apple", "cherry", "cherry"], "success": true, "latency_ms": 179}
+{"tx_id": "TX-7884", "items": ["apple", "banana", "apple", "banana", "banana"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-9555", "items": ["banana", "banana", "cherry", "apple"], "success": false, "latency_ms": 221}
+{"tx_id": "TX-2617", "items": ["apple", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 103}
+{"tx_id": "TX-8177", "items": ["cherry", "cherry"], "success": false, "latency_ms": 235}
+{"tx_id": "TX-3850", "items": ["cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 38}
+{"tx_id": "TX-6938", "items": ["cherry", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 377}
+{"tx_id": "TX-8147", "items": ["cherry", "apple"], "success": true, "latency_ms": 392}
+{"tx_id": "TX-8547", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 491}
+{"tx_id": "TX-1437", "items": ["cherry", "cherry"], "success": true, "latency_ms": 250}
+{"tx_id": "TX-3387", "items": ["cherry"], "success": true, "latency_ms": 348}
+{"tx_id": "TX-8888", "items": ["cherry", "apple"], "success": true, "latency_ms": 291}
+{"tx_id": "TX-2934", "items": ["banana", "banana"], "success": true, "latency_ms": 200}
+{"tx_id": "TX-9657", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-4088", "items": ["cherry", "apple"], "success": true, "latency_ms": 256}
+{"tx_id": "TX-7333", "items": ["apple", "apple", "cherry"], "success": false, "latency_ms": 219}
+{"tx_id": "TX-8518", "items": ["banana", "apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-7600", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 429}
+{"tx_id": "TX-2077", "items": ["banana"], "success": true, "latency_ms": 91}
+{"tx_id": "TX-6162", "items": ["banana"], "success": true, "latency_ms": 400}
+{"tx_id": "TX-3007", "items": ["apple", "banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 254}
+{"tx_id": "TX-9072", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 168}
+{"tx_id": "TX-5923", "items": ["apple"], "success": true, "latency_ms": 351}
+{"tx_id": "TX-1007", "items": ["apple", "banana"], "success": true, "latency_ms": 329}
+{"tx_id": "TX-7623", "items": ["cherry"], "success": true, "latency_ms": 334}
+{"tx_id": "TX-9011", "items": ["banana"], "success": true, "latency_ms": 41}
+{"tx_id": "TX-3716", "items": ["cherry", "banana"], "success": true, "latency_ms": 120}
+{"tx_id": "TX-3947", "items": ["banana", "cherry", "apple", "apple", "cherry"], "success": true, "latency_ms": 204}
+{"tx_id": "TX-3146", "items": ["apple", "cherry", "apple", "apple", "cherry"], "success": true, "latency_ms": 382}
+{"tx_id": "TX-6194", "items": ["apple", "apple", "apple", "cherry"], "success": false, "latency_ms": 414}
+{"tx_id": "TX-2125", "items": ["banana", "cherry"], "success": true, "latency_ms": 272}
+{"tx_id": "TX-7751", "items": ["banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 42}
+{"tx_id": "TX-9703", "items": ["apple"], "success": true, "latency_ms": 70}
+{"tx_id": "TX-5496", "items": ["apple"], "success": true, "latency_ms": 396}
+{"tx_id": "TX-9175", "items": ["cherry", "cherry"], "success": true, "latency_ms": 300}
+{"tx_id": "TX-8050", "items": ["apple"], "success": true, "latency_ms": 221}
+{"tx_id": "TX-1464", "items": ["cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 33}
+{"tx_id": "TX-9077", "items": ["apple", "apple", "cherry", "apple", "apple"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-6000", "items": ["cherry", "banana"], "success": true, "latency_ms": 342}
+{"tx_id": "TX-9553", "items": ["cherry", "cherry", "cherry", "cherry", "banana"], "success": false, "latency_ms": 225}
+{"tx_id": "TX-1186", "items": ["apple"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-9296", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 427}
+{"tx_id": "TX-2933", "items": ["banana", "apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 359}
+{"tx_id": "TX-3472", "items": ["banana", "apple", "apple", "cherry"], "success": false, "latency_ms": 451}
+{"tx_id": "TX-6709", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-4107", "items": ["banana", "apple", "apple", "banana", "banana"], "success": true, "latency_ms": 180}
+{"tx_id": "TX-8372", "items": ["banana", "apple", "apple", "cherry"], "success": true, "latency_ms": 395}
+{"tx_id": "TX-8393", "items": ["apple", "apple"], "success": true, "latency_ms": 197}
+{"tx_id": "TX-9427", "items": ["apple", "cherry"], "success": true, "latency_ms": 274}
+{"tx_id": "TX-4771", "items": ["cherry", "cherry", "cherry", "apple"], "success": true, "latency_ms": 161}
+{"tx_id": "TX-8641", "items": ["cherry", "banana"], "success": true, "latency_ms": 95}
+{"tx_id": "TX-7623", "items": ["apple"], "success": true, "latency_ms": 414}
+{"tx_id": "TX-6349", "items": ["cherry"], "success": true, "latency_ms": 48}
+{"tx_id": "TX-5497", "items": ["cherry", "cherry", "cherry", "banana", "cherry"], "success": true, "latency_ms": 475}
+{"tx_id": "TX-8341", "items": ["apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-6258", "items": ["apple"], "success": false, "latency_ms": 181}
+{"tx_id": "TX-3356", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 56}
+{"tx_id": "TX-6580", "items": ["cherry", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 246}
+{"tx_id": "TX-5557", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 255}
+{"tx_id": "TX-7998", "items": ["cherry", "apple"], "success": true, "latency_ms": 488}
+{"tx_id": "TX-1471", "items": ["banana", "apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 188}
+{"tx_id": "TX-6087", "items": ["cherry", "banana", "apple", "cherry"], "success": false, "latency_ms": 210}
+{"tx_id": "TX-1776", "items": ["cherry", "apple"], "success": true, "latency_ms": 103}
+{"tx_id": "TX-3741", "items": ["banana", "banana", "banana", "cherry"], "success": true, "latency_ms": 212}
+{"tx_id": "TX-8777", "items": ["apple", "apple", "apple", "apple", "cherry"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-4770", "items": ["banana"], "success": true, "latency_ms": 308}
+{"tx_id": "TX-6270", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 233}
+{"tx_id": "TX-4211", "items": ["cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 93}
+{"tx_id": "TX-1950", "items": ["cherry", "apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-1172", "items": ["apple"], "success": true, "latency_ms": 486}
+{"tx_id": "TX-2359", "items": ["apple", "apple", "apple"], "success": false, "latency_ms": 374}
+{"tx_id": "TX-1719", "items": ["apple", "banana"], "success": true, "latency_ms": 30}
+{"tx_id": "TX-9752", "items": ["banana", "apple", "apple", "banana"], "success": true, "latency_ms": 235}
+{"tx_id": "TX-1570", "items": ["banana", "cherry", "banana", "cherry", "cherry"], "success": false, "latency_ms": 436}
+{"tx_id": "TX-5248", "items": ["cherry", "banana", "cherry", "cherry"], "success": false, "latency_ms": 420}
+{"tx_id": "TX-6898", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 376}
+{"tx_id": "TX-9232", "items": ["cherry", "cherry"], "success": true, "latency_ms": 321}
+{"tx_id": "TX-4220", "items": ["banana", "cherry"], "success": true, "latency_ms": 203}
+{"tx_id": "TX-4079", "items": ["apple", "cherry"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-6936", "items": ["apple"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-8813", "items": ["apple"], "success": true, "latency_ms": 302}
+{"tx_id": "TX-2004", "items": ["apple", "cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-8950", "items": ["apple", "banana", "banana", "apple", "cherry"], "success": false, "latency_ms": 25}
+{"tx_id": "TX-3526", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 498}
+{"tx_id": "TX-4817", "items": ["banana", "apple", "banana", "banana"], "success": true, "latency_ms": 456}
+{"tx_id": "TX-1428", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 51}
+{"tx_id": "TX-3076", "items": ["cherry", "cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 398}
+{"tx_id": "TX-3663", "items": ["banana", "banana", "apple", "apple"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-8801", "items": ["apple", "cherry"], "success": true, "latency_ms": 404}
+{"tx_id": "TX-9463", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-8783", "items": ["cherry", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 15}
+{"tx_id": "TX-4294", "items": ["cherry", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 272}
+{"tx_id": "TX-3829", "items": ["banana", "apple", "cherry", "apple", "apple"], "success": true, "latency_ms": 320}
+{"tx_id": "TX-1128", "items": ["apple", "banana", "apple", "banana", "apple"], "success": true, "latency_ms": 61}
+{"tx_id": "TX-1252", "items": ["banana", "cherry"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-4298", "items": ["cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 212}
+{"tx_id": "TX-3117", "items": ["banana", "apple", "apple", "cherry"], "success": true, "latency_ms": 246}
+{"tx_id": "TX-6171", "items": ["cherry", "banana", "banana", "apple", "banana"], "success": true, "latency_ms": 329}
+{"tx_id": "TX-3701", "items": ["cherry", "cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 191}
+{"tx_id": "TX-4874", "items": ["cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 158}
+{"tx_id": "TX-6282", "items": ["banana", "apple"], "success": true, "latency_ms": 371}
+{"tx_id": "TX-6944", "items": ["banana", "apple", "apple"], "success": true, "latency_ms": 485}
+{"tx_id": "TX-8495", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 435}
+{"tx_id": "TX-8664", "items": ["apple", "cherry"], "success": true, "latency_ms": 315}
+{"tx_id": "TX-7554", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-7999", "items": ["apple", "banana"], "success": true, "latency_ms": 421}
+{"tx_id": "TX-7599", "items": ["cherry", "banana", "apple", "apple"], "success": false, "latency_ms": 138}
+{"tx_id": "TX-8679", "items": ["apple", "apple", "apple", "apple", "banana"], "success": false, "latency_ms": 84}
+{"tx_id": "TX-1403", "items": ["cherry"], "success": true, "latency_ms": 115}
+{"tx_id": "TX-5200", "items": ["apple", "apple", "apple"], "success": false, "latency_ms": 312}
+{"tx_id": "TX-2794", "items": ["apple", "banana", "apple", "apple", "banana"], "success": true, "latency_ms": 240}
+{"tx_id": "TX-7950", "items": ["banana", "banana", "apple", "cherry", "cherry"], "success": true, "latency_ms": 201}
+{"tx_id": "TX-8176", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 291}
+{"tx_id": "TX-5814", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 143}
+{"tx_id": "TX-5355", "items": ["apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 232}
+{"tx_id": "TX-4918", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 177}
+{"tx_id": "TX-7709", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 445}
+{"tx_id": "TX-9589", "items": ["apple", "banana", "banana", "apple", "apple"], "success": true, "latency_ms": 110}
+{"tx_id": "TX-2884", "items": ["apple"], "success": true, "latency_ms": 247}
+{"tx_id": "TX-7976", "items": ["banana"], "success": true, "latency_ms": 402}
+{"tx_id": "TX-7983", "items": ["cherry"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-3763", "items": ["cherry", "cherry"], "success": true, "latency_ms": 20}
+{"tx_id": "TX-4632", "items": ["banana", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 127}
+{"tx_id": "TX-5437", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 54}
+{"tx_id": "TX-6279", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 368}
+{"tx_id": "TX-7516", "items": ["banana", "apple"], "success": false, "latency_ms": 266}
+{"tx_id": "TX-1454", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 415}
+{"tx_id": "TX-7631", "items": ["cherry", "cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 96}
+{"tx_id": "TX-6829", "items": ["banana"], "success": true, "latency_ms": 211}
+{"tx_id": "TX-5493", "items": ["apple", "cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 193}
+{"tx_id": "TX-3941", "items": ["banana", "cherry", "cherry", "banana"], "success": false, "latency_ms": 446}
+{"tx_id": "TX-4378", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 473}
+{"tx_id": "TX-4252", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 292}
+{"tx_id": "TX-5997", "items": ["banana", "apple"], "success": false, "latency_ms": 199}
+{"tx_id": "TX-5273", "items": ["banana"], "success": true, "latency_ms": 499}
+{"tx_id": "TX-4983", "items": ["cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 485}
+{"tx_id": "TX-2801", "items": ["apple"], "success": true, "latency_ms": 195}
+{"tx_id": "TX-3799", "items": ["apple", "banana", "apple", "apple"], "success": true, "latency_ms": 63}
+{"tx_id": "TX-8444", "items": ["apple", "cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 209}
+{"tx_id": "TX-4159", "items": ["apple", "cherry"], "success": false, "latency_ms": 161}
+{"tx_id": "TX-3698", "items": ["banana", "cherry", "banana", "apple", "banana"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-9264", "items": ["apple", "apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 12}
+{"tx_id": "TX-6629", "items": ["apple", "cherry", "apple", "banana", "apple"], "success": true, "latency_ms": 484}
+{"tx_id": "TX-9905", "items": ["apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 276}
+{"tx_id": "TX-2783", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-8337", "items": ["cherry", "banana", "cherry", "apple", "apple"], "success": false, "latency_ms": 103}
+{"tx_id": "TX-7488", "items": ["apple", "apple", "apple"], "success": true, "latency_ms": 115}
+{"tx_id": "TX-8632", "items": ["banana", "cherry", "apple", "banana"], "success": true, "latency_ms": 32}
+{"tx_id": "TX-8381", "items": ["banana", "banana", "cherry", "cherry"], "success": false, "latency_ms": 432}
+{"tx_id": "TX-8120", "items": ["apple", "banana", "banana"], "success": false, "latency_ms": 369}
+{"tx_id": "TX-4745", "items": ["apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 102}
+{"tx_id": "TX-3161", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 343}
+{"tx_id": "TX-3143", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-4432", "items": ["apple", "cherry"], "success": true, "latency_ms": 281}
+{"tx_id": "TX-2165", "items": ["banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 382}
+{"tx_id": "TX-3850", "items": ["cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 73}
+{"tx_id": "TX-9241", "items": ["banana"], "success": true, "latency_ms": 67}
+{"tx_id": "TX-6725", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 18}
+{"tx_id": "TX-6097", "items": ["apple"], "success": false, "latency_ms": 70}
+{"tx_id": "TX-6043", "items": ["banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 351}
+{"tx_id": "TX-8329", "items": ["apple", "apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 65}
+{"tx_id": "TX-2816", "items": ["cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 31}
+{"tx_id": "TX-6026", "items": ["cherry"], "success": true, "latency_ms": 287}
+{"tx_id": "TX-1315", "items": ["apple", "banana", "cherry", "cherry", "banana"], "success": true, "latency_ms": 399}
+{"tx_id": "TX-8891", "items": ["apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 487}
+{"tx_id": "TX-4321", "items": ["banana", "cherry"], "success": true, "latency_ms": 413}
+{"tx_id": "TX-8178", "items": ["banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 167}
+{"tx_id": "TX-4710", "items": ["cherry", "cherry", "cherry", "banana", "banana"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-4680", "items": ["banana", "apple"], "success": true, "latency_ms": 460}
+{"tx_id": "TX-6526", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 309}
+{"tx_id": "TX-7205", "items": ["cherry", "apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-5027", "items": ["apple"], "success": true, "latency_ms": 417}
+{"tx_id": "TX-6953", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-4549", "items": ["banana"], "success": true, "latency_ms": 439}
+{"tx_id": "TX-4649", "items": ["apple", "banana"], "success": true, "latency_ms": 114}
+{"tx_id": "TX-8363", "items": ["cherry"], "success": true, "latency_ms": 227}
+{"tx_id": "TX-1559", "items": ["cherry", "cherry", "apple", "cherry", "cherry"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-7050", "items": ["banana"], "success": true, "latency_ms": 80}
+{"tx_id": "TX-2848", "items": ["apple", "cherry", "apple", "cherry"], "success": false, "latency_ms": 166}
+{"tx_id": "TX-5725", "items": ["banana"], "success": true, "latency_ms": 42}
+{"tx_id": "TX-6303", "items": ["banana", "apple"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-8471", "items": ["apple", "banana", "apple", "apple"], "success": true, "latency_ms": 140}
+{"tx_id": "TX-4879", "items": ["banana", "banana"], "success": true, "latency_ms": 81}
+{"tx_id": "TX-9092", "items": ["apple", "banana", "cherry", "apple", "banana"], "success": false, "latency_ms": 115}
+{"tx_id": "TX-3000", "items": ["apple", "banana"], "success": true, "latency_ms": 300}
+{"tx_id": "TX-4868", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-8843", "items": ["cherry", "banana", "apple", "banana", "apple"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-2561", "items": ["cherry", "banana"], "success": true, "latency_ms": 75}
+{"tx_id": "TX-6176", "items": ["apple", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 404}
+{"tx_id": "TX-6557", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-7153", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 375}
+{"tx_id": "TX-1090", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 158}
+{"tx_id": "TX-3512", "items": ["cherry"], "success": true, "latency_ms": 477}
+{"tx_id": "TX-2260", "items": ["apple", "banana", "apple", "apple"], "success": true, "latency_ms": 293}
+{"tx_id": "TX-5955", "items": ["banana"], "success": true, "latency_ms": 191}
+{"tx_id": "TX-8242", "items": ["apple", "cherry"], "success": true, "latency_ms": 64}
+{"tx_id": "TX-2107", "items": ["apple", "banana"], "success": true, "latency_ms": 187}
+{"tx_id": "TX-2176", "items": ["apple", "banana", "banana", "banana"], "success": true, "latency_ms": 95}
+{"tx_id": "TX-5758", "items": ["apple", "apple"], "success": true, "latency_ms": 496}
+{"tx_id": "TX-2055", "items": ["banana", "cherry"], "success": true, "latency_ms": 133}
+{"tx_id": "TX-5421", "items": ["apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 176}
+{"tx_id": "TX-3644", "items": ["apple", "banana"], "success": true, "latency_ms": 270}
+{"tx_id": "TX-9231", "items": ["cherry"], "success": true, "latency_ms": 85}
+{"tx_id": "TX-1802", "items": ["cherry", "cherry", "cherry", "cherry", "banana"], "success": true, "latency_ms": 50}
+{"tx_id": "TX-8320", "items": ["apple"], "success": true, "latency_ms": 260}
+{"tx_id": "TX-4476", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 431}
+{"tx_id": "TX-8617", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 105}
+{"tx_id": "TX-4722", "items": ["banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 271}
+{"tx_id": "TX-5656", "items": ["cherry", "cherry"], "success": true, "latency_ms": 227}
+{"tx_id": "TX-4111", "items": ["cherry", "banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 321}
+{"tx_id": "TX-8817", "items": ["banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 256}
+{"tx_id": "TX-3316", "items": ["banana", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 474}
+{"tx_id": "TX-5358", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 487}
+{"tx_id": "TX-3356", "items": ["banana"], "success": true, "latency_ms": 339}
+{"tx_id": "TX-9470", "items": ["apple", "apple", "cherry", "apple", "apple"], "success": true, "latency_ms": 452}
+{"tx_id": "TX-4351", "items": ["cherry", "banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 303}
+{"tx_id": "TX-5683", "items": ["cherry", "cherry", "apple"], "success": true, "latency_ms": 348}
+{"tx_id": "TX-3922", "items": ["apple", "apple", "apple", "banana", "banana"], "success": false, "latency_ms": 206}
+{"tx_id": "TX-5499", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 260}
+{"tx_id": "TX-6282", "items": ["banana"], "success": true, "latency_ms": 74}
+{"tx_id": "TX-7442", "items": ["cherry"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-8642", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 430}
+{"tx_id": "TX-7229", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 189}
+{"tx_id": "TX-6122", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 343}
+{"tx_id": "TX-9253", "items": ["banana", "cherry", "cherry", "banana"], "success": true, "latency_ms": 262}
+{"tx_id": "TX-4299", "items": ["apple", "cherry"], "success": true, "latency_ms": 335}
+{"tx_id": "TX-7968", "items": ["banana", "cherry", "banana", "banana"], "success": true, "latency_ms": 426}
+{"tx_id": "TX-1937", "items": ["banana", "apple", "cherry", "banana", "cherry"], "success": true, "latency_ms": 390}
+{"tx_id": "TX-1136", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 234}
+{"tx_id": "TX-9349", "items": ["apple", "banana"], "success": true, "latency_ms": 395}
+{"tx_id": "TX-1176", "items": ["cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-3384", "items": ["cherry", "cherry", "cherry", "banana"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-8168", "items": ["cherry", "apple", "cherry", "apple"], "success": true, "latency_ms": 37}
+{"tx_id": "TX-5908", "items": ["cherry", "cherry"], "success": true, "latency_ms": 446}
+{"tx_id": "TX-8146", "items": ["cherry", "cherry"], "success": true, "latency_ms": 430}
+{"tx_id": "TX-2613", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 33}
+{"tx_id": "TX-6701", "items": ["cherry", "banana", "banana"], "success": false, "latency_ms": 372}
+{"tx_id": "TX-3178", "items": ["banana", "cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 495}
+{"tx_id": "TX-9843", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 360}
+{"tx_id": "TX-7801", "items": ["apple"], "success": true, "latency_ms": 51}
+{"tx_id": "TX-6222", "items": ["cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 363}
+{"tx_id": "TX-5828", "items": ["banana", "cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 201}
+{"tx_id": "TX-8115", "items": ["banana", "apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 497}
+{"tx_id": "TX-7319", "items": ["cherry"], "success": true, "latency_ms": 232}
+{"tx_id": "TX-1203", "items": ["cherry"], "success": true, "latency_ms": 110}
+{"tx_id": "TX-9311", "items": ["apple", "cherry", "banana", "banana"], "success": true, "latency_ms": 390}
+{"tx_id": "TX-1656", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 235}
+{"tx_id": "TX-4416", "items": ["apple"], "success": true, "latency_ms": 204}
+{"tx_id": "TX-4758", "items": ["banana"], "success": true, "latency_ms": 415}
+{"tx_id": "TX-5211", "items": ["cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 270}
+{"tx_id": "TX-6712", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 271}
+{"tx_id": "TX-7935", "items": ["banana", "banana"], "success": true, "latency_ms": 42}
+{"tx_id": "TX-9516", "items": ["banana"], "success": false, "latency_ms": 185}
+{"tx_id": "TX-6499", "items": ["apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 406}
+{"tx_id": "TX-5541", "items": ["banana", "apple"], "success": true, "latency_ms": 178}
+{"tx_id": "TX-1730", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 113}
+{"tx_id": "TX-3427", "items": ["apple", "cherry"], "success": true, "latency_ms": 267}
+{"tx_id": "TX-2515", "items": ["apple", "banana", "cherry", "cherry"], "success": true, "latency_ms": 128}
+{"tx_id": "TX-8801", "items": ["cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 167}
+{"tx_id": "TX-3022", "items": ["apple"], "success": true, "latency_ms": 94}
+{"tx_id": "TX-3369", "items": ["cherry"], "success": true, "latency_ms": 365}
+{"tx_id": "TX-4839", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-5542", "items": ["cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 221}
+{"tx_id": "TX-6997", "items": ["banana", "banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 303}
+{"tx_id": "TX-2874", "items": ["banana"], "success": true, "latency_ms": 50}
+{"tx_id": "TX-3279", "items": ["apple"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-4158", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 413}
+{"tx_id": "TX-7294", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 367}
+{"tx_id": "TX-8431", "items": ["apple", "cherry", "cherry", "banana", "cherry"], "success": false, "latency_ms": 308}
+{"tx_id": "TX-6898", "items": ["apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 385}
+{"tx_id": "TX-8952", "items": ["banana"], "success": true, "latency_ms": 421}
+{"tx_id": "TX-2014", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 355}
+{"tx_id": "TX-8231", "items": ["banana", "apple"], "success": true, "latency_ms": 34}
+{"tx_id": "TX-7949", "items": ["cherry", "banana"], "success": true, "latency_ms": 33}
+{"tx_id": "TX-4430", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 166}
+{"tx_id": "TX-9139", "items": ["apple", "cherry", "banana", "banana"], "success": true, "latency_ms": 240}
+{"tx_id": "TX-1312", "items": ["banana", "apple", "apple"], "success": true, "latency_ms": 255}
+{"tx_id": "TX-4472", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 333}
+{"tx_id": "TX-5821", "items": ["banana", "apple", "banana"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-2890", "items": ["cherry", "cherry"], "success": true, "latency_ms": 331}
+{"tx_id": "TX-8753", "items": ["banana"], "success": true, "latency_ms": 65}
+{"tx_id": "TX-3163", "items": ["apple", "cherry"], "success": true, "latency_ms": 163}
+{"tx_id": "TX-9272", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 233}
+{"tx_id": "TX-4669", "items": ["banana"], "success": true, "latency_ms": 242}
+{"tx_id": "TX-4109", "items": ["apple"], "success": true, "latency_ms": 375}
+{"tx_id": "TX-8657", "items": ["apple", "cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 150}
+{"tx_id": "TX-6403", "items": ["banana", "cherry", "apple"], "success": true, "latency_ms": 287}
+{"tx_id": "TX-5413", "items": ["banana", "cherry"], "success": true, "latency_ms": 201}
+{"tx_id": "TX-6216", "items": ["apple", "banana"], "success": true, "latency_ms": 298}
+{"tx_id": "TX-9273", "items": ["cherry"], "success": true, "latency_ms": 204}
+{"tx_id": "TX-2964", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 343}
+{"tx_id": "TX-6549", "items": ["banana", "cherry"], "success": true, "latency_ms": 256}
+{"tx_id": "TX-2354", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 457}
+{"tx_id": "TX-9992", "items": ["apple", "cherry", "apple", "banana"], "success": false, "latency_ms": 342}
+{"tx_id": "TX-5563", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 362}
+{"tx_id": "TX-4340", "items": ["apple"], "success": true, "latency_ms": 175}
+{"tx_id": "TX-6945", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 309}
+{"tx_id": "TX-5264", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 263}
+{"tx_id": "TX-9753", "items": ["apple"], "success": true, "latency_ms": 280}
+{"tx_id": "TX-2730", "items": ["apple", "banana"], "success": true, "latency_ms": 285}
+{"tx_id": "TX-6795", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 491}
+{"tx_id": "TX-9478", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 259}
+{"tx_id": "TX-5644", "items": ["cherry", "apple", "apple", "banana"], "success": true, "latency_ms": 434}
+{"tx_id": "TX-2099", "items": ["apple", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 154}
+{"tx_id": "TX-3734", "items": ["banana"], "success": true, "latency_ms": 226}
+{"tx_id": "TX-4592", "items": ["banana", "banana", "banana", "apple"], "success": true, "latency_ms": 246}
+{"tx_id": "TX-8350", "items": ["banana", "apple", "cherry", "apple"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-6304", "items": ["banana", "banana", "banana", "apple", "cherry"], "success": true, "latency_ms": 141}
+{"tx_id": "TX-4351", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 293}
+{"tx_id": "TX-4148", "items": ["banana", "apple"], "success": false, "latency_ms": 96}
+{"tx_id": "TX-2251", "items": ["apple", "cherry"], "success": false, "latency_ms": 87}
+{"tx_id": "TX-3920", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 396}
+{"tx_id": "TX-7433", "items": ["banana", "banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 148}
+{"tx_id": "TX-5493", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 400}
+{"tx_id": "TX-8149", "items": ["banana", "apple", "apple", "cherry", "cherry"], "success": false, "latency_ms": 310}
+{"tx_id": "TX-2180", "items": ["banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 230}
+{"tx_id": "TX-4286", "items": ["banana"], "success": true, "latency_ms": 114}
+{"tx_id": "TX-4832", "items": ["cherry", "cherry"], "success": true, "latency_ms": 385}
+{"tx_id": "TX-2470", "items": ["banana", "cherry", "cherry", "apple", "cherry"], "success": true, "latency_ms": 475}
+{"tx_id": "TX-7018", "items": ["cherry", "banana", "cherry", "cherry", "apple"], "success": false, "latency_ms": 426}
+{"tx_id": "TX-9220", "items": ["banana"], "success": true, "latency_ms": 459}
+{"tx_id": "TX-4351", "items": ["cherry", "cherry"], "success": true, "latency_ms": 112}
+{"tx_id": "TX-8680", "items": ["apple", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 124}
+{"tx_id": "TX-2461", "items": ["cherry", "apple"], "success": false, "latency_ms": 136}
+{"tx_id": "TX-1812", "items": ["apple"], "success": true, "latency_ms": 454}
+{"tx_id": "TX-5591", "items": ["apple", "apple"], "success": true, "latency_ms": 81}
+{"tx_id": "TX-5845", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 122}
+{"tx_id": "TX-2875", "items": ["apple"], "success": true, "latency_ms": 70}
+{"tx_id": "TX-2290", "items": ["apple", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 433}
+{"tx_id": "TX-5404", "items": ["banana", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 470}
+{"tx_id": "TX-1705", "items": ["apple", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 349}
+{"tx_id": "TX-7222", "items": ["apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 51}
+{"tx_id": "TX-8243", "items": ["banana", "banana"], "success": false, "latency_ms": 363}
+{"tx_id": "TX-9683", "items": ["apple", "banana"], "success": true, "latency_ms": 271}
+{"tx_id": "TX-1723", "items": ["cherry"], "success": false, "latency_ms": 226}
+{"tx_id": "TX-9319", "items": ["cherry", "apple"], "success": true, "latency_ms": 279}
+{"tx_id": "TX-1684", "items": ["cherry", "cherry"], "success": true, "latency_ms": 52}
+{"tx_id": "TX-4705", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 169}
+{"tx_id": "TX-1077", "items": ["banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 296}
+{"tx_id": "TX-7856", "items": ["apple", "apple", "apple", "banana"], "success": true, "latency_ms": 66}
+{"tx_id": "TX-1304", "items": ["banana"], "success": true, "latency_ms": 146}
+{"tx_id": "TX-8563", "items": ["cherry", "banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-6451", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 242}
+{"tx_id": "TX-4029", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 28}
+{"tx_id": "TX-3266", "items": ["cherry", "cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 228}
+{"tx_id": "TX-6434", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 392}
+{"tx_id": "TX-3584", "items": ["cherry", "cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 225}
+{"tx_id": "TX-8105", "items": ["apple"], "success": true, "latency_ms": 16}
+{"tx_id": "TX-2462", "items": ["cherry", "apple", "cherry"], "success": true, "latency_ms": 165}
+{"tx_id": "TX-9060", "items": ["cherry", "cherry", "cherry"], "success": true, "latency_ms": 216}
+{"tx_id": "TX-7194", "items": ["banana"], "success": true, "latency_ms": 11}
+{"tx_id": "TX-9889", "items": ["cherry", "cherry", "banana", "cherry", "banana"], "success": true, "latency_ms": 29}
+{"tx_id": "TX-5877", "items": ["apple"], "success": true, "latency_ms": 473}
+{"tx_id": "TX-3218", "items": ["apple", "apple"], "success": true, "latency_ms": 166}
+{"tx_id": "TX-4128", "items": ["cherry", "apple", "cherry", "cherry", "banana"], "success": true, "latency_ms": 247}
+{"tx_id": "TX-4993", "items": ["banana", "cherry", "apple"], "success": true, "latency_ms": 470}
+{"tx_id": "TX-4762", "items": ["apple", "cherry", "cherry", "banana", "banana"], "success": false, "latency_ms": 298}
+{"tx_id": "TX-3834", "items": ["apple", "apple", "banana", "banana"], "success": true, "latency_ms": 293}
+{"tx_id": "TX-8354", "items": ["apple", "banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 378}
+{"tx_id": "TX-3704", "items": ["banana", "banana", "cherry", "apple"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-7654", "items": ["apple"], "success": true, "latency_ms": 127}
+{"tx_id": "TX-9389", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 313}
+{"tx_id": "TX-5502", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 495}
+{"tx_id": "TX-1479", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 26}
+{"tx_id": "TX-1953", "items": ["apple", "cherry", "apple"], "success": true, "latency_ms": 28}
+{"tx_id": "TX-6355", "items": ["apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 209}
+{"tx_id": "TX-4271", "items": ["banana", "banana"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-1025", "items": ["cherry"], "success": true, "latency_ms": 450}
+{"tx_id": "TX-6923", "items": ["apple", "apple", "cherry", "banana", "apple"], "success": false, "latency_ms": 438}
+{"tx_id": "TX-4977", "items": ["banana"], "success": true, "latency_ms": 411}
+{"tx_id": "TX-7411", "items": ["cherry", "apple", "apple", "banana", "apple"], "success": true, "latency_ms": 192}
+{"tx_id": "TX-3922", "items": ["banana", "banana", "apple", "apple", "apple"], "success": false, "latency_ms": 118}
+{"tx_id": "TX-2243", "items": ["banana", "cherry", "apple", "apple"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-6362", "items": ["cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 135}
+{"tx_id": "TX-6814", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 127}
+{"tx_id": "TX-6406", "items": ["cherry"], "success": true, "latency_ms": 450}
+{"tx_id": "TX-2393", "items": ["banana", "banana", "cherry"], "success": true, "latency_ms": 378}
+{"tx_id": "TX-3344", "items": ["banana", "cherry", "apple", "banana", "cherry"], "success": true, "latency_ms": 110}
+{"tx_id": "TX-6178", "items": ["apple", "apple", "banana", "cherry", "apple"], "success": true, "latency_ms": 163}
+{"tx_id": "TX-3148", "items": ["apple", "apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 83}
+{"tx_id": "TX-5172", "items": ["cherry", "apple"], "success": true, "latency_ms": 11}
+{"tx_id": "TX-4931", "items": ["cherry", "apple", "banana", "cherry", "apple"], "success": true, "latency_ms": 299}
+{"tx_id": "TX-8547", "items": ["cherry", "banana"], "success": true, "latency_ms": 92}
+{"tx_id": "TX-5306", "items": ["cherry", "apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 431}
+{"tx_id": "TX-7191", "items": ["banana"], "success": true, "latency_ms": 383}
+{"tx_id": "TX-8985", "items": ["banana"], "success": true, "latency_ms": 103}
+{"tx_id": "TX-5261", "items": ["cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 455}
+{"tx_id": "TX-1755", "items": ["cherry", "banana", "banana", "banana", "banana"], "success": true, "latency_ms": 11}
+{"tx_id": "TX-9038", "items": ["apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 202}
+{"tx_id": "TX-4881", "items": ["apple", "cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 47}
+{"tx_id": "TX-5874", "items": ["cherry", "apple"], "success": true, "latency_ms": 134}
+{"tx_id": "TX-7075", "items": ["banana", "cherry", "banana", "apple", "apple"], "success": true, "latency_ms": 474}
+{"tx_id": "TX-3327", "items": ["apple", "cherry", "cherry", "cherry", "banana"], "success": true, "latency_ms": 250}
+{"tx_id": "TX-7707", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-1084", "items": ["apple", "cherry"], "success": true, "latency_ms": 177}
+{"tx_id": "TX-1648", "items": ["cherry", "cherry"], "success": true, "latency_ms": 77}
+{"tx_id": "TX-3684", "items": ["banana"], "success": true, "latency_ms": 446}
+{"tx_id": "TX-5466", "items": ["cherry"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-1455", "items": ["apple", "apple"], "success": true, "latency_ms": 131}
+{"tx_id": "TX-3094", "items": ["cherry", "cherry", "cherry", "apple"], "success": false, "latency_ms": 437}
+{"tx_id": "TX-9582", "items": ["apple", "banana"], "success": true, "latency_ms": 248}
+{"tx_id": "TX-2489", "items": ["cherry", "cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 123}
+{"tx_id": "TX-3910", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-4425", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 74}
+{"tx_id": "TX-5344", "items": ["banana", "cherry", "cherry", "banana", "cherry"], "success": true, "latency_ms": 354}
+{"tx_id": "TX-8970", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 271}
+{"tx_id": "TX-8536", "items": ["banana", "cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 475}
+{"tx_id": "TX-9453", "items": ["apple", "cherry", "cherry", "banana", "apple"], "success": true, "latency_ms": 170}
+{"tx_id": "TX-4673", "items": ["cherry", "apple", "banana", "banana", "cherry"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-7330", "items": ["banana", "banana", "banana", "apple", "apple"], "success": true, "latency_ms": 113}
+{"tx_id": "TX-6671", "items": ["apple", "cherry", "banana", "apple", "cherry"], "success": true, "latency_ms": 282}
+{"tx_id": "TX-5195", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 179}
+{"tx_id": "TX-7322", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 397}
+{"tx_id": "TX-2002", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 469}
+{"tx_id": "TX-6989", "items": ["cherry", "apple"], "success": true, "latency_ms": 374}
+{"tx_id": "TX-7964", "items": ["banana", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 319}
+{"tx_id": "TX-4457", "items": ["cherry", "apple"], "success": true, "latency_ms": 28}
+{"tx_id": "TX-7473", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 335}
+{"tx_id": "TX-5443", "items": ["apple", "apple", "cherry", "banana", "banana"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-4286", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 486}
+{"tx_id": "TX-4047", "items": ["apple", "banana", "cherry", "apple"], "success": true, "latency_ms": 415}
+{"tx_id": "TX-3142", "items": ["cherry", "cherry", "apple"], "success": false, "latency_ms": 128}
+{"tx_id": "TX-2863", "items": ["apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 305}
+{"tx_id": "TX-5681", "items": ["banana"], "success": true, "latency_ms": 175}
+{"tx_id": "TX-9510", "items": ["cherry", "cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 314}
+{"tx_id": "TX-9973", "items": ["cherry", "cherry"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-6754", "items": ["apple", "apple"], "success": true, "latency_ms": 320}
+{"tx_id": "TX-5472", "items": ["cherry", "banana", "cherry", "cherry"], "success": false, "latency_ms": 245}
+{"tx_id": "TX-9097", "items": ["cherry", "cherry", "banana", "banana", "banana"], "success": false, "latency_ms": 368}
+{"tx_id": "TX-5222", "items": ["apple"], "success": true, "latency_ms": 366}
+{"tx_id": "TX-9064", "items": ["cherry", "banana", "banana", "banana", "banana"], "success": true, "latency_ms": 110}
+{"tx_id": "TX-9030", "items": ["banana"], "success": true, "latency_ms": 68}
+{"tx_id": "TX-2158", "items": ["apple"], "success": true, "latency_ms": 246}
+{"tx_id": "TX-9645", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 194}
+{"tx_id": "TX-1527", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 258}
+{"tx_id": "TX-6056", "items": ["banana", "apple", "banana", "apple", "apple"], "success": true, "latency_ms": 212}
+{"tx_id": "TX-5300", "items": ["banana"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-3446", "items": ["banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 43}
+{"tx_id": "TX-3101", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-3887", "items": ["cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 363}
+{"tx_id": "TX-4912", "items": ["banana", "cherry"], "success": true, "latency_ms": 489}
+{"tx_id": "TX-9969", "items": ["banana"], "success": true, "latency_ms": 84}
+{"tx_id": "TX-9825", "items": ["apple", "apple"], "success": true, "latency_ms": 454}
+{"tx_id": "TX-6074", "items": ["cherry", "cherry", "apple"], "success": true, "latency_ms": 193}
+{"tx_id": "TX-4679", "items": ["apple", "apple"], "success": true, "latency_ms": 222}
+{"tx_id": "TX-5951", "items": ["banana", "cherry", "cherry", "banana", "cherry"], "success": true, "latency_ms": 323}
+{"tx_id": "TX-9830", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-2948", "items": ["apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 49}
+{"tx_id": "TX-8987", "items": ["apple", "cherry", "cherry"], "success": true, "latency_ms": 28}
+{"tx_id": "TX-2220", "items": ["cherry"], "success": true, "latency_ms": 173}
+{"tx_id": "TX-5974", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 158}
+{"tx_id": "TX-1649", "items": ["banana"], "success": false, "latency_ms": 328}
+{"tx_id": "TX-5414", "items": ["banana", "banana"], "success": true, "latency_ms": 374}
+{"tx_id": "TX-4688", "items": ["banana", "cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 255}
+{"tx_id": "TX-2320", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 369}
+{"tx_id": "TX-1046", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 169}
+{"tx_id": "TX-2822", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 497}
+{"tx_id": "TX-9646", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 58}
+{"tx_id": "TX-1598", "items": ["banana", "apple", "cherry", "apple"], "success": true, "latency_ms": 325}
+{"tx_id": "TX-3842", "items": ["cherry", "apple"], "success": true, "latency_ms": 123}
+{"tx_id": "TX-7456", "items": ["apple", "apple"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-5889", "items": ["apple", "banana", "cherry", "cherry"], "success": true, "latency_ms": 60}
+{"tx_id": "TX-9535", "items": ["apple", "apple", "cherry", "cherry", "banana"], "success": true, "latency_ms": 298}
+{"tx_id": "TX-7809", "items": ["apple", "apple", "banana", "apple"], "success": true, "latency_ms": 472}
+{"tx_id": "TX-9968", "items": ["cherry", "apple"], "success": true, "latency_ms": 415}
+{"tx_id": "TX-6055", "items": ["cherry"], "success": true, "latency_ms": 411}
+{"tx_id": "TX-9744", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 262}
+{"tx_id": "TX-2569", "items": ["apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 474}
+{"tx_id": "TX-5052", "items": ["cherry"], "success": true, "latency_ms": 361}
+{"tx_id": "TX-4601", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 417}
+{"tx_id": "TX-2718", "items": ["banana"], "success": true, "latency_ms": 97}
+{"tx_id": "TX-7747", "items": ["cherry"], "success": true, "latency_ms": 390}
+{"tx_id": "TX-6354", "items": ["banana"], "success": true, "latency_ms": 305}
+{"tx_id": "TX-1050", "items": ["cherry", "banana", "banana", "cherry"], "success": true, "latency_ms": 452}
+{"tx_id": "TX-3180", "items": ["apple", "apple"], "success": true, "latency_ms": 29}
+{"tx_id": "TX-6338", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 66}
+{"tx_id": "TX-5114", "items": ["apple", "banana", "banana", "cherry", "cherry"], "success": true, "latency_ms": 424}
+{"tx_id": "TX-3174", "items": ["cherry", "cherry"], "success": true, "latency_ms": 467}
+{"tx_id": "TX-2571", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 76}
+{"tx_id": "TX-9627", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 287}
+{"tx_id": "TX-4768", "items": ["apple", "banana"], "success": true, "latency_ms": 405}
+{"tx_id": "TX-2322", "items": ["banana", "cherry", "apple", "cherry", "banana"], "success": true, "latency_ms": 191}
+{"tx_id": "TX-9886", "items": ["banana", "banana", "banana"], "success": true, "latency_ms": 177}
+{"tx_id": "TX-5888", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 476}
+{"tx_id": "TX-3779", "items": ["banana", "banana", "apple", "apple"], "success": false, "latency_ms": 198}
+{"tx_id": "TX-6836", "items": ["apple", "apple"], "success": true, "latency_ms": 369}
+{"tx_id": "TX-4481", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 297}
+{"tx_id": "TX-4230", "items": ["apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 75}
+{"tx_id": "TX-4808", "items": ["banana"], "success": true, "latency_ms": 16}
+{"tx_id": "TX-4179", "items": ["banana", "cherry", "cherry", "apple"], "success": true, "latency_ms": 294}
+{"tx_id": "TX-2806", "items": ["cherry", "banana"], "success": true, "latency_ms": 174}
+{"tx_id": "TX-5230", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 30}
+{"tx_id": "TX-2040", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 435}
+{"tx_id": "TX-1292", "items": ["banana", "cherry", "banana", "apple"], "success": true, "latency_ms": 156}
+{"tx_id": "TX-3689", "items": ["banana", "cherry"], "success": true, "latency_ms": 468}
+{"tx_id": "TX-8751", "items": ["cherry", "banana"], "success": true, "latency_ms": 318}
+{"tx_id": "TX-9230", "items": ["cherry", "apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-1283", "items": ["banana", "banana", "apple"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-6541", "items": ["banana", "apple", "cherry", "apple", "cherry"], "success": true, "latency_ms": 11}
+{"tx_id": "TX-5298", "items": ["cherry", "cherry", "apple"], "success": true, "latency_ms": 144}
+{"tx_id": "TX-9449", "items": ["banana", "cherry", "banana", "banana", "apple"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-1581", "items": ["cherry"], "success": true, "latency_ms": 183}
+{"tx_id": "TX-8399", "items": ["banana", "apple", "cherry", "cherry", "apple"], "success": true, "latency_ms": 31}
+{"tx_id": "TX-3767", "items": ["apple", "apple"], "success": true, "latency_ms": 258}
+{"tx_id": "TX-8433", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 470}
+{"tx_id": "TX-1458", "items": ["banana", "banana", "apple", "cherry", "banana"], "success": true, "latency_ms": 319}
+{"tx_id": "TX-6216", "items": ["cherry", "apple", "apple", "apple"], "success": true, "latency_ms": 372}
+{"tx_id": "TX-1140", "items": ["banana", "cherry", "apple", "cherry"], "success": true, "latency_ms": 59}
+{"tx_id": "TX-3616", "items": ["apple", "apple", "banana", "banana"], "success": true, "latency_ms": 371}
+{"tx_id": "TX-2149", "items": ["cherry", "banana", "apple"], "success": true, "latency_ms": 216}
+{"tx_id": "TX-2242", "items": ["cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 107}
+{"tx_id": "TX-9031", "items": ["apple", "banana"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-6064", "items": ["banana", "banana", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 347}
+{"tx_id": "TX-7183", "items": ["cherry", "apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 406}
+{"tx_id": "TX-8244", "items": ["banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 232}
+{"tx_id": "TX-2244", "items": ["cherry", "apple"], "success": true, "latency_ms": 32}
+{"tx_id": "TX-1338", "items": ["banana", "cherry"], "success": true, "latency_ms": 488}
+{"tx_id": "TX-2268", "items": ["banana", "apple", "apple", "apple", "banana"], "success": true, "latency_ms": 456}
+{"tx_id": "TX-2321", "items": ["apple", "apple"], "success": true, "latency_ms": 400}
+{"tx_id": "TX-3358", "items": ["apple"], "success": true, "latency_ms": 356}
+{"tx_id": "TX-8878", "items": ["banana", "banana", "apple", "apple", "apple"], "success": true, "latency_ms": 21}
+{"tx_id": "TX-5942", "items": ["cherry", "cherry"], "success": true, "latency_ms": 97}
+{"tx_id": "TX-9349", "items": ["cherry", "banana", "banana", "banana"], "success": true, "latency_ms": 31}
+{"tx_id": "TX-7068", "items": ["apple", "banana"], "success": true, "latency_ms": 266}
+{"tx_id": "TX-9482", "items": ["banana", "apple", "cherry"], "success": true, "latency_ms": 463}
+{"tx_id": "TX-6226", "items": ["apple"], "success": true, "latency_ms": 209}
+{"tx_id": "TX-5533", "items": ["banana"], "success": true, "latency_ms": 315}
+{"tx_id": "TX-7164", "items": ["cherry", "apple", "apple"], "success": true, "latency_ms": 129}
+{"tx_id": "TX-3789", "items": ["banana"], "success": true, "latency_ms": 36}
+{"tx_id": "TX-2972", "items": ["apple", "apple"], "success": true, "latency_ms": 137}
+{"tx_id": "TX-5921", "items": ["apple", "cherry", "banana", "banana", "cherry"], "success": false, "latency_ms": 295}
+{"tx_id": "TX-2847", "items": ["banana", "banana"], "success": true, "latency_ms": 121}
+{"tx_id": "TX-5771", "items": ["cherry", "apple", "cherry", "banana", "apple"], "success": true, "latency_ms": 86}
+{"tx_id": "TX-1767", "items": ["cherry", "apple", "banana", "banana"], "success": true, "latency_ms": 319}
+{"tx_id": "TX-9085", "items": ["apple", "cherry"], "success": true, "latency_ms": 474}
+{"tx_id": "TX-4704", "items": ["cherry", "banana", "banana"], "success": true, "latency_ms": 401}
+{"tx_id": "TX-7365", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 343}
+{"tx_id": "TX-5902", "items": ["apple", "apple", "cherry", "apple"], "success": true, "latency_ms": 241}
+{"tx_id": "TX-2565", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 104}
+{"tx_id": "TX-3501", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 304}
+{"tx_id": "TX-2668", "items": ["cherry", "banana"], "success": true, "latency_ms": 286}
+{"tx_id": "TX-2167", "items": ["cherry", "cherry", "banana"], "success": true, "latency_ms": 24}
+{"tx_id": "TX-9625", "items": ["banana", "cherry", "cherry"], "success": true, "latency_ms": 455}
+{"tx_id": "TX-3694", "items": ["cherry", "apple", "banana", "apple", "cherry"], "success": true, "latency_ms": 460}
+{"tx_id": "TX-7039", "items": ["apple", "banana", "cherry"], "success": true, "latency_ms": 486}
+{"tx_id": "TX-5243", "items": ["banana"], "success": true, "latency_ms": 276}
+{"tx_id": "TX-8820", "items": ["apple", "cherry"], "success": true, "latency_ms": 136}
+{"tx_id": "TX-4608", "items": ["apple", "apple", "apple", "apple"], "success": true, "latency_ms": 205}
+{"tx_id": "TX-4298", "items": ["banana", "apple", "banana", "banana"], "success": true, "latency_ms": 106}
+{"tx_id": "TX-4799", "items": ["cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 318}
+{"tx_id": "TX-6695", "items": ["apple", "apple", "banana", "cherry"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-4339", "items": ["banana", "banana"], "success": true, "latency_ms": 106}
+{"tx_id": "TX-9570", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 228}
+{"tx_id": "TX-6522", "items": ["banana", "apple", "cherry", "cherry", "cherry"], "success": true, "latency_ms": 386}
+{"tx_id": "TX-3840", "items": ["apple", "apple", "apple", "banana"], "success": true, "latency_ms": 423}
+{"tx_id": "TX-6111", "items": ["banana", "cherry"], "success": true, "latency_ms": 41}
+{"tx_id": "TX-5541", "items": ["cherry", "apple", "banana"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-1691", "items": ["banana", "cherry", "banana"], "success": true, "latency_ms": 415}
+{"tx_id": "TX-2125", "items": ["cherry", "cherry"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-5889", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 401}
+{"tx_id": "TX-8142", "items": ["apple", "apple", "banana"], "success": false, "latency_ms": 367}
+{"tx_id": "TX-1088", "items": ["banana"], "success": true, "latency_ms": 214}
+{"tx_id": "TX-8512", "items": ["cherry", "apple", "banana", "cherry", "apple"], "success": true, "latency_ms": 243}
+{"tx_id": "TX-3455", "items": ["banana", "apple", "banana", "cherry"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-6147", "items": ["apple", "apple", "cherry", "banana"], "success": true, "latency_ms": 256}
+{"tx_id": "TX-8542", "items": ["cherry", "banana", "banana", "banana"], "success": false, "latency_ms": 477}
+{"tx_id": "TX-9720", "items": ["banana", "cherry", "banana", "cherry"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-1314", "items": ["cherry", "banana", "cherry", "apple", "banana"], "success": true, "latency_ms": 401}
+{"tx_id": "TX-6312", "items": ["apple", "cherry", "banana"], "success": true, "latency_ms": 290}
+{"tx_id": "TX-9570", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 242}
+{"tx_id": "TX-3705", "items": ["apple", "apple", "banana", "cherry", "banana"], "success": true, "latency_ms": 152}
+{"tx_id": "TX-6016", "items": ["banana", "banana", "cherry", "cherry", "cherry"], "success": false, "latency_ms": 162}
+{"tx_id": "TX-8125", "items": ["banana"], "success": true, "latency_ms": 321}
+{"tx_id": "TX-8524", "items": ["cherry", "cherry", "cherry", "apple", "banana"], "success": true, "latency_ms": 90}
+{"tx_id": "TX-3683", "items": ["cherry"], "success": true, "latency_ms": 132}
+{"tx_id": "TX-8945", "items": ["banana", "cherry", "cherry", "banana"], "success": false, "latency_ms": 19}
+{"tx_id": "TX-2715", "items": ["cherry", "banana", "cherry"], "success": true, "latency_ms": 394}
+{"tx_id": "TX-8675", "items": ["banana", "apple", "apple", "banana", "apple"], "success": true, "latency_ms": 64}
+{"tx_id": "TX-4628", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 357}
+{"tx_id": "TX-4640", "items": ["cherry"], "success": true, "latency_ms": 266}
+{"tx_id": "TX-5088", "items": ["banana"], "success": true, "latency_ms": 174}
+{"tx_id": "TX-8479", "items": ["banana", "cherry", "apple", "cherry", "apple"], "success": true, "latency_ms": 410}
+{"tx_id": "TX-8621", "items": ["cherry", "cherry"], "success": true, "latency_ms": 346}
+{"tx_id": "TX-1562", "items": ["banana", "apple"], "success": true, "latency_ms": 371}
+{"tx_id": "TX-9362", "items": ["apple", "banana", "banana", "banana", "apple"], "success": true, "latency_ms": 433}
+{"tx_id": "TX-1438", "items": ["cherry", "cherry"], "success": true, "latency_ms": 123}
+{"tx_id": "TX-1951", "items": ["cherry", "banana", "cherry", "apple"], "success": true, "latency_ms": 439}
+{"tx_id": "TX-3749", "items": ["apple", "cherry", "cherry"], "success": false, "latency_ms": 26}
+{"tx_id": "TX-1510", "items": ["apple", "banana", "cherry", "banana"], "success": false, "latency_ms": 172}
+{"tx_id": "TX-6222", "items": ["apple", "banana", "banana", "apple"], "success": true, "latency_ms": 36}
+{"tx_id": "TX-2396", "items": ["cherry", "apple"], "success": false, "latency_ms": 269}
+{"tx_id": "TX-2183", "items": ["apple", "banana", "banana"], "success": true, "latency_ms": 361}
+{"tx_id": "TX-2124", "items": ["apple", "banana", "banana", "banana", "apple"], "success": false, "latency_ms": 95}
+{"tx_id": "TX-4911", "items": ["cherry"], "success": true, "latency_ms": 135}
+{"tx_id": "TX-9973", "items": ["cherry"], "success": true, "latency_ms": 422}
+{"tx_id": "TX-5509", "items": ["apple", "apple", "banana"], "success": true, "latency_ms": 306}
+{"tx_id": "TX-5778", "items": ["apple", "apple", "apple", "apple", "cherry"], "success": true, "latency_ms": 295}
+{"tx_id": "TX-1161", "items": ["banana", "apple"], "success": true, "latency_ms": 230}
+{"tx_id": "TX-2184", "items": ["cherry", "apple"], "success": true, "latency_ms": 355}
+{"tx_id": "TX-4659", "items": ["apple", "apple"], "success": true, "latency_ms": 451}
+{"tx_id": "TX-8430", "items": ["banana", "banana", "apple", "banana"], "success": true, "latency_ms": 499}
+{"tx_id": "TX-5253", "items": ["cherry", "cherry", "banana", "banana"], "success": true, "latency_ms": 436}
+{"tx_id": "TX-9366", "items": ["apple", "banana", "apple"], "success": true, "latency_ms": 149}
+{"tx_id": "TX-6542", "items": ["cherry", "apple", "cherry", "apple", "banana"], "success": true, "latency_ms": 391}
+{"tx_id": "TX-7251", "items": ["banana"], "success": true, "latency_ms": 219}
+{"tx_id": "TX-3722", "items": ["apple", "banana", "banana", "banana", "apple"], "success": true, "latency_ms": 224}
+{"tx_id": "TX-3723", "items": ["cherry", "cherry"], "success": false, "latency_ms": 248}
+{"tx_id": "TX-6187", "items": ["banana"], "success": true, "latency_ms": 310}
+{"tx_id": "TX-5075", "items": ["banana"], "success": false, "latency_ms": 468}
+{"tx_id": "TX-7583", "items": ["apple", "cherry", "cherry", "apple", "apple"], "success": true, "latency_ms": 169}

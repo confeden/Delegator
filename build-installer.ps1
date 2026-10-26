@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Stop"
 $buildStartedUtc = [DateTime]::UtcNow
 $projectRoot = $PSScriptRoot
-$installerPath = Join-Path $projectRoot "dist\DelegatorSetup-0.9.0.exe"
+$installerPath = Join-Path $projectRoot "dist\DelegatorSetup-0.9.17.exe"
 $python = Join-Path $projectRoot ".venv312\Scripts\python.exe"
 $pyinstaller = Join-Path $projectRoot ".venv312\Scripts\pyinstaller.exe"
 $innoRoot = Join-Path $projectRoot "target\tools\innosetup-7.0.2"
@@ -81,7 +81,7 @@ try {
     $staticDir = Join-Path $projectRoot "delegator_core\static"
     # --noupx on purpose: PyInstaller silently uses UPX whenever it happens to be
     # on PATH, and one appeared here via winget between two releases. The payload
-    # is identical either way (probed: PIL renders a PNG, sqlite runs), but the
+    # is identical either way (probed: sqlite runs), but the
     # artefact then shrinks by 5.5 MB and every byte of it is packed - which is a
     # textbook antivirus heuristic for an unsigned installer, and it makes the
     # build depend on what is installed on the machine rather than on this file.
@@ -90,6 +90,21 @@ try {
         --distpath "target\release" --workpath "target\pyinstaller\work" `
         --specpath "target\pyinstaller" "run_server.py"
     if ($LASTEXITCODE -ne 0) { throw "Delegator Core packaging failed." }
+
+    # The private CPython the coding benchmark runs on (installed as
+    # {app}\runtime\python): copied from the same interpreter that froze the core,
+    # nothing is downloaded. The file list is installer\Delegator.iss's, so a module
+    # added to scripts\build-pyembed.py needs a Source: line there too.
+    $pyEmbed = Join-Path $projectRoot "dist\pyembed"
+    & $python (Join-Path $projectRoot "scripts\build-pyembed.py") $pyEmbed
+    if ($LASTEXITCODE -ne 0) { throw "Building the embedded Python failed." }
+    foreach ($needed in @("python.exe", "python312.dll", "python312.zip")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $pyEmbed $needed))) {
+            throw "The embedded Python is missing $needed."
+        }
+    }
+    & (Join-Path $pyEmbed "python.exe") -c "import zlib, lzma, bz2, json, subprocess, multiprocessing, ctypes, tempfile, importlib.util"
+    if ($LASTEXITCODE -ne 0) { throw "The embedded Python cannot import its standard modules." }
 
     & $iscc (Join-Path $projectRoot "installer\Delegator.iss")
     if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed." }

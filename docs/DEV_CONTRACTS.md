@@ -38,11 +38,10 @@ Appended under named mutex `Global\DelegatorUsageLog`, one compact JSON per line
 ```
 
 **`bench` (0.7)** is true for every record written while a benchmark run is in flight, and the
-core drops those records from EVERY figure it reports. A run solves twelve tasks twice on
+core drops those records from EVERY figure it reports. A run delegates real work on
 purpose: counting it inflates spend by the price of the measurement and "saved" by work nobody
 asked for, so the counter would end up rewarding the act of benchmarking. The flag is carried by
-`<RT>\benchmark-active.json`, written by `benchmark.ps1 start` and removed by `finish`/`cancel`
-(also on a cancel that found nothing, so a crashed run cannot leave it behind). A flag older than
+`<RT>\benchmark-active.json`, written by `coding-bench/start.py` and removed by `bench.py finish` (only when no other run is unfinished: the other arm may be running in another chat). A flag older than
 6 h is ignored — a dead agent must not switch accounting off forever. An environment variable
 cannot do this job: the agent runs each arm through `ai-delegate.cmd` in a separate process.
 Three copies of the check, one per usage writer. `router-decisions.jsonl` carries the same flag.
@@ -386,179 +385,34 @@ Plumbing (triage/extract/planner) keeps using the WEAKEST enabled model.
 
 ## 10. Benchmark (`-benchmark`, public)
 
-Engine lives in `delegator_core/benchmark/` — inside the core on purpose: a user has no Python,
-but the frozen core carries one. Candidate code never runs in the core process; it goes to a child
-process, which is **this executable re-invoked with `--benchmark-exec <script> <result.json>`**
-(`sandbox.py`, guarded in `run_server.py` BEFORE `main` is imported), with a 25 s timeout. The
-child reports through a file, not stdout: the packaged core is windowed and its streams may not
-exist.
+A coding benchmark (v1.5) that the IDE agent runs from its chat; the core is NOT involved. Package:
+`coding-bench/` in the repo, installed to `<install>\runtime\coding-bench\` (`start.py`, `grade_run.py`, `template/`,
+`hidden/`); runs and results are written to `<RT>\coding-bench\{runs,results}` (RT = the data dir, where the logs are); agent protocol: `scripts/BENCHMARK.md` -> `<RT>\BENCHMARK.md`.
 
-`BENCHMARK_VERSION` (engine.py) versions the TASK SET and the scoring rules, independently of the
-app version. Two reports are comparable only when it matches; bump it whenever a template or a
-weight changes.
+Triggers (hook text in `ide_detector.rs`): `-benchmark` (also `/benchmark`) = **native** arm, the bare model, Delegator
+must not be called; `-benchmark d` (also `-benchmark delegator`) = **delegator** arm, the same model told to use
+`ai-delegate.cmd assist`. The arms are always separate chats (they may run at the same time) so they never share a
+context. In a delegator run (flag `benchmark-active.json` fresh) `assist` sends EVERY call to the web chat first when the
+Web checkbox is on and the extension is connected (`Run-Assist`, before the router - a strong caller would otherwise get
+`keep`); when it is off / not connected / failed the ordinary ladder runs with its model fallbacks.
 
-Run shape (1.4): **12 tasks — 2 fast (1 point), 4 normal (2), 6 deep (3), 28 points max**, drawn
-from **46 templates (5 fast / 23 normal / 18 deep)**. **Levels are graded by measured difficulty,
-not by how the task feels to write.** Runs #4 and #5 (`deepseek-v4-flash-free`) scored 4/4 and 8/8
-on the fast and normal tiers, so eight of twelve slots of a ten-minute run measured nothing — hence
-the 2/4/6 mix. Six deep templates observed at p = 1.0 (allocate-weights, next-business-day,
-parse-csv-line, parse-query, round-half-up, semver-compare) were demoted the same day.
-**When you move a template between groups in `TEMPLATES`, edit the level inside the template too**
-— `Task.__post_init__` takes its points from the template's own level, and a mismatch silently
-made a run worth 30 of a stated 28.
+Flow: `python start.py --mode native|delegator "<model>"` copies `template/` into `runs/<mode>-<model>-<stamp>-<id>/`
+(three tasks: routing 35, compress 35, sat 30; 15 min each; `bench.py begin|check|status|finish`);
+`finish` publishes `REPORT.md` and runs `grade_run.py` (5-10 min, serialised by a lock file, timings depend on the
+machine), which writes `results/<model-slug>/<arm>/<run>__v1.5__grade.json` + `.md`, rebuilds `SUMMARY_v1.5.md`, copies `results/<model-slug>` to
+`Desktop\Delegator-benchmark\<model-slug>` (one folder, one subfolder per arm - carry it to another PC) and deletes the run folder (the archive lives in `runs_archive/`, outside the agent's reach by
+convention only). The grading is mechanical (D11).
 
-Templates are parameterised and drawn with a seeded RNG. `build_tasks(seed, difficulty=None)`:
-`None` is the plain uniform draw (tests, reproducibility); ANY dict — **including an empty one** —
-weights it. `generate_run` always passes `stats.difficulty_map(items.jsonl)`.
-`weight = max(0.1, 1 − p)`. For a template with no measurement `p` comes from `CATEGORY_PRIOR`
-(code/sql 0.9, spec/debug/performance 0.35), and ONE recorded observation replaces the prior
-outright. The draw is without replacement: a run never asks the same template twice.
+Grade JSON: `run`, `model`, `mode`, `bench_version`, `total` (0-100), `tasks.{routing,compress,sat}.{score,max,note,detail}`,
+`minutes`, `self_confidence`, `calibration_error`, `delegation` (delegator mode only: `calls`, `ok`, `web_calls`,
+`failed_attempts`, `requests_with_fallback`, `models`; read from `usage.jsonl` records stamped `bench:true` and
+`delegate-metrics.jsonl` stage `web`, inside the run's wall-clock window - approximate, other Delegator traffic in
+that window is counted), `graded_at`. The GUI tab «Бенчмарк» only reads these files.
 
-**Why a per-category prior and not one "unknown" bucket:** 1.4 treated every undrawn template
-alike, so twelve unmeasured legacy tasks competed on equal terms with the five written to break a
-model — run #6 gave the new classes one of six deep slots and came back 28/28. Measured after the
-fix: new-class deep tasks per run went from 1.6 to 3.2. Five runs of ceilings are evidence about
-the legacy classes; the prior states it instead of pretending we know nothing.
-
-Grading is mechanical: a `python` task compares the candidate against a REFERENCE implementation on
-generated inputs (so randomisation needs no answer keys), a `sqlite` task runs the candidate's
-`sql` fence against a generated fixture and compares rows.
-
-### Task classes (1.4) — why the old set stopped measuring
-
-Five runs in a row produced only 0 % and 100 % answers, so partial credit had nothing to resolve
-and every run was a tie. A modern model does not fail a short task that asks for one known
-algorithm. Three classes were added because they still fail:
-
-* **`spec`** — 9–11 interacting rules in one task (`validate-order`, `apply-discounts`), each rule
-  its own named check. Models satisfy eight and drop the rest; the score lands between 0 and full,
-  which is the only place a difference between the arms can appear.
-* **`debug`** — buggy code plus the one input where it is wrong; fix it without breaking the rest
-  (`fix-insert-point`, `fix-pagination`). Closest to what an IDE agent actually does, and the class
-  where `improve` is handed a concrete failure instead of an abstract review.
-* **`performance`** — a stated time budget on a generated input (`top-k-fast`). Catches "correct
-  but quadratic", which single-case tests never see. **The perf check must be LAST** in the check
-  list: checks run in order, and a candidate killed by the 25 s timeout keeps only what it recorded
-  before. Tune `distinct`, not `size` — with 500 distinct values `items.count` in a loop finished
-  in a second (it runs at C speed) and the task measured nothing; 18 000+ makes it bite.
-
-**Authoring rule, learned by writing them:** run a hand-written CORRECT answer through the checker,
-not only the bundled `solution`. `test_every_checker_accepts_its_own_reference_solution` cannot
-catch a reference that contradicts its own prose — `top-k-fast` shipped for ten minutes with a
-reference that returned a non-empty list for `k = -1` while the task text demanded an empty one, so
-a correct answer would have been scored wrong.
-
-### Partial credit per constraint (1.3)
-
-A checker is a LIST of named checks — `templates.check(id, title, code=…, cases=…, weight=1)` —
-and `grade_answer` returns a verdict per check. A task's score is
-`level points × (earned weight / total weight)`, so points are FRACTIONAL and the report prints
-`2.3/3 (7/9)`; `passed` stays all-or-nothing and is what the paired test uses. `MAX_POINTS` is
-still 24 so two runs stay comparable. **Why:** binary grading is what made three live runs in a
-row come back as twelve ties — a nine-constraint task scored 3 or 0 and threw the rest away.
-
-`templates.default_checks` derives the list for free: a **weight-0 `contract` gate** (the entry
-point exists — diagnostic, never worth points), one check per generated case, one for the `extra`
-block. `_sql` grades a query on a ladder: weight-0 `runs`, then `shape` / `rows` / `order`, so
-"right rows, wrong order" scores differently from "does not parse". A template with no generated
-cases must name its checks by hand (`_t_lru_cache`), or it collapses back to all-or-nothing.
-
-Gates are weight 0 **because partial credit must not pay for garbage**: with them scored, a
-`def f(*a): return None` stub collected ~0.17 of every task. Measured after: max 0.29 over the
-whole pool, mean 0.03, and `test_a_degenerate_answer_stays_near_zero` holds it under 0.35.
-
-Each check runs in its own function inside one try/except, and the harness appends its result to
-the file named by env `DELEGATOR_BENCH_CHECKS` **before moving on**. A candidate killed by the
-25 s timeout therefore keeps the constraints it already satisfied — that is the difference between
-"wrong" and "slow", and the only way a future performance-budget task can be graded at all.
-
-Points are formatted half-up in THREE places (`engine.format_points`,
-`gui::benchmark::format_points`, `Format-Points` in benchmark.ps1). Python's `round()` is
-half-to-even and would print 2.25 as «2.2» where the GUI prints «2.3» for the same stored number.
-
-Every template also carries a `solution` (a known-good answer; by default the reference with its
-private name renamed to the entry point). `tests/test_benchmark.py` runs EVERY template through
-its own checker with that solution and with a stub: a task nobody can pass, or one anybody can,
-never ships. Growing the deep pool is the standing job — the first live run scored **24/24 with
-Gemini 3.1 Pro**, which measures nothing. Deep tasks must therefore hinge on a rule that is
-precisely specified and widely misremembered (cron's day-of-month OR day-of-week, `^0.0.3`
-ranges, largest-remainder ties), not on knowing an algorithm.
-
-### Capability profile and honest statistics
-
-`report["profile"]` carries `byLevel` (fixed fast/normal/deep order) and `byCategory`, each row
-`{key, label, tasks, maxPoints, model, delegator}` — the answer to "где отставание или
-опережение", which no single total can give. Rendered by all four renderers (txt, svg, png, GUI);
-the task table stays 12 rows, the profile is a separate short block.
-
-`report["stats"]` (compare mode only, `None` in solo) is an **exact two-sided McNemar test** over
-the tasks where exactly one arm fully passed: `{discordantDelegator, discordantModel, mcnemarP,
-minDiscordantForProof, alpha, text}`. `math.comb`, no scipy. `minDiscordantForProof` is 6 — with
-α = 0.05 no smaller sample can reach significance, whatever the result. Its `text` is appended to
-the verdict, because **"не доказано" alone reads as a failure of Delegator when it is usually a
-failure of the sample size**, and the report must say which.
-
-### Item statistics (`items.jsonl`)
-
-`finish_run` appends one line per graded (task, arm) to `<RT>\benchmark\items.jsonl` — template,
-level, category, seed, model label, score, pass, failed check ids, elapsed. **An unanswered arm is
-never recorded**: a missing answer is a protocol failure, not evidence that a task is hard.
-
-`stats.summarise` reports per template: `pValue` (mean share of points earned), `fullPass`,
-`discrimination` (corrected item-total correlation — does this item separate the runs that scored
-high from those that scored low), `suggestedLevel`, and `advice` ∈ `keep` / `more-data` /
-`retire` / `move-<level>` / `weak`. Thresholds: ≥ 0.9 → fast, ≥ 0.6 → normal, else deep; `retire`
-needs p ≥ 0.98, ≥ 8 samples AND ≥ 2 distinct models (one model's strong suit is not evidence).
-`GET /api/benchmark/items` serves it, together with `unseen` — the templates never drawn yet, so a
-sample covering two thirds of the pool cannot read as covering all of it.
-
-**Nothing here edits a template automatically.** Applying a suggestion changes the task set, which
-means a `BENCHMARK_VERSION` bump; the numbers are evidence for that decision, never the decision.
-This is how the hand-made 0.5.4 re-levelling stops being an opinion.
-
-Endpoints (all local):
-
-| method | path | purpose |
-|--------|------|---------|
-| POST | `/api/benchmark/start` | `{mode: compare\|solo, model, seed?}` → runId + 12 tasks |
-| POST | `/api/benchmark/answer` | `{runId, task, arm: model\|delegator, answer, elapsedMs?}` |
-| POST | `/api/benchmark/finish` | grades, stores, writes both report files, returns the report; **409 with the missing task numbers when answers are outstanding** (`force: true` overrides) |
-| POST | `/api/benchmark/progress` | `{runId, task, stage}` — where the run is right now |
-| GET | `/api/benchmark/status` | live state of the run in flight, `active: null` between runs |
-| GET | `/api/benchmark/last` | last stored report (the GUI tab reads this) |
-| GET | `/api/benchmark/items` | per-template difficulty, discrimination and level advice |
-| POST | `/api/benchmark/export` | `{formats: [txt, png, svg]}` → paths written to the Desktop |
-
-A run may only be published once every arm has answered every task. Seen live 2026-08-12: the agent
-ran `answer` calls in parallel and called `finish` while two Delegator answers were still in flight;
-the report scored those tasks 0 and announced that Delegator had lost them. `missing_answers()` +
-the 409 make that impossible, and BENCHMARK.md now forbids parallel answers outright.
-
-The IDE agent drives it via `runtime\benchmark.ps1` (start / answer / finish / last) following
-`runtime\BENCHMARK.md`; the hook teaches the `-benchmark` trigger. **The agent submits only its own
-answer** — `benchmark.ps1 answer` produces the Delegator arm itself by running the same task and
-that draft through `improve` (§8). Two reasons: both arms provably see the identical task, and a
-weak model cannot mis-drive the comparison.
-
-Progress: `benchmark.ps1` pings `/api/benchmark/progress` before each slow step (`waiting` →
-`delegator` → `waiting`), and `record_answer` stamps the state itself, so the tab keeps moving
-even if a ping is lost. The GUI polls `/api/benchmark/status` every 1.5 s **only while the tab is
-open**, and reloads the report automatically when a run disappears from `active` (that is how the
-result appears without pressing «Обновить»). A ping never fails a run: `Send-Progress` swallows
-its own errors.
-
-Reports go to the real Desktop (`User Shell Folders\Desktop` via winreg, so a OneDrive-redirected
-Desktop works) as `Benchmark_v<app version>_<YYYY.MM.DD>.txt|.png`; an existing file is never
-overwritten (`_2`, `_3`, …).
-
-**The picture is PNG, not SVG, and that is a product decision, not a preference:** Telegram treats
-an `.svg` as a web document and warns the recipient that opening it may reveal their IP address —
-unacceptable on a file whose whole purpose is being shared. `benchmark/image.py` draws it with
-Pillow (the core's only extra dependency, pinned in requirements-build.txt) at 2× and downscales,
-using the first available system TrueType face (Segoe UI → Tahoma → Arial → Verdana → DejaVu) so
-Cyrillic renders. If Pillow or every font is missing, `export_report` falls back to the SVG and
-reports why in `pngError` — a report is never lost over a picture. `render_svg` stays and is still
-reachable with `{"formats": ["svg"]}` for anyone who wants vector.
+The in-flight flag `<RT>enchmark-active.json` ({run, mode, model, started}) is written by `start.py`,
+refreshed by `bench.py begin|check` and removed by `finish`; the 6 h staleness rule of the `bench` flag below
+still holds. Reports of different benchmark versions are not comparable (I6). The installer ships a private CPython 3.12 (`scripts/build-pyembed.py` -> `<install>untime\python\python.exe`, no `_pth` file,
+~14 MB / +6.4 MB installer); tasks, `bench.py` and the graders run on it, with `PYTHONNOUSERSITE=1`.
 
 ## 11. Mechanical draft check (`improve`, §8)
 

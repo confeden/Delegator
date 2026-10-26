@@ -417,8 +417,8 @@ def maybe_run_as_router(argv: list[str]) -> bool:
     """`delegator-core.exe --route <request.json> <decision.json>`.
 
     Returns True when this process was a routing call and must exit now. Kept
-    beside `maybe_run_as_child` / `maybe_run_as_linter` so run_server.py has one
-    shape for all three: check argv BEFORE importing the FastAPI app, or every
+    beside `maybe_run_as_linter` so run_server.py has one
+    shape for both: check argv BEFORE importing the FastAPI app, or every
     routing call would boot a web server.
     """
     if len(argv) < 4 or argv[1] != "--route":

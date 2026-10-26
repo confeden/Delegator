@@ -12,7 +12,6 @@ Jinja2==3.1.6
 MarkupSafe==3.0.3
 packaging==26.2
 pefile==2023.2.7
-pillow==12.3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 pyinstaller-hooks-contrib==2026.6

@@ -1,5 +1,5 @@
 #define MyAppName "Delegator"
-#define MyAppVersion "0.9.0"
+#define MyAppVersion "0.9.17"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -53,15 +53,116 @@ russian.LaunchApp=Запустить Delegator
 Name: "startup"; Description: "{cm:AutoStart}"; GroupDescription: "{cm:AdditionalTasks}"
 Name: "desktopicon"; Description: "{cm:DesktopShortcut}"; GroupDescription: "{cm:AdditionalTasks}"; Flags: unchecked
 
+[InstallDelete]
+Type: files; Name: "{app}\runtime\benchmark.ps1"
+
 [Files]
 Source: "..\target\release\delegator.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\target\release\delegator-core.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\theme.json"; DestDir: "{app}\resources"; Flags: ignoreversion
-Source: "..\extensions\gemini-web-bridge\*"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\extensions\gemini-web-bridge\CHANGELOG.md"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\README.md"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\background.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\content.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\manifest.json"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\visible.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\DELEGATOR.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\BENCHMARK.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
-Source: "..\scripts\benchmark.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\coding-bench\grade_run.py"; DestDir: "{app}\runtime\coding-bench"; Flags: ignoreversion
+Source: "..\coding-bench\start.py"; DestDir: "{app}\runtime\coding-bench"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\score_sat.py"; DestDir: "{app}\runtime\coding-bench\hidden"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\score_compress.py"; DestDir: "{app}\runtime\coding-bench\hidden\compress"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\code.py.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\data.csv"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\logs.json"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\mixed.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\prose.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\random.bin"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\routing\instances.json"; DestDir: "{app}\runtime\coding-bench\hidden\routing"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\routing\score_routing.py"; DestDir: "{app}\runtime\coding-bench\hidden\routing"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\index.json"; DestDir: "{app}\runtime\coding-bench\hidden\sat"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\01_factoring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\02_sudoku.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\03_parity.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\04_factoring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\05_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\06_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\07_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\08_planted3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\09_planted3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\10_color3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\11_random5.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\12_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\13_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\14_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\15_color3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\16_color3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\17_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\18_php.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\19_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\20_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\21_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\22_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\23_coloring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\24_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\25_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\26_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\27_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\28_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\29_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\30_coloring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\31_coloring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\32_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\33_php.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\template\REPORT.md"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
+Source: "..\coding-bench\template\bench.py"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\README.md"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\check.py"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\codec.py"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\samples\code.py.txt"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\samples\data.csv"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\samples\logs.json"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\samples\prose.txt"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\routing\README.md"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\routing\check.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\routing\instances.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\routing\routing.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\README.md"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\check.py"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\solver.py"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\color3_v60_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\factor_12_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\factor_12_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\parity_40_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\php_5_4_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\planted_n1000_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\r3_n60_a_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\r3_n60_b_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\r3_n90_a_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\samples\r3_n90_b_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\dist\pyembed\python.exe"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\python3.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\python312.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\python312.zip"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\vcruntime140.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\vcruntime140_1.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\libffi-8.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_asyncio.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_bz2.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_ctypes.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_decimal.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_elementtree.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_lzma.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_multiprocessing.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_overlapped.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_queue.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_socket.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_uuid.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\_zoneinfo.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\pyexpat.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\select.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
+Source: "..\dist\pyembed\unicodedata.pyd"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate-micro.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion

@@ -258,6 +258,36 @@ pub struct AppConfig {
     /// default: it is the only path that uses a browser session, not a key.
     #[serde(default)]
     pub gemini_web_enabled: bool,
+    /// Which model of the Gemini web chat answers: `best` (the newest one in
+    /// the page's own menu), or one of `argon`, `3.1-pro`, `3.8-flash`,
+    /// `3.5-flash-lite`. The Core and the Chrome extension read the same word.
+    #[serde(default = "default_web_best")]
+    pub gemini_web_model: String,
+    /// Reasoning level in that chat: `best` (the highest the page offers),
+    /// `high`, `medium`, `low`, or `auto` (leave the page's default).
+    #[serde(default = "default_web_best")]
+    pub gemini_web_reasoning: String,
+    /// «Puter (через Chrome)»: the same extension opens builder.puter.com and the
+    /// Core routes the web door through that page's own puter.js (user-pays).
+    #[serde(default)]
+    pub puter_web_enabled: bool,
+    /// Puter model id; the Core falls back to `claude-opus-5-5` when it is empty
+    /// or malformed.
+    #[serde(default = "default_puter_model")]
+    pub puter_web_model: String,
+    /// What each `-latest` alias resolves to now (`flash` 3.8, `pro` 3.1,
+    /// `flash-lite` 3.5), read off the Google model list. The runtime ranks an
+    /// alias by this number so "higher version = higher priority" holds for it.
+    #[serde(default)]
+    pub gemini_alias_versions: HashMap<String, f64>,
+}
+
+fn default_web_best() -> String {
+    "best".to_string()
+}
+
+fn default_puter_model() -> String {
+    "claude-opus-5-5".to_string()
 }
 
 impl Default for AppConfig {
@@ -278,6 +308,11 @@ impl Default for AppConfig {
             ide_states: default_ide_states(),
             delegator_enabled: true,
             gemini_web_enabled: false,
+            gemini_web_model: default_web_best(),
+            gemini_web_reasoning: default_web_best(),
+            puter_web_enabled: false,
+            puter_web_model: default_puter_model(),
+            gemini_alias_versions: HashMap::new(),
         }
     }
 }

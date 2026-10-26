@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Delegator Gemini Bridge",
-  "version": "0.13.0",
-  "description": "Sends selected Delegator chat requests to a dedicated signed-in Gemini Web tab.",
-  "permissions": ["alarms", "scripting", "debugger"],
+  "version": "0.17.0",
+  "description": "Sends selected Delegator chat requests to a dedicated signed-in Gemini Web tab or Puter tab.",
+  "permissions": [
+    "alarms",
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "debugger"
+  ],
   "host_permissions": [
     "https://gemini.google.com/*",
+    "https://builder.puter.com/*",
     "http://127.0.0.1:1380/*"
   ],
   "background": {
@@ -13,8 +20,22 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://gemini.google.com/app*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://gemini.google.com/app*"
+      ],
+      "js": [
+        "visible.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/app*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

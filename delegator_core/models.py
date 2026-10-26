@@ -63,6 +63,28 @@ class GeminiWebResultRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=64)
     text: str = Field(default="", max_length=500_000)
     error: str | None = Field(default=None, max_length=2_000)
+    # What the page really had selected when it answered, e.g. "Argon 4 · High".
+    used: str | None = Field(default=None, max_length=200)
+
+
+class PuterWebResultRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(default="", max_length=500_000)
+    error: str | None = Field(default=None, max_length=2_000)
+
+
+class GeminiWebPhaseRequest(BaseModel):
+    phase: str = Field(min_length=1, max_length=300)
+
+
+class WebAskRequest(BaseModel):
+    """One delegated turn for the web integration (the IDE runtime's door)."""
+
+    text: str = Field(min_length=1, max_length=500_000)
+    # Empty = whatever «Интеграция → Web» says; otherwise "gemini-web/<id>".
+    model: str | None = Field(default=None, max_length=200)
+    reasoning: str | None = Field(default=None, max_length=40)
+    timeout_sec: float = Field(default=300, ge=10, le=900)
 
 
 class ChatTurnResponse(BaseModel):

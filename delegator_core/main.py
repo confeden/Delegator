@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import logging
 import mimetypes
 import hashlib
@@ -19,28 +20,15 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .benchmark import (
-    ARM_MODEL,
-    BENCHMARK_VERSION,
-    BenchmarkStore,
-    answer_format_problem,
-    export_report,
-    finish_run,
-    generate_run,
-    known_template_ids,
-    load_items,
-    missing_answers,
-    model_label_problem,
-    record_answer,
-    run_status,
-    summarise,
-)
 from .config import CoreConfig, load_config
 from .db import connect
 from .importers import import_codex_sessions, import_antigravity_sessions
 from .models import (
     ChatTaskEvent,
+    GeminiWebPhaseRequest,
     GeminiWebResultRequest,
+    PuterWebResultRequest,
+    WebAskRequest,
     ImportSessionsResponse,
     ChatTurnRequest,
     ChatTurnResponse,
@@ -52,7 +40,8 @@ from .models import (
     WorkspacePreferredSessionResponse,
 )
 from .providers import ProviderResult, ProviderUsage, ShellDelegateProvider
-from .providers.gemini_web import GeminiWebBridge, gemini_web_flags
+from .providers.gemini_web import GeminiWebBridge, gemini_web_choice, gemini_web_flags
+from .providers.puter_web import PuterWebBridge, puter_web_choice, puter_web_flags
 from .session_store import SessionStore
 from .usage import build_usage_report
 
@@ -125,15 +114,13 @@ class AppState:
             timeout_sec=config.shell_timeout_sec,
         )
         self.gemini_web = GeminiWebBridge()
+        self.puter_web = PuterWebBridge()
         self.static_dir = Path(__file__).parent / "static"
         self.index_file = self.static_dir / "index.html"
         self.upload_dir = self.config.home_dir / "uploads"
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.events = TaskEventBus()
         self.workspace_labels = _load_workspace_labels()
-        # Benchmark runs live next to the other runtime state, not in the DB:
-        # one machine has at most one last result and a handful of live runs.
-        self.benchmark = BenchmarkStore(self.config.runtime_home)
 
 
 def _preferred_output_language(text: str) -> str:
@@ -1140,226 +1127,6 @@ def create_app() -> FastAPI:
         core: AppState = app.state.core
         return build_usage_report(core.config.runtime_home / "usage.jsonl", days=days)
 
-    # ── Benchmark (DEV_CONTRACTS section 10) ──
-    # The IDE agent drives this: it answers every task itself first, then (in
-    # compare mode) the same task through Delegator. Grading happens here and
-    # is entirely mechanical - the agent must never grade its own work.
-
-    @app.post("/api/benchmark/start")
-    def benchmark_start(payload: dict[str, Any]) -> dict[str, Any]:
-        core: AppState = app.state.core
-        mode = str(payload.get("mode") or "compare")
-        model = str(payload.get("model") or "")
-        seed = payload.get("seed")
-        forced = bool(payload.get("force"))
-
-        # Prose in BENCHMARK.md asked for the model name twice and was ignored
-        # twice (2026-08-15 «gpt-5», 2026-08-16 «unknown»). Mechanical refusal.
-        problem = model_label_problem(model)
-        if problem and not forced:
-            raise HTTPException(
-                status_code=422,
-                detail={"error": "model_unnamed", "message": problem},
-            )
-
-        # One machine drives one run. Three at once is what made the app show
-        # «подготовка» while the chat was already on task 11. Abandoned EMPTY
-        # runs are forgotten first, so a zombie can never block a fresh start.
-        core.benchmark.sweep()
-        busy = core.benchmark.busy()
-        if busy is not None and not forced:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "run_in_flight",
-                    "message": (
-                        f"Прогон {busy.run_id} ещё идёт (решено задач "
-                        f"{busy.answered(ARM_MODEL)} из {len(busy.tasks)}). Продолжите его или "
-                        f"прекратите: benchmark.ps1 cancel -RunId {busy.run_id}"
-                    ),
-                    "runId": busy.run_id,
-                },
-            )
-        return generate_run(
-            core.benchmark,
-            mode=mode,
-            model_label=model,
-            seed=int(seed) if seed not in (None, "") else None,
-            # Which thinking level the IDE was set to. «gpt-5» at minimal effort
-            # and the same model at high effort are two different systems, and a
-            # report that does not say which one ran cannot be compared later.
-            reasoning=str(payload.get("reasoning") or ""),
-        )
-
-    @app.post("/api/benchmark/answer")
-    def benchmark_answer(payload: dict[str, Any]) -> dict[str, Any]:
-        core: AppState = app.state.core
-        state = core.benchmark.get(str(payload.get("runId") or ""))
-        if state is None:
-            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
-        task_index = int(payload.get("task") or 0)
-        arm = str(payload.get("arm") or "")
-        text = str(payload.get("answer") or "")
-
-        # The model arm is what a human or an agent hands in, and a hand-in can
-        # be the wrong file. Refuse while it is still cheap: the Delegator arm is
-        # produced by `improve` and is recorded as-is, because a bad rewrite is
-        # evidence, not a protocol error.
-        if (
-            arm == ARM_MODEL
-            and not bool(payload.get("force"))
-            and 1 <= task_index <= len(state.tasks)
-        ):
-            problem = answer_format_problem(state.tasks[task_index - 1], text)
-            if problem:
-                raise HTTPException(
-                    status_code=422,
-                    detail={"error": "wrong_artefact", "message": problem, "task": task_index},
-                )
-        try:
-            record_answer(
-                state,
-                task_index=task_index,
-                arm=arm,
-                text=text,
-                elapsed_ms=int(payload.get("elapsedMs") or 0),
-                mode=str(payload.get("mode") or ""),
-            )
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        return {"ok": True, "accepted": len(state.answers)}
-
-    @app.post("/api/benchmark/label")
-    def benchmark_label(payload: dict[str, Any]) -> dict[str, Any]:
-        """Fixes the model name of a run already in flight.
-
-        A run that started unnamed used to be worth throwing away: the label is
-        printed in the report and grouped on in items.jsonl, and the answers
-        cannot be moved to another run. Renaming touches nothing else.
-        """
-        core: AppState = app.state.core
-        run_id = str(payload.get("runId") or "")
-        state = core.benchmark.get(run_id) if run_id else core.benchmark.active()
-        if state is None:
-            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
-        model = str(payload.get("model") or "")
-        problem = model_label_problem(model)
-        if problem and not bool(payload.get("force")):
-            raise HTTPException(
-                status_code=422, detail={"error": "model_unnamed", "message": problem}
-            )
-        state.relabel(model, str(payload.get("reasoning") or ""))
-        return {"ok": True, "runId": state.run_id, "modelLabel": state.display_label}
-
-    @app.post("/api/benchmark/finish")
-    def benchmark_finish(payload: dict[str, Any]) -> dict[str, Any]:
-        core: AppState = app.state.core
-        state = core.benchmark.get(str(payload.get("runId") or ""))
-        if state is None:
-            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
-        # Finishing early scores every missing answer as zero and pins the loss
-        # on an arm that was never asked. Refuse, and say exactly what is left.
-        gaps = missing_answers(state)
-        if gaps and not bool(payload.get("force")):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "incomplete",
-                    "message": "Прогон ещё не завершён: не все ответы отправлены",
-                    "missing": gaps,
-                },
-            )
-        report = finish_run(core.benchmark, state)
-        exported = export_report(report)
-        report = dict(report)
-        report["files"] = exported
-        core.benchmark.save_last(report)
-        return report
-
-    @app.post("/api/benchmark/progress")
-    def benchmark_progress(payload: dict[str, Any]) -> dict[str, Any]:
-        """Where the run is right now. Pinged by benchmark.ps1 before a slow
-        step so the GUI shows movement instead of a frozen screen."""
-        core: AppState = app.state.core
-        state = core.benchmark.get(str(payload.get("runId") or ""))
-        if state is None:
-            raise HTTPException(status_code=404, detail="Неизвестный прогон бенчмарка")
-        state.touch(int(payload.get("task") or 0), str(payload.get("stage") or "waiting"))
-        return {"ok": True}
-
-    @app.get("/api/benchmark/status")
-    def benchmark_status() -> dict[str, Any]:
-        core: AppState = app.state.core
-        return {
-            "ok": True,
-            "benchmarkVersion": BENCHMARK_VERSION,
-            "active": run_status(core.benchmark.active()),
-        }
-
-    @app.get("/api/benchmark/last")
-    def benchmark_last() -> dict[str, Any]:
-        core: AppState = app.state.core
-        report = core.benchmark.load_last()
-        return {
-            "ok": True,
-            "benchmarkVersion": BENCHMARK_VERSION,
-            "report": report,
-        }
-
-    @app.post("/api/benchmark/cancel")
-    def benchmark_cancel(payload: dict[str, Any]) -> dict[str, Any]:
-        """Drops a run nobody is driving any more.
-
-        The benchmark lives in the IDE chat, and that chat can die mid-run — the
-        agent hits a "servers are overloaded" error and never calls `finish`.
-        Without this the app kept announcing «Бенчмарк идёт» until the run aged
-        out an hour later, and no partial result was ever going to arrive.
-        """
-        core: AppState = app.state.core
-        run_id = str(payload.get("runId") or "")
-        # Without an id this drops the run being DRIVEN (what `active` means
-        # since 0.6.0), because that is what both callers mean by "stop it":
-        # the tab shows that run and the agent is working on that run.
-        state = core.benchmark.get(run_id) if run_id else core.benchmark.active()
-        swept = core.benchmark.sweep()
-        if state is None:
-            return {"ok": True, "cancelled": None, "swept": swept}
-        core.benchmark.drop(state.run_id)
-        return {
-            "ok": True,
-            "cancelled": state.run_id,
-            "answeredModel": state.answered(ARM_MODEL),
-            "tasksTotal": len(state.tasks),
-            "swept": [run for run in swept if run != state.run_id],
-        }
-
-    @app.get("/api/benchmark/items")
-    def benchmark_items() -> dict[str, Any]:
-        """Difficulty and discrimination per task template, across every run.
-
-        This is what turns a level from an opinion into a measurement: an item
-        nobody ever fails measures nothing, and an item that does not separate
-        strong runs from weak ones only adds noise. Applying a suggestion
-        changes the task set, so it belongs with a BENCHMARK_VERSION bump —
-        nothing here rewrites a template by itself.
-        """
-        core: AppState = app.state.core
-        items = load_items(core.benchmark.items_path)
-        summary = summarise(items, known_template_ids(), BENCHMARK_VERSION)
-        return {"ok": True, "benchmarkVersion": BENCHMARK_VERSION, **summary}
-
-    @app.post("/api/benchmark/export")
-    def benchmark_export(payload: dict[str, Any]) -> dict[str, Any]:
-        core: AppState = app.state.core
-        report = core.benchmark.load_last()
-        if report is None:
-            raise HTTPException(status_code=404, detail="Бенчмарк ещё не запускался")
-        wanted = payload.get("formats") or ["txt", "png"]
-        formats = tuple(str(item) for item in wanted if str(item) in ("txt", "png", "svg"))
-        if not formats:
-            raise HTTPException(status_code=400, detail="Неизвестный формат экспорта")
-        return {"ok": True, "files": export_report(report, formats)}
-
     @app.get("/api/config")
     def get_config() -> dict[str, object]:
         core: AppState = app.state.core
@@ -1485,10 +1252,81 @@ def create_app() -> FastAPI:
         return FileResponse(target, media_type=media_type or "application/octet-stream", filename=target.name.split("_", 1)[-1])
 
     @app.get("/api/gemini-web/state")
-    def gemini_web_state() -> dict[str, bool]:
+    def gemini_web_state() -> dict:
         core: AppState = app.state.core
-        enabled, active = gemini_web_flags()
-        return {"enabled": enabled, "wanted": enabled and active, "connected": core.gemini_web.is_connected()}
+        enabled = gemini_web_flags()[0]
+        return {"enabled": enabled, "wanted": enabled and core.gemini_web.has_demand(), "connected": core.gemini_web.is_connected(),
+               "resting": core.gemini_web.exhausted_now(),
+               "failures": core.gemini_web.failures[-5:]}
+
+    @app.get("/api/gemini-web/wait")
+    async def gemini_web_wait(known: int = 0) -> dict:
+        """Long-poll for the extension: answers when the need for a Gemini tab changes."""
+        core: AppState = app.state.core
+        if not gemini_web_flags()[0]:
+            await asyncio.sleep(2)
+            return {"wanted": False}
+        return {"wanted": await core.gemini_web.wait_demand(bool(known))}
+
+    @app.post("/api/gemini-web/phase")
+    def gemini_web_phase(payload: GeminiWebPhaseRequest) -> dict[str, bool]:
+        """The extension reports which step of a request it is on (for diagnosis)."""
+        core: AppState = app.state.core
+        core.gemini_web.phase = {"phase": payload.phase, "at": time.time()}
+        return {"ok": True}
+
+    @app.get("/api/gemini-web/phase")
+    def gemini_web_phase_get() -> dict:
+        core: AppState = app.state.core
+        return core.gemini_web.phase
+
+    @app.get("/api/gemini-web/last")
+    def gemini_web_last() -> dict:
+        """Which model answered the most recent web delegation (empty until one did)."""
+        core: AppState = app.state.core
+        return core.gemini_web.last
+
+    @app.post("/api/web/ask")
+    async def web_ask(payload: WebAskRequest) -> dict:
+        """The IDE runtime's door to the web integration: one turn, one answer.
+
+        Model and reasoning default to the user's choice on «Интеграция → Web».
+        """
+        core: AppState = app.state.core
+        # Gemini Web has the first claim; with it off, the Puter tab answers the same door.
+        if not gemini_web_flags()[0] and puter_web_flags()[0]:
+            try:
+                result = await core.puter_web.request(
+                    mode="delegate",
+                    text=payload.text,
+                    model=puter_web_choice(),
+                    timeout_sec=payload.timeout_sec,
+                )
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            return {
+                "text": result.text,
+                "model": result.usage.model if result.usage else "",
+                "provider": "Puter Web",
+                "seconds": core.puter_web.last.get("seconds"),
+            }
+        chosen_model, chosen_reasoning = gemini_web_choice()
+        try:
+            result = await core.gemini_web.request(
+                mode="delegate",
+                text=payload.text,
+                model=payload.model or chosen_model,
+                reasoning=payload.reasoning or chosen_reasoning,
+                timeout_sec=payload.timeout_sec,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {
+            "text": result.text,
+            "model": result.usage.model if result.usage else "",
+            "provider": "Gemini Web",
+            "seconds": core.gemini_web.last.get("seconds"),
+        }
 
     @app.get("/api/gemini-web/next")
     async def gemini_web_next():
@@ -1508,9 +1346,45 @@ def create_app() -> FastAPI:
             payload.request_id,
             text=payload.text,
             error=payload.error,
+            used=payload.used,
         )
         if not resolved:
             raise HTTPException(status_code=404, detail="Gemini Web request is no longer active")
+        return {"ok": True}
+
+    @app.get("/api/puter-web/state")
+    def puter_web_state() -> dict:
+        core: AppState = app.state.core
+        enabled = puter_web_flags()[0]
+        return {"enabled": enabled, "wanted": enabled and core.puter_web.has_demand(),
+               "connected": core.puter_web.is_connected(), "model": puter_web_choice()}
+
+    @app.get("/api/puter-web/wait")
+    async def puter_web_wait(known: int = 0) -> dict:
+        """Long-poll for the extension: answers when the need for a Puter tab changes."""
+        core: AppState = app.state.core
+        if not puter_web_flags()[0]:
+            await asyncio.sleep(20)
+            return {"wanted": False}
+        return {"wanted": await core.puter_web.wait_demand(bool(known))}
+
+    @app.get("/api/puter-web/next")
+    async def puter_web_next():
+        core: AppState = app.state.core
+        if not puter_web_flags()[0]:
+            await asyncio.sleep(2)
+            return Response(status_code=204)
+        request = await core.puter_web.next_request()
+        if request is None:
+            return Response(status_code=204)
+        return request
+
+    @app.post("/api/puter-web/result")
+    def puter_web_result(payload: PuterWebResultRequest) -> dict[str, bool]:
+        core: AppState = app.state.core
+        resolved = core.puter_web.resolve(payload.request_id, text=payload.text, error=payload.error)
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Puter Web request is no longer active")
         return {"ok": True}
 
     @app.get("/api/chat/tasks/{task_id}")

@@ -1,0 +1,3125 @@
+those methods does not support the operation with the
+   supplied arguments, it should return "NotImplemented".
+
+object.__radd__(self, other)
+object.__rsub__(self, other)
+object.__rmul__(self, other)
+object.__rmatmul__(self, other)
+object.__rtruediv__(self, other)
+object.__rfloordiv__(self, other)
+object.__rmod__(self, other)
+object.__rdivmod__(self, other)
+object.__rpow__(self, other[, modulo])
+object.__rlshift__(self, other)
+object.__rrshift__(self, other)
+object.__rand__(self, other)
+object.__rxor__(self, other)
+object.__ror__(self, other)
+
+   These methods are called to implement the binary arithmetic
+   operations ("+", "-", "*", "@", "/", "//", "%", "divmod()",
+   "pow()", "**", "<<", ">>", "&", "^", "|") with reflected (swapped)
+   operands.  These functions are only called if the operands are of
+   different types, when the left operand does not support the
+   corresponding operation [3], or the right operand’s class is
+   derived from the left operand’s class. [4] For instance, to
+   evaluate the expression "x - y", where *y* is an instance of a
+   class that has an "__rsub__()" method, "type(y).__rsub__(y, x)" is
+   called if "type(x).__sub__(x, y)" returns "NotImplemented" or
+   "type(y)" is a subclass of "type(x)". [5]
+
+   Note that "__rpow__()" should be defined to accept an optional
+   third argument if the three-argument version of the built-in
+   "pow()" function is to be supported.
+
+   Changed in version 3.14: Three-argument "pow()" now try calling
+   "__rpow__()" if necessary. Previously it was only called in two-
+   argument "pow()" and the binary power operator.
+
+   Note:
+
+     If the right operand’s type is a subclass of the left operand’s
+     type and that subclass provides a different implementation of the
+     reflected method for the operation, this method will be called
+     before the left operand’s non-reflected method. This behavior
+     allows subclasses to override their ancestors’ operations.
+
+object.__iadd__(self, other)
+object.__isub__(self, other)
+object.__imul__(self, other)
+object.__imatmul__(self, other)
+object.__itruediv__(self, other)
+object.__ifloordiv__(self, other)
+object.__imod__(self, other)
+object.__ipow__(self, other[, modulo])
+object.__ilshift__(self, other)
+object.__irshift__(self, other)
+object.__iand__(self, other)
+object.__ixor__(self, other)
+object.__ior__(self, other)
+
+   These methods are called to implement the augmented arithmetic
+   assignments ("+=", "-=", "*=", "@=", "/=", "//=", "%=", "**=",
+   "<<=", ">>=", "&=", "^=", "|=").  These methods should attempt to
+   do the operation in-place (modifying *self*) and return the result
+   (which could be, but does not have to be, *self*).  If a specific
+   method is not defined, or if that method returns "NotImplemented",
+   the augmented assignment falls back to the normal methods.  For
+   instance, if *x* is an instance of a class with an "__iadd__()"
+   method, "x += y" is equivalent to "x = x.__iadd__(y)" . If
+   "__iadd__()" does not exist, or if "x.__iadd__(y)" returns
+   "NotImplemented", "x.__add__(y)" and "y.__radd__(x)" are
+   considered, as with the evaluation of "x + y". In certain
+   situations, augmented assignment can result in unexpected errors
+   (see Why does a_tuple[i] += [‘item’] raise an exception when the
+   addition works?), but this behavior is in fact part of the data
+   model.
+
+object.__neg__(self)
+object.__pos__(self)
+object.__abs__(self)
+object.__invert__(self)
+
+   Called to implement the unary arithmetic operations ("-", "+",
+   "abs()" and "~").
+
+object.__complex__(self)
+object.__int__(self)
+object.__float__(self)
+
+   Called to implement the built-in functions "complex()", "int()" and
+   "float()".  Should return a value of the appropriate type.
+
+object.__index__(self)
+
+   Called to implement "operator.index()", and whenever Python needs
+   to losslessly convert the numeric object to an integer object (such
+   as in slicing, or in the built-in "bin()", "hex()" and "oct()"
+   functions). Presence of this method indicates that the numeric
+   object is an integer type.  Must return an integer.
+
+   If "__int__()", "__float__()" and "__complex__()" are not defined
+   then corresponding built-in functions "int()", "float()" and
+   "complex()" fall back to "__index__()".
+
+object.__round__(self[, ndigits])
+object.__trunc__(self)
+object.__floor__(self)
+object.__ceil__(self)
+
+   Called to implement the built-in function "round()" and "math"
+   functions "trunc()", "floor()" and "ceil()". Unless *ndigits* is
+   passed to "__round__()" all these methods should return the value
+   of the object truncated to an "Integral" (typically an "int").
+
+   Changed in version 3.14: "int()" no longer delegates to the
+   "__trunc__()" method.
+
+
+Objects, values and types
+*************************
+
+*Objects* are Python’s abstraction for data.  All data in a Python
+program is represented by objects or by relations between objects.
+Even code is represented by objects.
+
+Every object has an identity, a type and a value.  An object’s
+*identity* never changes once it has been created; you may think of it
+as the object’s address in memory.  The "is" operator compares the
+identity of two objects; the "id()" function returns an integer
+representing its identity.
+
+**CPython implementation detail:** For CPython, "id(x)" is the memory
+address where "x" is stored.
+
+An object’s type determines the operations that the object supports
+(e.g., “does it have a length?”) and also defines the possible values
+for objects of that type.  The "type()" function returns an object’s
+type (which is an object itself).  Like its identity, an object’s
+*type* is also unchangeable. [1]
+
+The *value* of some objects can change.  Objects whose value can
+change are said to be *mutable*; objects whose value is unchangeable
+once they are created are called *immutable*. (The value of an
+immutable container object that contains a reference to a mutable
+object can change when the latter’s value is changed; however the
+container is still considered immutable, because the collection of
+objects it contains cannot be changed.  So, immutability is not
+strictly the same as having an unchangeable value, it is more subtle.)
+An object’s mutability is determined by its type; for instance,
+numbers, strings and tuples are immutable, while dictionaries and
+lists are mutable.
+
+Objects are never explicitly destroyed; however, when they become
+unreachable they may be garbage-collected.  An implementation is
+allowed to postpone garbage collection or omit it altogether — it is a
+matter of implementation quality how garbage collection is
+implemented, as long as no objects are collected that are still
+reachable.
+
+**CPython implementation detail:** CPython currently uses a reference-
+counting scheme with (optional) delayed detection of cyclically linked
+garbage, which collects most objects as soon as they become
+unreachable, but is not guaranteed to collect garbage containing
+circular references.  See the documentation of the "gc" module for
+information on controlling the collection of cyclic garbage. Other
+implementations act differently and CPython may change. Do not depend
+on immediate finalization of objects when they become unreachable (so
+you should always close files explicitly).
+
+Note that the use of the implementation’s tracing or debugging
+facilities may keep objects alive that would normally be collectable.
+Also note that catching an exception with a "try"…"except" statement
+may keep objects alive.
+
+Some objects contain references to “external” resources such as open
+files or windows.  It is understood that these resources are freed
+when the object is garbage-collected, but since garbage collection is
+not guaranteed to happen, such objects also provide an explicit way to
+release the external resource, usually a "close()" method. Programs
+are strongly recommended to explicitly close such objects.  The
+"try"…"finally" statement and the "with" statement provide convenient
+ways to do this.
+
+Some objects contain references to other objects; these are called
+*containers*. Examples of containers are tuples, lists and
+dictionaries.  The references are part of a container’s value.  In
+most cases, when we talk about the value of a container, we imply the
+values, not the identities of the contained objects; however, when we
+talk about the mutability of a container, only the identities of the
+immediately contained objects are implied.  So, if an immutable
+container (like a tuple) contains a reference to a mutable object, its
+value changes if that mutable object is changed.
+
+Types affect almost all aspects of object behavior.  Even the
+importance of object identity is affected in some sense: for immutable
+types, operations that compute new values may actually return a
+reference to any existing object with the same type and value, while
+for mutable objects this is not allowed. For example, after "a = 1; b
+= 1", *a* and *b* may or may not refer to the same object with the
+value one, depending on the implementation. This is because "int" is
+an immutable type, so the reference to "1" can be reused. This
+behaviour depends on the implementation used, so should not be relied
+upon, but is something to be aware of when making use of object
+identity tests. However, after "c = []; d = []", *c* and *d* are
+guaranteed to refer to two different, unique, newly created empty
+lists. (Note that "e = f = []" assigns the *same* object to both *e*
+and *f*.)
+
+
+Operator precedence
+*******************
+
+The following table summarizes the operator precedence in Python, from
+highest precedence (most binding) to lowest precedence (least
+binding).  Operators in the same box have the same precedence.  Unless
+the syntax is explicitly given, operators are binary.  Operators in
+the same box group left to right (except for exponentiation and
+conditional expressions, which group from right to left).
+
+Note that comparisons, membership tests, and identity tests, all have
+the same precedence and have a left-to-right chaining feature as
+described in the Comparisons section.
+
++-------------------------------------------------+---------------------------------------+
+| Operator                                        | Description                           |
+|=================================================|=======================================|
+| "(expressions...)",  "[expressions...]", "{key: | Binding or parenthesized expression,  |
+| value...}", "{expressions...}"                  | list display, dictionary display, set |
+|                                                 | display                               |
++-------------------------------------------------+---------------------------------------+
+| "x[index]", "x[index:index]" "x(arguments...)", | Subscription (including slicing),     |
+| "x.attribute"                                   | call, attribute reference             |
++-------------------------------------------------+---------------------------------------+
+| "await x"                                       | Await expression                      |
++-------------------------------------------------+---------------------------------------+
+| "**"                                            | Exponentiation [5]                    |
++-------------------------------------------------+---------------------------------------+
+| "+x", "-x", "~x"                                | Positive, negative, bitwise NOT       |
++-------------------------------------------------+---------------------------------------+
+| "*", "@", "/", "//", "%"                        | Multiplication, matrix                |
+|                                                 | multiplication, division, floor       |
+|                                                 | division, remainder [6]               |
++-------------------------------------------------+---------------------------------------+
+| "+", "-"                                        | Addition and subtraction              |
++-------------------------------------------------+---------------------------------------+
+| "<<", ">>"                                      | Shifts                                |
++-------------------------------------------------+---------------------------------------+
+| "&"                                             | Bitwise AND                           |
++-------------------------------------------------+---------------------------------------+
+| "^"                                             | Bitwise XOR                           |
++-------------------------------------------------+---------------------------------------+
+| "|"                                             | Bitwise OR                            |
++-------------------------------------------------+---------------------------------------+
+| "in", "not in", "is", "is not", "<", "<=", ">", | Comparisons, including membership     |
+| ">=", "!=", "=="                                | tests and identity tests              |
++-------------------------------------------------+---------------------------------------+
+| "not x"                                         | Boolean NOT                           |
++-------------------------------------------------+---------------------------------------+
+| "and"                                           | Boolean AND                           |
++-------------------------------------------------+---------------------------------------+
+| "or"                                            | Boolean OR                            |
++-------------------------------------------------+---------------------------------------+
+| "if" – "else"                                   | Conditional expression                |
++-------------------------------------------------+---------------------------------------+
+| "lambda"                                        | Lambda expression                     |
++-------------------------------------------------+---------------------------------------+
+| ":="                                            | Assignment expression                 |
++-------------------------------------------------+---------------------------------------+
+
+-[ Footnotes ]-
+
+[1] While "abs(x%y) < abs(y)" is true mathematically, for floats it
+    may not be true numerically due to roundoff.  For example, and
+    assuming a platform on which a Python float is an IEEE 754 double-
+    precision number, in order that "-1e-100 % 1e100" have the same
+    sign as "1e100", the computed result is "-1e-100 + 1e100", which
+    is numerically exactly equal to "1e100".  The function
+    "math.fmod()" returns a result whose sign matches the sign of the
+    first argument instead, and so returns "-1e-100" in this case.
+    Which approach is more appropriate depends on the application.
+
+[2] If x is very close to an exact integer multiple of y, it’s
+    possible for "x//y" to be one larger than "(x-x%y)//y" due to
+    rounding.  In such cases, Python returns the latter result, in
+    order to preserve that "divmod(x,y)[0] * y + x % y" be very close
+    to "x".
+
+[3] The Unicode standard distinguishes between *code points* (e.g.
+    U+0041) and *abstract characters* (e.g. “LATIN CAPITAL LETTER A”).
+    While most abstract characters in Unicode are only represented
+    using one code point, there is a number of abstract characters
+    that can in addition be represented using a sequence of more than
+    one code point.  For example, the abstract character “LATIN
+    CAPITAL LETTER C WITH CEDILLA” can be represented as a single
+    *precomposed character* at code position U+00C7, or as a sequence
+    of a *base character* at code position U+0043 (LATIN CAPITAL
+    LETTER C), followed by a *combining character* at code position
+    U+0327 (COMBINING CEDILLA).
+
+    The comparison operators on strings compare at the level of
+    Unicode code points. This may be counter-intuitive to humans.  For
+    example, ""\u00C7" == "\u0043\u0327"" is "False", even though both
+    strings represent the same abstract character “LATIN CAPITAL
+    LETTER C WITH CEDILLA”.
+
+    To compare strings at the level of abstract characters (that is,
+    in a way intuitive to humans), use "unicodedata.normalize()".
+
+[4] Due to automatic garbage-collection, free lists, and the dynamic
+    nature of descriptors, you may notice seemingly unusual behaviour
+    in certain uses of the "is" operator, like those involving
+    comparisons between instance methods, or constants.  Check their
+    documentation for more info.
+
+[5] The power operator "**" binds less tightly than an arithmetic or
+    bitwise unary operator on its right, that is, "2**-1" is "0.5".
+
+[6] The "%" operator is also used for string formatting; the same
+    precedence applies.
+
+
+The "pass" statement
+********************
+
+   pass_stmt: "pass"
+
+"pass" is a null operation — when it is executed, nothing happens. It
+is useful as a placeholder when a statement is required syntactically,
+but no code needs to be executed, for example:
+
+   def f(arg): pass    # a function that does nothing (yet)
+
+   class C: pass       # a class with no methods (yet)
+
+
+The power operator
+******************
+
+The power operator binds more tightly than unary operators on its
+left; it binds less tightly than unary operators on its right.  The
+syntax is:
+
+   power: (await_expr | primary) ["**" u_expr]
+
+Thus, in an unparenthesized sequence of power and unary operators, the
+operators are evaluated from right to left (this does not constrain
+the evaluation order for the operands): "-1**2" results in "-1".
+
+The power operator has the same semantics as the built-in "pow()"
+function, when called with two arguments: it yields its left argument
+raised to the power of its right argument. Numeric arguments are first
+converted to a common type, and the result is of that type.
+
+For int operands, the result has the same type as the operands unless
+the second argument is negative; in that case, all arguments are
+converted to float and a float result is delivered. For example,
+"10**2" returns "100", but "10**-2" returns "0.01".
+
+Raising "0.0" to a negative power results in a "ZeroDivisionError".
+Raising a negative number to a fractional power results in a "complex"
+number. (In earlier versions it raised a "ValueError".)
+
+This operation can be customized using the special "__pow__()" and
+"__rpow__()" methods.
+
+
+The "raise" statement
+*********************
+
+   raise_stmt: "raise" [expression ["from" expression]]
+
+If no expressions are present, "raise" re-raises the exception that is
+currently being handled, which is also known as the *active
+exception*. If there isn’t currently an active exception, a
+"RuntimeError" exception is raised indicating that this is an error.
+
+Otherwise, "raise" evaluates the first expression as the exception
+object.  It must be either a subclass or an instance of
+"BaseException". If it is a class, the exception instance will be
+obtained when needed by instantiating the class with no arguments.
+
+The *type* of the exception is the exception instance’s class, the
+*value* is the instance itself.
+
+A traceback object is normally created automatically when an exception
+is raised and attached to it as the "__traceback__" attribute. You can
+create an exception and set your own traceback in one step using the
+"with_traceback()" exception method (which returns the same exception
+instance, with its traceback set to its argument), like so:
+
+   raise Exception("foo occurred").with_traceback(tracebackobj)
+
+The "from" clause is used for exception chaining: if given, the second
+*expression* must be another exception class or instance. If the
+second expression is an exception instance, it will be attached to the
+raised exception as the "__cause__" attribute (which is writable). If
+the expression is an exception class, the class will be instantiated
+and the resulting exception instance will be attached to the raised
+exception as the "__cause__" attribute. If the raised exception is not
+handled, both exceptions will be printed:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except Exception as exc:
+   ...     raise RuntimeError("Something bad happened") from exc
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 2, in <module>
+       print(1 / 0)
+             ~~^~~
+   ZeroDivisionError: division by zero
+
+   The above exception was the direct cause of the following exception:
+
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+       raise RuntimeError("Something bad happened") from exc
+   RuntimeError: Something bad happened
+
+A similar mechanism works implicitly if a new exception is raised when
+an exception is already being handled.  An exception may be handled
+when an "except" or "finally" clause, or a "with" statement, is used.
+The previous exception is then attached as the new exception’s
+"__context__" attribute:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except:
+   ...     raise RuntimeError("Something bad happened")
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 2, in <module>
+       print(1 / 0)
+             ~~^~~
+   ZeroDivisionError: division by zero
+
+   During handling of the above exception, another exception occurred:
+
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+       raise RuntimeError("Something bad happened")
+   RuntimeError: Something bad happened
+
+Exception chaining can be explicitly suppressed by specifying "None"
+in the "from" clause:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except:
+   ...     raise RuntimeError("Something bad happened") from None
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+   RuntimeError: Something bad happened
+
+Additional information on exceptions can be found in section
+Exceptions, and information about handling exceptions is in section
+The try statement.
+
+Changed in version 3.3: "None" is now permitted as "Y" in "raise X
+from Y".Added the "__suppress_context__" attribute to suppress
+automatic display of the exception context.
+
+Changed in version 3.11: If the traceback of the active exception is
+modified in an "except" clause, a subsequent "raise" statement re-
+raises the exception with the modified traceback. Previously, the
+exception was re-raised with the traceback it had when it was caught.
+
+
+The "return" statement
+**********************
+
+   return_stmt: "return" [expression_list]
+
+"return" may only occur syntactically nested in a function definition,
+not within a nested class definition.
+
+If an expression list is present, it is evaluated, else "None" is
+substituted.
+
+"return" leaves the current function call with the expression list (or
+"None") as return value.
+
+When "return" passes control out of a "try" statement with a "finally"
+clause, that "finally" clause is executed before really leaving the
+function.
+
+In a generator function, the "return" statement indicates that the
+generator is done and will cause "StopIteration" to be raised. The
+returned value (if any) is used as an argument to construct
+"StopIteration" and becomes the "StopIteration.value" attribute.
+
+In an asynchronous generator function, an empty "return" statement
+indicates that the asynchronous generator is done and will cause
+"StopAsyncIteration" to be raised.  A non-empty "return" statement is
+a syntax error in an asynchronous generator function.
+
+
+Emulating container types
+*************************
+
+The following methods can be defined to implement container objects.
+None of them are provided by the "object" class itself. Containers
+usually are *sequences* (such as "lists" or "tuples") or *mappings*
+(like *dictionaries*), but can represent other containers as well.
+The first set of methods is used either to emulate a sequence or to
+emulate a mapping; the difference is that for a sequence, the
+allowable keys should be the integers *k* for which "0 <= k < N" where
+*N* is the length of the sequence, or "slice" objects, which define a
+range of items.  It is also recommended that mappings provide the
+methods "keys()", "values()", "items()", "get()", "clear()",
+"setdefault()", "pop()", "popitem()", "copy()", and "update()"
+behaving similar to those for Python’s standard "dictionary" objects.
+The "collections.abc" module provides a "MutableMapping" *abstract
+base class* to help create those methods from a base set of
+"__getitem__()", "__setitem__()", "__delitem__()", and "keys()".
+
+Mutable sequences should provide methods "append()", "clear()",
+"count()", "extend()", "index()", "insert()", "pop()", "remove()", and
+"reverse()", like Python standard "list" objects. Finally, sequence
+types should implement addition (meaning concatenation) and
+multiplication (meaning repetition) by defining the methods
+"__add__()", "__radd__()", "__iadd__()", "__mul__()", "__rmul__()" and
+"__imul__()" described below; they should not define other numerical
+operators.
+
+It is recommended that both mappings and sequences implement the
+"__contains__()" method to allow efficient use of the "in" operator;
+for mappings, "in" should search the mapping’s keys; for sequences, it
+should search through the values.  It is further recommended that both
+mappings and sequences implement the "__iter__()" method to allow
+efficient iteration through the container; for mappings, "__iter__()"
+should iterate through the object’s keys; for sequences, it should
+iterate through the values.
+
+object.__len__(self)
+
+   Called to implement the built-in function "len()".  Should return
+   the length of the object, an integer ">=" 0.  Also, an object that
+   doesn’t define a "__bool__()" method and whose "__len__()" method
+   returns zero is considered to be false in a Boolean context.
+
+   **CPython implementation detail:** In CPython, the length is
+   required to be at most "sys.maxsize". If the length is larger than
+   "sys.maxsize" some features (such as "len()") may raise
+   "OverflowError".  To prevent raising "OverflowError" by truth value
+   testing, an object must define a "__bool__()" method.
+
+object.__length_hint__(self)
+
+   Called to implement "operator.length_hint()". Should return an
+   estimated length for the object (which may be greater or less than
+   the actual length). The length must be an integer ">=" 0. The
+   return value may also be "NotImplemented", which is treated the
+   same as if the "__length_hint__" method didn’t exist at all. This
+   method is purely an optimization and is never required for
+   correctness.
+
+   Added in version 3.4.
+
+object.__getitem__(self, subscript)
+
+   Called to implement *subscription*, that is, "self[subscript]". See
+   Subscriptions and slicings for details on the syntax.
+
+   There are two types of built-in objects that support subscription
+   via "__getitem__()":
+
+   * **sequences**, where *subscript* (also called *index*) should be
+     an integer or a "slice" object. See the sequence documentation
+     for the expected behavior, including handling "slice" objects and
+     negative indices.
+
+   * **mappings**, where *subscript* is also called the *key*. See
+     mapping documentation for the expected behavior.
+
+   If *subscript* is of an inappropriate type, "__getitem__()" should
+   raise "TypeError". If *subscript* has an inappropriate value,
+   "__getitem__()" should raise an "LookupError" or one of its
+   subclasses ("IndexError" for sequences; "KeyError" for mappings).
+
+   Note:
+
+     Slicing is handled by "__getitem__()", "__setitem__()", and
+     "__delitem__()". A call like
+
+        a[1:2] = b
+
+     is translated to
+
+        a[slice(1, 2, None)] = b
+
+     and so forth. Missing slice items are always filled in with
+     "None".
+
+   Note:
+
+     The sequence iteration protocol (used, for example, in "for"
+     loops), expects that an "IndexError" will be raised for illegal
+     indexes to allow proper detection of the end of a sequence.
+
+   Note:
+
+     When subscripting a *class*, the special class method
+     "__class_getitem__()" may be called instead of "__getitem__()".
+     See __class_getitem__ versus __getitem__ for more details.
+
+object.__setitem__(self, key, value)
+
+   Called to implement assignment to "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support changes to the values for keys, or if new keys
+   can be added, or for sequences if elements can be replaced.  The
+   same exceptions should be raised for improper *key* values as for
+   the "__getitem__()" method.
+
+object.__delitem__(self, key)
+
+   Called to implement deletion of "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support removal of keys, or for sequences if elements
+   can be removed from the sequence.  The same exceptions should be
+   raised for improper *key* values as for the "__getitem__()" method.
+
+object.__missing__(self, key)
+
+   Called by "dict"."__getitem__()" to implement "self[key]" for dict
+   subclasses when key is not in the dictionary.
+
+object.__iter__(self)
+
+   This method is called when an *iterator* is required for a
+   container. This method should return a new iterator object that can
+   iterate over all the objects in the container.  For mappings, it
+   should iterate over the keys of the container.
+
+object.__reversed__(self)
+
+   Called (if present) by the "reversed()" built-in to implement
+   reverse iteration.  It should return a new iterator object that
+   iterates over all the objects in the container in reverse order.
+
+   If the "__reversed__()" method is not provided, the "reversed()"
+   built-in will fall back to using the sequence protocol ("__len__()"
+   and "__getitem__()").  Objects that support the sequence protocol
+   should only provide "__reversed__()" if they can provide an
+   implementation that is more efficient than the one provided by
+   "reversed()".
+
+The membership test operators ("in" and "not in") are normally
+implemented as an iteration through a container. However, container
+objects can supply the following special method with a more efficient
+implementation, which also does not require the object be iterable.
+
+object.__contains__(self, item)
+
+   Called to implement membership test operators.  Should return true
+   if *item* is in *self*, false otherwise.  For mapping objects, this
+   should consider the keys of the mapping rather than the values or
+   the key-item pairs.
+
+   For objects that don’t define "__contains__()", the membership test
+   first tries iteration via "__iter__()", then the old sequence
+   iteration protocol via "__getitem__()", see this section in the
+   language reference.
+
+
+Shifting operations
+*******************
+
+The shifting operations have lower priority than the arithmetic
+operations:
+
+   shift_expr: a_expr | shift_expr ("<<" | ">>") a_expr
+
+These operators accept integers as arguments.  They shift the first
+argument to the left or right by the number of bits given by the
+second argument.
+
+The left shift operation can be customized using the special
+"__lshift__()" and "__rlshift__()" methods. The right shift operation
+can be customized using the special "__rshift__()" and "__rrshift__()"
+methods.
+
+A right shift by *n* bits is defined as floor division by "pow(2,n)".
+A left shift by *n* bits is defined as multiplication with "pow(2,n)".
+
+
+Slicings
+********
+
+A more advanced form of subscription, *slicing*, is commonly used to
+extract a portion of a sequence. In this form, the subscript is a
+*slice*: up to three expressions separated by colons. Any of the
+expressions may be omitted, but a slice must contain at least one
+colon:
+
+   >>> number_names = ['zero', 'one', 'two', 'three', 'four', 'five']
+   >>> number_names[1:3]
+   ['one', 'two']
+   >>> number_names[1:]
+   ['one', 'two', 'three', 'four', 'five']
+   >>> number_names[:3]
+   ['zero', 'one', 'two']
+   >>> number_names[:]
+   ['zero', 'one', 'two', 'three', 'four', 'five']
+   >>> number_names[::2]
+   ['zero', 'two', 'four']
+   >>> number_names[:-3]
+   ['zero', 'one', 'two']
+   >>> del number_names[4:]
+   >>> number_names
+   ['zero', 'one', 'two', 'three']
+
+When a slice is evaluated, the interpreter constructs a "slice" object
+whose "start", "stop" and "step" attributes, respectively, are the
+results of the expressions between the colons. Any missing expression
+evaluates to "None". This "slice" object is then passed to the
+"__getitem__()" or "__class_getitem__()" *special method*, as above.
+
+   # continuing with the SubscriptionDemo instance defined above:
+   >>> demo[2:3]
+   subscripted with: slice(2, 3, None)
+   >>> demo[::'spam']
+   subscripted with: slice(None, None, 'spam')
+
+
+Special Attributes
+******************
+
+The implementation adds a few special read-only attributes to several
+object types, where they are relevant.  Some of these are not reported
+by the "dir()" built-in function.
+
+definition.__name__
+
+   The name of the class, function, method, descriptor, or generator
+   instance.
+
+definition.__qualname__
+
+   The *qualified name* of the class, function, method, descriptor, or
+   generator instance.
+
+   Added in version 3.3.
+
+definition.__module__
+
+   The name of the module in which a class or function was defined.
+
+definition.__doc__
+
+   The documentation string of a class or function, or "None" if
+   undefined.
+
+definition.__type_params__
+
+   The type parameters of generic classes, functions, and type
+   aliases. For classes and functions that are not generic, this will
+   be an empty tuple.
+
+   Added in version 3.12.
+
+
+Special method names
+********************
+
+A class can implement certain operations that are invoked by special
+syntax (such as arithmetic operations or subscripting and slicing) by
+defining methods with special names. This is Python’s approach to
+*operator overloading*, allowing classes to define their own behavior
+with respect to language operators.  For instance, if a class defines
+a method named "__getitem__()", and "x" is an instance of this class,
+then "x[i]" is roughly equivalent to "type(x).__getitem__(x, i)".
+Except where mentioned, attempts to execute an operation raise an
+exception when no appropriate method is defined (typically
+"AttributeError" or "TypeError").
+
+Setting a special method to "None" indicates that the corresponding
+operation is not available.  For example, if a class sets "__iter__()"
+to "None", the class is not iterable, so calling "iter()" on its
+instances will raise a "TypeError" (without falling back to
+"__getitem__()"). [2]
+
+When implementing a class that emulates any built-in type, it is
+important that the emulation only be implemented to the degree that it
+makes sense for the object being modelled.  For example, some
+sequences may work well with retrieval of individual elements, but
+extracting a slice may not make sense. (One example of this is the
+NodeList interface in the W3C’s Document Object Model.)
+
+
+Basic customization
+===================
+
+object.__new__(cls[, ...])
+
+   Called to create a new instance of class *cls*.  "__new__()" is a
+   static method (special-cased so you need not declare it as such)
+   that takes the class of which an instance was requested as its
+   first argument.  The remaining arguments are those passed to the
+   object constructor expression (the call to the class).  The return
+   value of "__new__()" should be the new object instance (usually an
+   instance of *cls*).
+
+   Typical implementations create a new instance of the class by
+   invoking the superclass’s "__new__()" method using
+   "super().__new__(cls[, ...])" with appropriate arguments and then
+   modifying the newly created instance as necessary before returning
+   it.
+
+   If "__new__()" is invoked during object construction and it returns
+   an instance of *cls*, then the new instance’s "__init__()" method
+   will be invoked like "__init__(self[, ...])", where *self* is the
+   new instance and the remaining arguments are the same as were
+   passed to the object constructor.
+
+   If "__new__()" does not return an instance of *cls*, then the new
+   instance’s "__init__()" method will not be invoked.
+
+   "__new__()" is intended mainly to allow subclasses of immutable
+   types (like int, str, or tuple) to customize instance creation.  It
+   is also commonly overridden in custom metaclasses in order to
+   customize class creation.
+
+object.__init__(self[, ...])
+
+   Called after the instance has been created (by "__new__()"), but
+   before it is returned to the caller.  The arguments are those
+   passed to the class constructor expression.  If a base class has an
+   "__init__()" method, the derived class’s "__init__()" method, if
+   any, must explicitly call it to ensure proper initialization of the
+   base class part of the instance; for example:
+   "super().__init__([args...])".
+
+   Because "__new__()" and "__init__()" work together in constructing
+   objects ("__new__()" to create it, and "__init__()" to customize
+   it), no non-"None" value may be returned by "__init__()"; doing so
+   will cause a "TypeError" to be raised at runtime.
+
+object.__del__(self)
+
+   Called when the instance is about to be destroyed.  This is also
+   called a finalizer or (improperly) a destructor.  If a base class
+   has a "__del__()" method, the derived class’s "__del__()" method,
+   if any, must explicitly call it to ensure proper deletion of the
+   base class part of the instance.
+
+   It is possible (though not recommended!) for the "__del__()" method
+   to postpone destruction of the instance by creating a new reference
+   to it.  This is called object *resurrection*.  It is
+   implementation-dependent whether "__del__()" is called a second
+   time when a resurrected object is about to be destroyed; the
+   current *CPython* implementation only calls it once.
+
+   It is not guaranteed that "__del__()" methods are called for
+   objects that still exist when the interpreter exits.
+   "weakref.finalize" provides a straightforward way to register a
+   cleanup function to be called when an object is garbage collected.
+
+   Note:
+
+     "del x" doesn’t directly call "x.__del__()" — the former
+     decrements the reference count for "x" by one, and the latter is
+     only called when "x"’s reference count reaches zero.
+
+   **CPython implementation detail:** It is possible for a reference
+   cycle to prevent the reference count of an object from going to
+   zero.  In this case, the cycle will be later detected and deleted
+   by the *cyclic garbage collector*.  A common cause of reference
+   cycles is when an exception has been caught in a local variable.
+   The frame’s locals then reference the exception, which references
+   its own traceback, which references the locals of all frames caught
+   in the traceback.
+
+   See also: Documentation for the "gc" module.
+
+   Warning:
+
+     Due to the precarious circumstances under which "__del__()"
+     methods are invoked, exceptions that occur during their execution
+     are ignored, and a warning is printed to "sys.stderr" instead.
+     In particular:
+
+     * "__del__()" can be invoked when arbitrary code is being
+       executed, including from any arbitrary thread.  If "__del__()"
+       needs to take a lock or invoke any other blocking resource, it
+       may deadlock as the resource may already be taken by the code
+       that gets interrupted to execute "__del__()".
+
+     * "__del__()" can be executed during interpreter shutdown.  As a
+       consequence, the global variables it needs to access (including
+       other modules) may already have been deleted or set to "None".
+       Python guarantees that globals whose name begins with a single
+       underscore are deleted from their module before other globals
+       are deleted; if no other references to such globals exist, this
+       may help in assuring that imported modules are still available
+       at the time when the "__del__()" method is called.
+
+object.__repr__(self)
+
+   Called by the "repr()" built-in function to compute the “official”
+   string representation of an object.  If at all possible, this
+   should look like a valid Python expression that could be used to
+   recreate an object with the same value (given an appropriate
+   environment).  If this is not possible, a string of the form
+   "<...some useful description...>" should be returned. The return
+   value must be a string object. If a class defines "__repr__()" but
+   not "__str__()", then "__repr__()" is also used when an “informal”
+   string representation of instances of that class is required.
+
+   This is typically used for debugging, so it is important that the
+   representation is information-rich and unambiguous. A default
+   implementation is provided by the "object" class itself.
+
+object.__str__(self)
+
+   Called by "str(object)", the default "__format__()" implementation,
+   and the built-in function "print()", to compute the “informal” or
+   nicely printable string representation of an object.  The return
+   value must be a str object.
+
+   This method differs from "object.__repr__()" in that there is no
+   expectation that "__str__()" return a valid Python expression: a
+   more convenient or concise representation can be used.
+
+   The default implementation defined by the built-in type "object"
+   calls "object.__repr__()".
+
+object.__bytes__(self)
+
+   Called by bytes to compute a byte-string representation of an
+   object. This should return a "bytes" object. The "object" class
+   itself does not provide this method.
+
+object.__format__(self, format_spec)
+
+   Called by the "format()" built-in function, and by extension,
+   evaluation of formatted string literals and the "str.format()"
+   method, to produce a “formatted” string representation of an
+   object. The *format_spec* argument is a string that contains a
+   description of the formatting options desired. The interpretation
+   of the *format_spec* argument is up to the type implementing
+   "__format__()", however most classes will either delegate
+   formatting to one of the built-in types, or use a similar
+   formatting option syntax.
+
+   See Format specification mini-language for a description of the
+   standard formatting syntax.
+
+   The return value must be a string object.
+
+   The default implementation by the "object" class should be given an
+   empty *format_spec* string. It delegates to "__str__()".
+
+   Changed in version 3.4: The __format__ method of "object" itself
+   raises a "TypeError" if passed any non-empty string.
+
+   Changed in version 3.7: "object.__format__(x, '')" is now
+   equivalent to "str(x)" rather than "format(str(x), '')".
+
+object.__lt__(self, other)
+object.__le__(self, other)
+object.__eq__(self, other)
+object.__ne__(self, other)
+object.__gt__(self, other)
+object.__ge__(self, other)
+
+   These are the so-called “rich comparison” methods. The
+   correspondence between operator symbols and method names is as
+   follows: "x<y" calls "x.__lt__(y)", "x<=y" calls "x.__le__(y)",
+   "x==y" calls "x.__eq__(y)", "x!=y" calls "x.__ne__(y)", "x>y" calls
+   "x.__gt__(y)", and "x>=y" calls "x.__ge__(y)".
+
+   A rich comparison method may return the singleton "NotImplemented"
+   if it does not implement the operation for a given pair of
+   arguments. By convention, "False" and "True" are returned for a
+   successful comparison. However, these methods can return any value,
+   so if the comparison operator is used in a Boolean context (e.g.,
+   in the condition of an "if" statement), Python will call "bool()"
+   on the value to determine if the result is true or false.
+
+   By default, "object" implements "__eq__()" by using "is", returning
+   "NotImplemented" in the case of a false comparison: "True if x is y
+   else NotImplemented". For "__ne__()", by default it delegates to
+   "__eq__()" and inverts the result unless it is "NotImplemented".
+   There are no other implied relationships among the comparison
+   operators or default implementations; for example, the truth of
+   "(x<y or x==y)" does not imply "x<=y". To automatically generate
+   ordering operations from a single root operation, see
+   "functools.total_ordering()".
+
+   By default, the "object" class provides implementations consistent
+   with Value comparisons: equality compares according to object
+   identity, and order comparisons raise "TypeError". Each default
+   method may generate these results directly, but may also return
+   "NotImplemented".
+
+   See the paragraph on "__hash__()" for some important notes on
+   creating *hashable* objects which support custom comparison
+   operations and are usable as dictionary keys.
+
+   There are no swapped-argument versions of these methods (to be used
+   when the left argument does not support the operation but the right
+   argument does); rather, "__lt__()" and "__gt__()" are each other’s
+   reflection, "__le__()" and "__ge__()" are each other’s reflection,
+   and "__eq__()" and "__ne__()" are their own reflection. If the
+   operands are of different types, and the right operand’s type is a
+   direct or indirect subclass of the left operand’s type, the
+   reflected method of the right operand has priority, otherwise the
+   left operand’s method has priority.  Virtual subclassing is not
+   considered.
+
+   When no appropriate method returns any value other than
+   "NotImplemented", the "==" and "!=" operators will fall back to
+   "is" and "is not", respectively.
+
+object.__hash__(self)
+
+   Called by built-in function "hash()" and for operations on members
+   of hashed collections including "set", "frozenset", and "dict".
+   The "__hash__()" method should return an integer. The only required
+   property is that objects which compare equal have the same hash
+   value; it is advised to mix together the hash values of the
+   components of the object that also play a part in comparison of
+   objects by packing them into a tuple and hashing the tuple.
+   Example:
+
+      def __hash__(self):
+          return hash((self.name, self.nick, self.color))
+
+   Note:
+
+     "hash()" truncates the value returned from an object’s custom
+     "__hash__()" method to the size of a "Py_ssize_t".  This is
+     typically 8 bytes on 64-bit builds and 4 bytes on 32-bit builds.
+     If an object’s   "__hash__()" must interoperate on builds of
+     different bit sizes, be sure to check the width on all supported
+     builds.  An easy way to do this is with "python -c "import sys;
+     print(sys.hash_info.width)"".
+
+   If a class does not define an "__eq__()" method it should not
+   define a "__hash__()" operation either; if it defines "__eq__()"
+   but not "__hash__()", its instances will not be usable as items in
+   hashable collections.  If a class defines mutable objects and
+   implements an "__eq__()" method, it should not implement
+   "__hash__()", since the implementation of *hashable* collections
+   requires that a key’s hash value is immutable (if the object’s hash
+   value changes, it will be in the wrong hash bucket).
+
+   User-defined classes have "__eq__()" and "__hash__()" methods by
+   default (inherited from the "object" class); with them, all objects
+   compare unequal (except with themselves) and "x.__hash__()" returns
+   an appropriate value such that "x == y" implies both that "x is y"
+   and "hash(x) == hash(y)".
+
+   A class that overrides "__eq__()" and does not define "__hash__()"
+   will have its "__hash__()" implicitly set to "None".  When the
+   "__hash__()" method of a class is "None", instances of the class
+   will raise an appropriate "TypeError" when a program attempts to
+   retrieve their hash value, and will also be correctly identified as
+   unhashable when checking "isinstance(obj,
+   collections.abc.Hashable)".
+
+   If a class that overrides "__eq__()" needs to retain the
+   implementation of "__hash__()" from a parent class, the interpreter
+   must be told this explicitly by setting "__hash__ =
+   <ParentClass>.__hash__".
+
+   If a class that does not override "__eq__()" wishes to suppress
+   hash support, it should include "__hash__ = None" in the class
+   definition. A class which defines its own "__hash__()" that
+   explicitly raises a "TypeError" would be incorrectly identified as
+   hashable by an "isinstance(obj, collections.abc.Hashable)" call.
+
+   Note:
+
+     By default, the "__hash__()" values of str and bytes objects are
+     “salted” with an unpredictable random value.  Although they
+     remain constant within an individual Python process, they are not
+     predictable between repeated invocations of Python.This is
+     intended to provide protection against a denial-of-service caused
+     by carefully chosen inputs that exploit the worst case
+     performance of a dict insertion, *O*(*n*^2) complexity.  See
+     https://ocert.org/advisories/ocert-2011-003.html for
+     details.Changing hash values affects the iteration order of sets.
+     Python has never made guarantees about this ordering (and it
+     typically varies between 32-bit and 64-bit builds).See also
+     "PYTHONHASHSEED".
+
+   Changed in version 3.3: Hash randomization is enabled by default.
+
+object.__bool__(self)
+
+   Called to implement truth value testing and the built-in operation
+   "bool()"; should return "False" or "True".  When this method is not
+   defined, "__len__()" is called, if it is defined, and the object is
+   considered true if its result is nonzero.  If a class defines
+   neither "__len__()" nor "__bool__()" (which is true of the "object"
+   class itself), all its instances are considered true.
+
+
+Customizing attribute access
+============================
+
+The following methods can be defined to customize the meaning of
+attribute access (use of, assignment to, or deletion of "x.name") for
+class instances.
+
+object.__getattr__(self, name)
+
+   Called when the default attribute access fails with an
+   "AttributeError" (either "__getattribute__()" raises an
+   "AttributeError" because *"""
+The typing module: Support for gradual typing as defined by PEP 484 and subsequent PEPs.
+
+Among other things, the module includes the following:
+* Generic, Protocol, and internal machinery to support generic aliases.
+  All subscripted types like X[int], Union[int, str] are generic aliases.
+* Various "special forms" that have unique meanings in type annotations:
+  NoReturn, Never, ClassVar, Self, Concatenate, Unpack, and others.
+* Classes whose instances can be type arguments to generic classes and functions:
+  TypeVar, ParamSpec, TypeVarTuple.
+* Public helper functions: get_type_hints, overload, cast, final, and others.
+* Several protocols to support duck-typing:
+  SupportsFloat, SupportsIndex, SupportsAbs, and others.
+* Special types: NewType, NamedTuple, TypedDict.
+* Deprecated aliases for builtin types and collections.abc ABCs.
+
+Any name not present in __all__ is an implementation detail
+that may be changed without notice. Use at your own risk!
+"""
+
+from abc import abstractmethod, ABCMeta
+import collections
+from collections import defaultdict
+import collections.abc
+import copyreg
+import functools
+import operator
+import sys
+import types
+from types import GenericAlias
+
+from _typing import (
+    _idfunc,
+    TypeVar,
+    ParamSpec,
+    TypeVarTuple,
+    ParamSpecArgs,
+    ParamSpecKwargs,
+    TypeAliasType,
+    Generic,
+    Union,
+    NoDefault,
+)
+
+# Please keep __all__ alphabetized within each category.
+__all__ = [
+    # Super-special typing primitives.
+    'Annotated',
+    'Any',
+    'Callable',
+    'ClassVar',
+    'Concatenate',
+    'Final',
+    'ForwardRef',
+    'Generic',
+    'Literal',
+    'Optional',
+    'ParamSpec',
+    'Protocol',
+    'Tuple',
+    'Type',
+    'TypeVar',
+    'TypeVarTuple',
+    'Union',
+
+    # ABCs (from collections.abc).
+    'AbstractSet',  # collections.abc.Set.
+    'ByteString',
+    'Container',
+    'ContextManager',
+    'Hashable',
+    'ItemsView',
+    'Iterable',
+    'Iterator',
+    'KeysView',
+    'Mapping',
+    'MappingView',
+    'MutableMapping',
+    'MutableSequence',
+    'MutableSet',
+    'Sequence',
+    'Sized',
+    'ValuesView',
+    'Awaitable',
+    'AsyncIterator',
+    'AsyncIterable',
+    'Coroutine',
+    'Collection',
+    'AsyncGenerator',
+    'AsyncContextManager',
+
+    # Structural checks, a.k.a. protocols.
+    'Reversible',
+    'SupportsAbs',
+    'SupportsBytes',
+    'SupportsComplex',
+    'SupportsFloat',
+    'SupportsIndex',
+    'SupportsInt',
+    'SupportsRound',
+
+    # Concrete collection types.
+    'ChainMap',
+    'Counter',
+    'Deque',
+    'Dict',
+    'DefaultDict',
+    'List',
+    'OrderedDict',
+    'Set',
+    'FrozenSet',
+    'NamedTuple',  # Not really a type.
+    'TypedDict',  # Not really a type.
+    'Generator',
+
+    # Other concrete types.
+    'BinaryIO',
+    'IO',
+    'Match',
+    'Pattern',
+    'TextIO',
+
+    # One-off things.
+    'AnyStr',
+    'assert_type',
+    'assert_never',
+    'cast',
+    'clear_overloads',
+    'dataclass_transform',
+    'evaluate_forward_ref',
+    'final',
+    'get_args',
+    'get_origin',
+    'get_overloads',
+    'get_protocol_members',
+    'get_type_hints',
+    'is_protocol',
+    'is_typeddict',
+    'LiteralString',
+    'Never',
+    'NewType',
+    'no_type_check',
+    'no_type_check_decorator',
+    'NoDefault',
+    'NoReturn',
+    'NotRequired',
+    'overload',
+    'override',
+    'ParamSpecArgs',
+    'ParamSpecKwargs',
+    'ReadOnly',
+    'Required',
+    'reveal_type',
+    'runtime_checkable',
+    'Self',
+    'Text',
+    'TYPE_CHECKING',
+    'TypeAlias',
+    'TypeGuard',
+    'TypeIs',
+    'TypeAliasType',
+    'Unpack',
+]
+
+class _LazyAnnotationLib:
+    def __getattr__(self, attr):
+        global _lazy_annotationlib
+        import annotationlib
+        _lazy_annotationlib = annotationlib
+        return getattr(annotationlib, attr)
+
+_lazy_annotationlib = _LazyAnnotationLib()
+
+
+def _type_convert(arg, module=None, *, allow_special_forms=False, owner=None):
+    """For converting None to type(None), and strings to ForwardRef."""
+    if arg is None:
+        return type(None)
+    if isinstance(arg, str):
+        return _make_forward_ref(arg, module=module, is_class=allow_special_forms, owner=owner)
+    return arg
+
+
+def _type_check(arg, msg, is_argument=True, module=None, *, allow_special_forms=False, owner=None):
+    """Check that the argument is a type, and return it (internal helper).
+
+    As a special case, accept None and return type(None) instead. Also wrap strings
+    into ForwardRef instances. Consider several corner cases, for example plain
+    special forms like Union are not valid, while Union[int, str] is OK, etc.
+    The msg argument is a human-readable error message, e.g.::
+
+        "Union[arg, ...]: arg should be a type."
+
+    We append the repr() of the actual value (truncated to 100 chars).
+    """
+    invalid_generic_forms = (Generic, Protocol)
+    if not allow_special_forms:
+        invalid_generic_forms += (ClassVar,)
+        if is_argument:
+            invalid_generic_forms += (Final,)
+
+    arg = _type_convert(arg, module=module, allow_special_forms=allow_special_forms, owner=owner)
+    if (isinstance(arg, _GenericAlias) and
+            arg.__origin__ in invalid_generic_forms):
+        raise TypeError(f"{arg} is not valid as type argument")
+    if arg in (Any, LiteralString, NoReturn, Never, Self, TypeAlias):
+        return arg
+    if allow_special_forms and arg in (ClassVar, Final):
+        return arg
+    if isinstance(arg, _SpecialForm) or arg in (Generic, Protocol):
+        raise TypeError(f"Plain {arg} is not valid as type argument")
+    if type(arg) is tuple:
+        raise TypeError(f"{msg} Got {arg!r:.100}.")
+    return arg
+
+
+def _is_param_expr(arg):
+    return arg is ... or isinstance(arg,
+            (tuple, list, ParamSpec, _ConcatenateGenericAlias))
+
+
+def _should_unflatten_callable_args(typ, args):
+    """Internal helper for munging collections.abc.Callable's __args__.
+
+    The canonical representation for a Callable's __args__ flattens the
+    argument types, see https://github.com/python/cpython/issues/86361.
+
+    For example::
+
+        >>> import collections.abc
+        >>> P = ParamSpec('P')
+        >>> collections.abc.Callable[[int, int], str].__args__ == (int, int, str)
+        True
+        >>> collections.abc.Callable[P, str].__args__ == (P, str)
+        True
+
+    As a result, if we need to reconstruct the Callable from its __args__,
+    we need to unflatten it.
+    """
+    return (
+        typ.__origin__ is collections.abc.Callable
+        and not (len(args) == 2 and _is_param_expr(args[0]))
+    )
+
+
+def _type_repr(obj):
+    """Return the repr() of an object, special-casing types (internal helper).
+
+    If obj is a type, we return a shorter version than the default
+    type.__repr__, based on the module and qualified name, which is
+    typically enough to uniquely identify a type.  For everything
+    else, we fall back on repr(obj).
+    """
+    if isinstance(obj, tuple):
+        # Special case for `repr` of types with `ParamSpec`:
+        return '[' + ', '.join(_type_repr(t) for t in obj) + ']'
+    return _lazy_annotationlib.type_repr(obj)
+
+
+def _collect_type_parameters(args, *, enforce_default_ordering: bool = True):
+    """Collect all type parameters in args
+    in order of first appearance (lexicographic order).
+
+    For example::
+
+        >>> P = ParamSpec('P')
+        >>> T = TypeVar('T')
+        >>> _collect_type_parameters((T, Callable[P, T]))
+        (~T, ~P)
+    """
+    # required type parameter cannot appear after parameter with default
+    default_encountered = False
+    # or after TypeVarTuple
+    type_var_tuple_encountered = False
+    parameters = []
+    for t in args:
+        if isinstance(t, type):
+            # We don't want __parameters__ descriptor of a bare Python class.
+            pass
+        elif isinstance(t, tuple):
+            # `t` might be a tuple, when `ParamSpec` is substituted with
+            # `[T, int]`, or `[int, *Ts]`, etc.
+            for x in t:
+                for collected in _collect_type_parameters([x]):
+                    if collected not in parameters:
+                        parameters.append(collected)
+        elif hasattr(t, '__typing_subst__'):
+            if t not in parameters:
+                if enforce_default_ordering:
+                    if type_var_tuple_encountered and t.has_default():
+                        raise TypeError('Type parameter with a default'
+                                        ' follows TypeVarTuple')
+
+                    if t.has_default():
+                        default_encountered = True
+                    elif default_encountered:
+                        raise TypeError(f'Type parameter {t!r} without a default'
+                                        ' follows type parameter with a default')
+
+                parameters.append(t)
+        else:
+            if _is_unpacked_typevartuple(t):
+                type_var_tuple_encountered = True
+            for x in getattr(t, '__parameters__', ()):
+                if x not in parameters:
+                    parameters.append(x)
+    return tuple(parameters)
+
+
+def _check_generic_specialization(cls, arguments):
+    """Check correct count for parameters of a generic cls (internal helper).
+
+    This gives a nice error message in case of count mismatch.
+    """
+    expected_len = len(cls.__parameters__)
+    if not expected_len:
+        raise TypeError(f"{cls} is not a generic class")
+    actual_len = len(arguments)
+    if actual_len != expected_len:
+        # deal with defaults
+        if actual_len < expected_len:
+            # If the parameter at index `actual_len` in the parameters list
+            # has a default, then all parameters after it must also have
+            # one, because we validated as much in _collect_type_parameters().
+            # That means that no error needs to be raised here, despite
+            # the number of arguments being passed not matching the number
+            # of parameters: all parameters that aren't explicitly
+            # specialized in this call are parameters with default values.
+            if cls.__parameters__[actual_len].has_default():
+                return
+
+            expected_len -= sum(p.has_default() for p in cls.__parameters__)
+            expect_val = f"at least {expected_len}"
+        else:
+            expect_val = expected_len
+
+        raise TypeError(f"Too {'many' if actual_len > expected_len else 'few'} arguments"
+                        f" for {cls}; actual {actual_len}, expected {expect_val}")
+
+
+def _unpack_args(*args):
+    newargs = []
+    for arg in args:
+        subargs = getattr(arg, '__typing_unpacked_tuple_args__', None)
+        if subargs is not None and not (subargs and subargs[-1] is ...):
+            newargs.extend(subargs)
+        else:
+            newargs.append(arg)
+    return newargs
+
+def _deduplicate(params, *, unhashable_fallback=False):
+    # Weed out strict duplicates, preserving the first of each occurrence.
+    try:
+        return dict.fromkeys(params)
+    except TypeError:
+        if not unhashable_fallback:
+            raise
+        # Happens for cases like `Annotated[dict, {'x': IntValidator()}]`
+        new_unhashable = []
+        for t in params:
+            if t not in new_unhashable:
+                new_unhashable.append(t)
+        return new_unhashable
+
+def _flatten_literal_params(parameters):
+    """Internal helper for Literal creation: flatten Literals among parameters."""
+    params = []
+    for p in parameters:
+        if isinstance(p, _LiteralGenericAlias):
+            params.extend(p.__args__)
+        else:
+            params.append(p)
+    return tuple(params)
+
+
+_cleanups = []
+_caches = {}
+
+
+def _tp_cache(func=None, /, *, typed=False):
+    """Internal wrapper caching __getitem__ of generic types.
+
+    For non-hashable arguments, the original function is used as a fallback.
+    """
+    def decorator(func):
+        # The callback 'inner' references the newly created lru_cache
+        # indirectly by performing a lookup in the global '_caches' dictionary.
+        # This breaks a reference that can be problematic when combined with
+        # C API extensions that leak references to types. See GH-98253.
+
+        cache = functools.lru_cache(typed=typed)(func)
+        _caches[func] = cache
+        _cleanups.append(cache.cache_clear)
+        del cache
+
+        @functools.wraps(func)
+        def inner(*args, **kwds):
+            try:
+                return _caches[func](*args, **kwds)
+            except TypeError:
+                pass  # All real errors (not unhashable args) are raised below.
+            return func(*args, **kwds)
+        return inner
+
+    if func is not None:
+        return decorator(func)
+
+    return decorator
+
+
+def _deprecation_warning_for_no_type_params_passed(funcname: str) -> None:
+    import warnings
+
+    depr_message = (
+        f"Failing to pass a value to the 'type_params' parameter "
+        f"of {funcname!r} is deprecated, as it leads to incorrect behaviour "
+        f"when calling {funcname} on a stringified annotation "
+        f"that references a PEP 695 type parameter. "
+        f"It will be disallowed in Python 3.15."
+    )
+    warnings.warn(depr_message, category=DeprecationWarning, stacklevel=3)
+
+
+class _Sentinel:
+    __slots__ = ()
+    def __repr__(self):
+        return '<sentinel>'
+
+
+_sentinel = _Sentinel()
+
+
+def _eval_type(t, globalns, localns, type_params=_sentinel, *, recursive_guard=frozenset(),
+               format=None, owner=None, parent_fwdref=None, prefer_fwd_module=False):
+    """Evaluate all forward references in the given type t.
+
+    For use of globalns and localns see the docstring for get_type_hints().
+    recursive_guard is used to prevent infinite recursion with a recursive
+    ForwardRef.
+    """
+    if type_params is _sentinel:
+        _deprecation_warning_for_no_type_params_passed("typing._eval_type")
+        type_params = ()
+    if isinstance(t, _lazy_annotationlib.ForwardRef):
+        # If the forward_ref has __forward_module__ set, evaluate() infers the globals
+        # from the module, and it will probably pick better than the globals we have here.
+        # We do this only for calls from get_type_hints() (which opts in through the
+        # prefer_fwd_module flag), so that the default behavior remains more straightforward.
+        if prefer_fwd_module and t.__forward_module__ is not None:
+            globalns = None
+            # If there are type params on the owner, we need to add them back, because
+            # annotationlib won't.
+            if owner_type_params := getattr(owner, "__type_params__", None):
+                globalns = getattr(
+                    sys.modules.get(t.__forward_module__, None), "__dict__", None
+                )
+                if globalns is not None:
+                    globalns = dict(globalns)
+                    for type_param in owner_type_params:
+                        globalns[type_param.__name__] = type_param
+        return evaluate_forward_ref(t, globals=globalns, locals=localns,
+                                    type_params=type_params, owner=owner,
+                                    _recursive_guard=recursive_guard, format=format)
+    if isinstance(t, (_GenericAlias, GenericAlias, Union)):
+        if isinstance(t, GenericAlias):
+            args = tuple(
+                _make_forward_ref(arg, parent_fwdref=parent_fwdref) if isinstance(arg, str) else arg
+                for arg in t.__args__
+            )
+            is_unpacked = t.__unpacked__
+            if _should_unflatten_callable_args(t, args):
+                t = t.__origin__[(args[:-1], args[-1])]
+            else:
+                t = t.__origin__[args]
+            if is_unpacked:
+                t = Unpack[t]
+
+        ev_args = tuple(
+            _eval_type(
+                a, globalns, localns, type_params, recursive_guard=recursive_guard,
+                format=format, owner=owner, prefer_fwd_module=prefer_fwd_module,
+            )
+            for a in t.__args__
+        )
+        if ev_args == t.__args__:
+            return t
+        if isinstance(t, GenericAlias):
+            return GenericAlias(t.__origin__, ev_args)
+        if isinstance(t, Union):
+            return functools.reduce(operator.or_, ev_args)
+        else:
+            return t.copy_with(ev_args)
+    return t
+
+
+class _Final:
+    """Mixin to prohibit subclassing."""
+
+    __slots__ = ('__weakref__',)
+
+    def __init_subclass__(cls, /, *args, **kwds):
+        if '_root' not in kwds:
+            raise TypeError("Cannot subclass special typing classes")
+
+
+class _NotIterable:
+    """Mixin to prevent iteration, without being compatible with Iterable.
+
+    That is, we could do::
+
+        def __iter__(self): raise TypeError()
+
+    But this would make users of this mixin duck type-compatible with
+    collections.abc.Iterable - isinstance(foo, Iterable) would be True.
+
+    Luckily, we can instead prevent iteration by setting __iter__ to None, which
+    is treated specially.
+    """
+
+    __slots__ = ()
+    __iter__ = None
+
+
+# Internal indicator of special typing constructs.
+# See __doc__ instance attribute for specific docs.
+class _SpecialForm(_Final, _NotIterable, _root=True):
+    __slots__ = ('_name', '__doc__', '_getitem')
+
+    def __init__(self, getitem):
+        self._getitem = getitem
+        self._name = getitem.__name__
+        self.__doc__ = getitem.__doc__
+
+    def __getattr__(self, item):
+        if item in {'__name__', '__qualname__'}:
+            return self._name
+
+        raise AttributeError(item)
+
+    def __mro_entries__(self, bases):
+        raise TypeError(f"Cannot subclass {self!r}")
+
+    def __repr__(self):
+        return 'typing.' + self._name
+
+    def __reduce__(self):
+        return self._name
+
+    def __call__(self, *args, **kwds):
+        raise TypeError(f"Cannot instantiate {self!r}")
+
+    def __or__(self, other):
+        return Union[self, other]
+
+    def __ror__(self, other):
+        return Union[other, self]
+
+    def __instancecheck__(self, obj):
+        raise TypeError(f"{self} cannot be used with isinstance()")
+
+    def __subclasscheck__(self, cls):
+        raise TypeError(f"{self} cannot be used with issubclass()")
+
+    @_tp_cache
+    def __getitem__(self, parameters):
+        return self._getitem(self, parameters)
+
+
+class _TypedCacheSpecialForm(_SpecialForm, _root=True):
+    def __getitem__(self, parameters):
+        if not isinstance(parameters, tuple):
+            parameters = (parameters,)
+        return self._getitem(self, *parameters)
+
+
+class _AnyMeta(type):
+    def __instancecheck__(self, obj):
+        if self is Any:
+            raise TypeError("typing.Any cannot be used with isinstance()")
+        return super().__instancecheck__(obj)
+
+    def __repr__(self):
+        if self is Any:
+            return "typing.Any"
+        return super().__repr__()  # respect to subclasses
+
+
+class Any(metaclass=_AnyMeta):
+    """Special type indicating an unconstrained type.
+
+    - Any is compatible with every type.
+    - Any assumed to have all methods.
+    - All values assumed to be instances of Any.
+
+    Note that all the above statements are true from the point of view of
+    static type checkers. At runtime, Any should not be used with instance
+    checks.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Any:
+            raise TypeError("Any cannot be instantiated")
+        return super().__new__(cls)
+
+
+@_SpecialForm
+def NoReturn(self, parameters):
+    """Special type indicating functions that never return.
+
+    Example::
+
+        from typing import NoReturn
+
+        def stop() -> NoReturn:
+            raise Exception('no way')
+
+    NoReturn can also be used as a bottom type, a type that
+    has no values. Starting in Python 3.11, the Never type should
+    be used for this concept instead. Type checkers should treat the two
+    equivalently.
+    """
+    raise TypeError(f"{self} is not subscriptable")
+
+# This is semantically identical to NoReturn, but it is implemented
+# separately so that type checkers can distinguish between the two
+# if they want.
+@_SpecialForm
+def Never(self, parameters):
+    """The bottom type, a type that has no members.
+
+    This can be used to define a function that should never be
+    called, or a function that never returns::
+
+        from typing import Never
+
+        def never_call_me(arg: Never) -> None:
+            pass
+
+        def int_or_str(arg: int | str) -> None:
+            never_call_me(arg)  # type checker error
+            match arg:
+                case int():
+                    print("It's an int")
+                case str():
+                    print("It's a str")
+                case _:
+                    never_call_me(arg)  # OK, arg is of type Never
+    """
+    raise TypeError(f"{self} is not subscriptable")
+
+
+@_SpecialForm
+def Self(self, parameters):
+    """Used to spell the type of "self" in classes.
+
+    Example::
+
+        from typing import Self
+
+        class Foo:
+            def return_self(self) -> Self:
+                ...
+                return self
+
+    This is especially useful for:
+        - classmethods that are used as alternative constructors
+        - annotating an `__enter__` method which returns self
+    """
+    raise TypeError(f"{self} is not subscriptable")
+
+
+@_SpecialForm
+def LiteralString(self, parameters):
+    """Represents an arbitrary literal string.
+
+    Example::
+
+        from typing import LiteralString
+
+        def run_query(sql: LiteralString) -> None:
+            ...
+
+        def caller(arbitrary_string: str, literal_string: LiteralString) -> None:
+            run_query("SELECT * FROM students")  # OK
+            run_query(literal_string)  # OK
+            run_query("SELECT * FROM " + literal_string)  # OK
+            run_query(arbitrary_string)  # type checker error
+            run_query(  # type checker error
+                f"SELECT * FROM students WHERE name = {arbitrary_string}"
+            )
+
+    Only string literals and other LiteralStrings are compatible
+    with LiteralString. This provides a tool to help prevent
+    security issues such as SQL injection.
+    """
+    raise TypeError(f"{self} is not subscriptable")
+
+
+@_SpecialForm
+def ClassVar(self, parameters):
+    """Special type construct to mark class variables.
+
+    An annotation wrapped in ClassVar indicates that a given
+    attribute is intended to be used as a class variable and
+    should not be set on instances of that class.
+
+    Usage::
+
+        class Starship:
+            stats: ClassVar[dict[str, int]] = {} # class variable
+            damage: int = 10                     # instance variable
+
+    ClassVar accepts only types and cannot be further subscribed.
+
+    Note that ClassVar is not a class itself, and should not
+    be used with isinstance() or issubclass().
+    """
+    item = _type_check(parameters, f'{self} accepts only single type.', allow_special_forms=True)
+    return _GenericAlias(self, (item,))
+
+@_SpecialForm
+def Final(self, parameters):
+    """Special typing construct to indicate final names to type checkers.
+
+    A final name cannot be re-assigned or overridden in a subclass.
+
+    For example::
+
+        MAX_SIZE: Final = 9000
+        MAX_SIZE += 1  # Error reported by type checker
+
+        class Connection:
+            TIMEOUT: Final[int] = 10
+
+        class FastConnector(Connection):
+            TIMEOUT = 1  # Error reported by type checker
+
+    There is no runtime checking of these properties.
+    """
+    item = _type_check(parameters, f'{self} accepts only single type.', allow_special_forms=True)
+    return _GenericAlias(self, (item,))
+
+@_SpecialForm
+def Optional(self, parameters):
+    """Optional[X] is equivalent to Union[X, None]."""
+    arg = _type_check(parameters, f"{self} requires a single type.")
+    return Union[arg, type(None)]
+
+@_TypedCacheSpecialForm
+@_tp_cache(typed=True)
+def Literal(self, *parameters):
+    """Special typing form to define literal types (a.k.a. value types).
+
+    This form can be used to indicate to type checkers that the corresponding
+    variable or function parameter has a value equivalent to the provided
+    literal (or one of several literals)::
+
+        def validate_simple(data: Any) -> Literal[True]:  # always returns True
+            ...
+
+        MODE = Literal['r', 'rb', 'w', 'wb']
+        def open_helper(file: str, mode: MODE) -> str:
+            ...
+
+        open_helper('/some/path', 'r')  # Passes type check
+        open_helper('/other/path', 'typo')  # Error in type checker
+
+    Literal[...] cannot be subclassed. At runtime, an arbitrary value
+    is allowed as type argument to Literal[...], but type checkers may
+    impose restrictions.
+    """
+    # There is no '_type_check' call because arguments to Literal[...] are
+    # values, not types.
+    parameters = _flatten_literal_params(parameters)
+
+    try:
+        parameters = tuple(p for p, _ in _deduplicate(list(_value_and_type_iter(parameters))))
+    except TypeError:  # unhashable parameters
+        pass
+
+    return _LiteralGenericAlias(self, parameters)
+
+
+@_SpecialForm
+def TypeAlias(self, parameters):
+    """Special form for marking type aliases.
+
+    Use TypeAlias to indicate that an assignment should
+    be recognized as a proper type alias definition by type
+    checkers.
+
+    For example::
+
+        Predicate: TypeAlias = Callable[..., bool]
+
+    It's invalid when used anywhere except as in the example above.
+    """
+    raise TypeError(f"{self} is not subscriptable")
+
+
+@_SpecialForm
+def Concatenate(self, parameters):
+    """Special form for annotating higher-order functions.
+
+    ``Concatenate`` can be used in conjunction with ``ParamSpec`` and
+    ``Callable`` to represent a higher-order function which adds, removes or
+    transforms the parameters of a callable.
+
+    For example::
+
+        Callable[Concatenate[int, P], int]
+
+    See PEP 612 for detailed information.
+    """
+    if parameters == ():
+        raise TypeError("Cannot take a Concatenate of no types.")
+    if not isinstance(parameters, tuple):
+        parameters = (parameters,)
+    if not (parameters[-1] is ... or isinstance(parameters[-1], ParamSpec)):
+        raise TypeError("The last parameter to Concatenate should be a "
+                        "ParamSpec variable or ellipsis.")
+    msg = "Concatenate[arg, ...]: each arg must be a type."
+    parameters = (*(_type_check(p, msg) for p in parameters[:-1]), parameters[-1])
+    return _ConcatenateGenericAlias(self, parameters)
+
+
+@_SpecialForm
+def TypeGuard(self, parameters):
+    """Special typing construct for marking user-defined type predicate functions.
+
+    ``TypeGuard`` can be used to annotate the return type of a user-defined
+    type predicate function.  ``TypeGuard`` only accepts a single type argument.
+    At runtime, functions marked this way should return a boolean.
+
+    ``TypeGuard`` aims to benefit *type narrowing* -- a technique used by static
+    type checkers to determine a more precise type of an expression within a
+    program's code flow.  Usually type narrowing is done by analyzing
+    conditional code flow and applying the narrowing to a block of code.  The
+    conditional expression here is sometimes referred to as a "type predicate".
+
+    Sometimes it would be convenient to use a user-defined boolean function
+    as a type predicate.  Such a function should use ``TypeGuard[...]`` or
+    ``TypeIs[...]`` as its return type to alert static type checkers to
+    this intention. ``TypeGuard`` should be used over ``TypeIs`` when narrowing
+    from an incompatible type (e.g., ``list[object]`` to ``list[int]``) or when
+    the function does not return ``True`` for all instances of the narrowed type.
+
+    Using  ``-> TypeGuard[NarrowedType]`` tells the static type checker that
+    for a given function:
+
+    1. The return value is a boolean.
+    2. If the return value is ``True``, the type of its argument
+       is ``NarrowedType``.
+
+    For example::
+
+         def is_str_list(val: list[object]) -> TypeGuard[list[str]]:
+             '''Determines whether all objects in the list are strings'''
+             return all(isinstance(x, str) for x in val)
+
+         def func1(val: list[object]):
+             if is_str_list(val):
+                 # Type of ``val`` is narrowed to ``list[str]``.
+                 print(" ".join(val))
+             else:
+                 # Type of ``val`` remains as ``list[object]``.
+                 print("Not a list of strings!")
+
+    Strict type narrowing is not enforced -- ``TypeB`` need not be a narrower
+    form of ``TypeA`` (it can even be a wider form) and this may lead to
+    type-unsafe results.  The main reason is to allow for things like
+    narrowing ``list[object]`` to ``list[str]`` even though the latter is not
+    a subtype of the former, since ``list`` is invariant.  The responsibility of
+    writing type-safe type predicates is left to the user.
+
+    ``TypeGuard`` also works with type variables.  For more information, see
+    PEP 647 (User-Defined Type Guards).
+    """
+    item = _type_check(parameters, f'{self} accepts only single type.')
+    return _GenericAlias(self, (item,))
+
+
+@_SpecialForm
+def TypeIs(self, parameters):
+    """Special typing construct for marking user-defined type predicate functions.
+
+    ``TypeIs`` can be used to annotate the return type of a user-defined
+    type predicate function.  ``TypeIs`` only accepts a single type argument.
+    At runtime, functions marked this way should return a boolean and accept
+    at least one argument.
+
+    ``TypeIs`` aims to benefit *type narrowing* -- a technique used by static
+    type checkers to determine a more precise type of an expression within a
+    program's code flow.  Usually type narrowing is done by analyzing
+    conditional code flow and applying the narrowing to a block of code.  The
+    conditional expression here is sometimes referred to as a "type predicate".
+
+    Sometimes it would be convenient to use a user-defined boolean function
+    as a type predicate.  Such a function should use ``TypeIs[...]`` or
+    ``TypeGuard[...]`` as its return type to alert static type checkers to
+    this intention.  ``TypeIs`` usually has more intuitive behavior than
+    ``TypeGuard``, but it cannot be used when the input and output types
+    are incompatible (e.g., ``list[object]`` to ``list[int]``) or when the
+    function does not return ``True`` for all instances of the narrowed type.
+
+    Using  ``-> TypeIs[NarrowedType]`` tells the static type checker that for
+    a given function:
+
+    1. The return value is a boolean.
+    2. If the return value is ``True``, the type of its argument
+       is the intersection of the argument's original type and
+       ``NarrowedType``.
+    3. If the return value is ``False``, the type of its argument
+       is narrowed to exclude ``NarrowedType``.
+
+    For example::
+
+        from typing import assert_type, final, TypeIs
+
+        class Parent: pass
+        class Child(Parent): pass
+        @final
+        class Unrelated: pass
+
+        def is_parent(val: object) -> TypeIs[Parent]:
+            return isinstance(val, Parent)
+
+        def run(arg: Child | Unrelated):
+            if is_parent(arg):
+                # Type of ``arg`` is narrowed to the intersection
+                # of ``Parent`` and ``Child``, which is equivalent to
+                # ``Child``.
+                assert_type(arg, Child)
+            else:
+                # Type of ``arg`` is narrowed to exclude ``Parent``,
+                # so only ``Unrelated`` is left.
+                assert_type(arg, Unrelated)
+
+    The type inside ``TypeIs`` must be consistent with the type of the
+    function's argument; if it is not, static type checkers will raise
+    an error.  An incorrectly written ``TypeIs`` function can lead to
+    unsound behavior in the type system; it is the user's responsibility
+    to write such functions in a type-safe manner.
+
+    ``TypeIs`` also works with type variables.  For more information, see
+    PEP 742 (Narrowing types with ``TypeIs``).
+    """
+    item = _type_check(parameters, f'{self} accepts only single type.')
+    return _GenericAlias(self, (item,))
+
+
+def _make_forward_ref(code, *, parent_fwdref=None, **kwargs):
+    if parent_fwdref is not None:
+        if parent_fwdref.__forward_module__ is not None:
+            kwargs['module'] = parent_fwdref.__forward_module__
+        if parent_fwdref.__owner__ is not None:
+            kwargs['owner'] = parent_fwdref.__owner__
+    forward_ref = _lazy_annotationlib.ForwardRef(code, **kwargs)
+    # For compatibility, eagerly compile the forwardref's code.
+    forward_ref.__forward_code__
+    return forward_ref
+
+
+def evaluate_forward_ref(
+    forward_ref,
+    *,
+    owner=None,
+    globals=None,
+    locals=None,
+    type_params=None,
+    format=None,
+    _recursive_guard=frozenset(),
+):
+    """Evaluate a forward reference as a type hint.
+
+    This is similar to calling the ForwardRef.evaluate() method,
+    but unlike that method, evaluate_forward_ref() also
+    recursively evaluates forward references nested within the type hint.
+
+    *forward_ref* must be an instance of ForwardRef. *owner*, if given,
+    should be the object that holds the annotations that the forward reference
+    derived from, such as a module, class object, or function. It is used to
+    infer the namespaces to use for looking up names. *globals* and *locals*
+    can also be explicitly given to provide the global and local namespaces.
+    *type_params* is a tuple of type parameters that are in scope when
+    evaluating the forward reference. This parameter should be provided (though
+    it may be an empty tuple) if *owner* is not given and the forward reference
+    does not already have an owner set. *format* specifies the format of the
+    annotation and is a member of the annotationlib.Format enum, defaulting to
+    VALUE.
+
+    """
+    if format == _lazy_annotationlib.Format.STRING:
+        return forward_ref.__forward_arg__
+    if forward_ref.__forward_arg__ in _recursive_guard:
+        return forward_ref
+
+    if format is None:
+        format = _lazy_annotationlib.Format.VALUE
+    value = forward_ref.evaluate(globals=globals, locals=locals,
+                                 type_params=type_params, owner=owner, format=format)
+
+    if (isinstance(value, _lazy_annotationlib.ForwardRef)
+            and format == _lazy_annotationlib.Format.FORWARDREF):
+        return value
+
+    if isinstance(value, str):
+        value = _make_forward_ref(value, module=forward_ref.__forward_module__,
+                                  owner=owner or forward_ref.__owner__,
+                                  is_argument=forward_ref.__forward_is_argument__,
+                                  is_class=forward_ref.__forward_is_class__)
+    if owner is None:
+        owner = forward_ref.__owner__
+    return _eval_type(
+        value,
+        globals,
+        locals,
+        type_params,
+        recursive_guard=_recursive_guard | {forward_ref.__forward_arg__},
+        format=format,
+        owner=owner,
+        parent_fwdref=forward_ref,
+    )
+
+
+def _is_unpacked_typevartuple(x: Any) -> bool:
+    # Need to check 'is True' here
+    # See: https://github.com/python/cpython/issues/137706
+    return ((not isinstance(x, type)) and
+            getattr(x, '__typing_is_unpacked_typevartuple__', False) is True)
+
+
+def _is_typevar_like(x: Any) -> bool:
+    return isinstance(x, (TypeVar, ParamSpec)) or _is_unpacked_typevartuple(x)
+
+
+def _typevar_subst(self, arg):
+    msg = "Parameters to generic types must be types."
+    arg = _type_check(arg, msg, is_argument=True)
+    if ((isinstance(arg, _GenericAlias) and arg.__origin__ is Unpack) or
+        (isinstance(arg, GenericAlias) and getattr(arg, '__unpacked__', False))):
+        raise TypeError(f"{arg} is not valid as type argument")
+    return arg
+
+
+def _typevartuple_prepare_subst(self, alias, args):
+    params = alias.__parameters__
+    typevartuple_index = params.index(self)
+    for param in params[typevartuple_index + 1:]:
+        if isinstance(param, TypeVarTuple):
+            raise TypeError(f"More than one TypeVarTuple parameter in {alias}")
+
+    alen = len(args)
+    plen = len(params)
+    left = typevartuple_index
+    right = plen - typevartuple_index - 1
+    var_tuple_index = None
+    fillarg = None
+    for k, arg in enumerate(args):
+        if not isinstance(arg, type):
+            subargs = getattr(arg, '__typing_unpacked_tuple_args__', None)
+            if subargs and len(subargs) == 2 and subargs[-1] is ...:
+                if var_tuple_index is not None:
+                    raise TypeError("More than one unpacked arbitrary-length tuple argument")
+                var_tuple_index = k
+                fillarg = subargs[0]
+    if var_tuple_index is not None:
+        left = min(left, var_tuple_index)
+        right = min(right, alen - var_tuple_index - 1)
+    elif left + right > alen:
+        raise TypeError(f"Too few arguments for {alias};"
+                        f" actual {alen}, expected at least {plen-1}")
+    if left == alen - right and self.has_default():
+        replacement = _unpack_args(self.__default__)
+    else:
+        replacement = args[left: alen - right]
+
+    return (
+        *args[:left],
+        *([fillarg]*(typevartuple_index - left)),
+        replacement,
+        *([fillarg]*(plen - right - left - typevartuple_index - 1)),
+        *args[alen - right:],
+    )
+
+
+def _paramspec_subst(self, arg):
+    if isinstance(arg, (list, tuple)):
+        arg = tuple(_type_check(a, "Expected a type.") for a in arg)
+    elif not _is_param_expr(arg):
+        raise TypeError(f"Expected a list of types, an ellipsis, "
+                        f"ParamSpec, or Concatenate. Got {arg}")
+    return arg
+
+
+def _paramspec_prepare_subst(self, alias, args):
+    params = alias.__parameters__
+    i = params.index(self)
+    if i == len(args) and self.has_default():
+        args = (*args, self.__default__)
+    if i >= len(args):
+        raise TypeError(f"Too few arguments for {alias}")
+    # Special case where Z[[int, str, bool]] == Z[int, str, bool] in PEP 612.
+    if len(params) == 1 and not _is_param_expr(args[0]):
+        assert i == 0
+        args = (args,)
+    # Convert lists to tuples to help other libraries cache the results.
+    elif isinstance(args[i], list):
+        args = (*args[:i], tuple(args[i]), *args[i+1:])
+    return args
+
+
+@_tp_cache
+def _generic_class_getitem(cls, args):
+    """Parameterizes a generic class.
+
+    At least, parameterizing a generic class is the *main* thing this method
+    does. For example, for some generic class `Foo`, this is called when we
+    do `Foo[int]` - there, with `cls=Foo` and `args=int`.
+
+    However, note that this method is also called when defining generic
+    classes in the first place with `class Foo(Generic[T]): ...`.
+    """
+    if not isinstance(args, tuple):
+        args = (args,)
+
+    args = tuple(_type_convert(p) for p in args)
+    is_generic_or_protocol = cls in (Generic, Protocol)
+
+    if is_generic_or_protocol:
+        # Generic and Protocol can only be subscripted with unique type variables.
+        if not args:
+            raise TypeError(
+                f"Parameter list to {cls.__qualname__}[...] cannot be empty"
+            )
+        if not all(_is_typevar_like(p) for p in args):
+            raise TypeError(
+                f"Parameters to {cls.__name__}[...] must all be type variables "
+                f"or parameter specification variables.")
+        if len(set(args)) != len(args):
+            raise TypeError(
+                f"Parameters to {cls.__name__}[...] must all be unique")
+    else:
+        # Subscripting a regular Generic subclass.
+        try:
+            parameters = cls.__parameters__
+        except AttributeError as e:
+            init_subclass = getattr(cls, '__init_subclass__', None)
+            if init_subclass not in {None, Generic.__init_subclass__}:
+                e.add_note(
+                    f"Note: this exception may have been caused by "
+                    f"{init_subclass.__qualname__!r} (or the "
+                    f"'__init_subclass__' method on a superclass) not "
+                    f"calling 'super().__init_subclass__()'"
+                )
+            raise
+        for param in parameters:
+            prepare = getattr(param, '__typing_prepare_subst__', None)
+            if prepare is not None:
+                args = prepare(cls, args)
+        _check_generic_specialization(cls, args)
+
+        new_args = []
+        for param, new_arg in zip(parameters, args):
+            if isinstance(param, TypeVarTuple):
+                new_args.extend(new_arg)
+            else:
+                new_args.append(new_arg)
+        args = tuple(new_args)
+
+    return _GenericAlias(cls, args)
+
+
+def _generic_init_subclass(cls, *args, **kwargs):
+    super(Generic, cls).__init_subclass__(*args, **kwargs)
+    tvars = []
+    if '__orig_bases__' in cls.__dict__:
+        error = Generic in cls.__orig_bases__
+    else:
+        error = (Generic in cls.__bases__ and
+                    cls.__name__ != 'Protocol' and
+                    type(cls) != _TypedDictMeta)
+    if error:
+        raise TypeError("Cannot inherit from plain Generic")
+    if '__orig_bases__' in cls.__dict__:
+        tvars = _collect_type_parameters(cls.__orig_bases__)
+        # Look for Generic[T1, ..., Tn].
+        # If found, tvars must be a subset of it.
+        # If not found, tvars is it.
+        # Also check for and reject plain Generic,
+        # and reject multiple Generic[...].
+        gvars = None
+        for base in cls.__orig_bases__:
+            if (isinstance(base, _GenericAlias) and
+                    base.__origin__ is Generic):
+                if gvars is not None:
+                    raise TypeError(
+                        "Cannot inherit from Generic[...] multiple times.")
+                gvars = base.__parameters__
+        if gvars is not None:
+            tvarset = set(tvars)
+            gvarset = set(gvars)
+            if not tvarset <= gvarset:
+                s_vars = ', '.join(str(t) for t in tvars if t not in gvarset)
+                s_args = ', '.join(str(g) for g in gvars)
+                raise TypeError(f"Some type variables ({s_vars}) are"
+                                f" not listed in Generic[{s_args}]")
+            tvars = gvars
+    cls.__parameters__ = tuple(tvars)
+
+
+def _is_dunder(attr):
+    return attr.startswith('__') and attr.endswith('__')
+
+class _BaseGenericAlias(_Final, _root=True):
+    """The central part of the internal API.
+
+    This represents a generic version of type 'origin' with type arguments 'params'.
+    There are two kind of these aliases: user defined and special. The special ones
+    are wrappers around builtin collections and ABCs in collections.abc. These must
+    have 'name' always set. If 'inst' is False, then the alias can't be instantiated;
+    this is used by e.g. typing.List and typing.Dict.
+    """
+
+    def __init__(self, origin, *, inst=True, name=None):
+        self._inst = inst
+        self._name = name
+        self.__origin__ = origin
+        self.__slots__ = None  # This is not documented.
+
+    def __call__(self, *args, **kwargs):
+        if not self._inst:
+            raise TypeError(f"Type {self._name} cannot be instantiated; "
+                            f"use {self.__origin__.__name__}() instead")
+        result = self.__origin__(*args, **kwargs)
+        try:
+            result.__orig_class__ = self
+        # Some objects raise TypeError (or something even more exotic)
+        # if you try to set attributes on them; we guard against that here
+        except Exception:
+            pass
+        return result
+
+    def __mro_entries__(self, bases):
+        res = []
+        if self.__origin__ not in bases:
+            res.append(self.__origin__)
+
+        # Check if any base that occurs after us in `bases` is either itself a
+        # subclass of Generic, or something which will add a subclass of Generic
+        # to `__bases__` via its `__mro_entries__`. If not, add Generic
+        # ourselves. The goal is to ensure that Generic (or a subclass) will
+        # appear exactly once in the final bases tuple. If we let it appear
+        # multiple times, we risk "can't form a consistent MRO" errors.
+        i = bases.index(self)
+        for b in bases[i+1:]:
+            if isinstance(b, _BaseGenericAlias):
+                break
+            if not isinstance(b, type):
+                meth = getattr(b, "__mro_entries__", None)
+                new_bases = meth(bases) if meth else None
+                if (
+                    isinstance(new_bases, tuple) and
+                    any(
+                        isinstance(b2, type) and issubclass(b2, Generic)
+                        for b2 in new_bases
+                    )
+                ):
+                    break
+            elif issubclass(b, Generic):
+                break
+        else:
+            res.append(Generic)
+        return tuple(res)
+
+    def __getattr__(self, attr):
+        if attr in {'__name__', '__qualname__'}:
+            return self._name or self.__origin__.__name__
+
+        # We are careful for copy and pickle.
+        # Also for simplicity we don't relay any dunder names
+        if '__origin__' in self.__dict__ and not _is_dunder(attr):
+            return getattr(self.__origin__, attr)
+        raise AttributeError(attr)
+
+    def __setattr__(self, attr, val):
+        if _is_dunder(attr) or attr in {'_name', '_inst', '_nparams', '_defaults'}:
+            super().__setattr__(attr, val)
+        else:
+            setattr(self.__origin__, attr, val)
+
+    def __instancecheck__(self, obj):
+        return self.__subclasscheck__(type(obj))
+
+    def __subclasscheck__(self, cls):
+        raise TypeError("Subscripted generics cannot be used with"
+                        " class and instance checks")
+
+    def __dir__(self):
+        return list(set(super().__dir__()
+                + [attr for attr in dir(self.__origin__) if not _is_dunder(attr)]))
+
+
+# Special typing constructs Union, Optional, Generic, Callable and Tuple
+# use three special attributes for internal bookkeeping of generic types:
+# * __parameters__ is a tuple of unique free type parameters of a generic
+#   type, for example, Dict[T, T].__parameters__ == (T,);
+# * __origin__ keeps a reference to a type that was subscripted,
+#   e.g., Union[T, int].__origin__ == Union, or the non-generic version of
+#   the type.
+# * __args__ is a tuple of all arguments used in subscripting,
+#   e.g., Dict[T, int].__args__ == (T, int).
+
+
+class _GenericAlias(_BaseGenericAlias, _root=True):
+    # The type of parameterized generics.
+    #
+    # That is, for example, `type(List[int])` is `_GenericAlias`.
+    #
+    # Objects which are instances of this class include:
+    # * Parameterized container types, e.g. `Tuple[int]`, `List[int]`.
+    #  * Note that native container types, e.g. `tuple`, `list`, use
+    #    `types.GenericAlias` instead.
+    # * Parameterized classes:
+    #     class C[T]: pass
+    #     # C[int] is a _GenericAlias
+    # * `Callable` aliases, generic `Callable` aliases, and
+    #   parameterized `Callable` aliases:
+    #     T = TypeVar('T')
+    #     # _CallableGenericAlias inherits from _GenericAlias.
+    #     A = Callable[[], None]  # _CallableGenericAlias
+    #     B = Callable[[T], None]  # _CallableGenericAlias
+    #     C = B[int]  # _CallableGenericAlias
+    # * Parameterized `Final`, `ClassVar`, `TypeGuard`, and `TypeIs`:
+    #     # All _GenericAlias
+    #     Final[int]
+    #     ClassVar[float]
+    #     TypeGuard[bool]
+    #     TypeIs[range]
+
+    def __init__(self, origin, args, *, inst=True, name=None):
+        super().__init__(origin, inst=inst, name=name)
+        if not isinstance(args, tuple):
+            args = (args,)
+        self.__args__ = tuple(... if a is _TypingEllipsis else
+                              a for a in args)
+        enforce_default_ordering = origin in (Generic, Protocol)
+        self.__parameters__ = _collect_type_parameters(
+            args,
+            enforce_default_ordering=enforce_default_ordering,
+        )
+        if not name:
+            self.__module__ = origin.__module__
+
+    def __eq__(self, other):
+        if not isinstance(other, _GenericAlias):
+            return NotImplemented
+        return (self.__origin__ == other.__origin__
+                and self.__args__ == other.__args__)
+
+    def __hash__(self):
+        return hash((self.__origin__, self.__args__))
+
+    def __or__(self, right):
+        return Union[self, right]
+
+    def __ror__(self, left):
+        return Union[left, self]
+
+    @_tp_cache
+    def __getitem__(self, args):
+        # Parameterizes an already-parameterized object.
+        #
+        # Fid,timestamp,name,amount,status
+0,1676548185,Charlie,632.23,400
+1,1664285876,Charlie,979.23,404
+2,1667564377,Frank,966.2,404
+3,1664554041,Heidi,282.2,500
+4,1685311449,Bob,301.29,400
+5,1669557222,Heidi,898.86,500
+6,1681548234,Grace,815.24,400
+7,1642877414,Dave,117.26,200
+8,1642857408,Eve,995.21,200
+9,1649103265,Bob,653.51,301
+10,1668825984,Eve,320.11,400
+11,1670421845,Eve,555.05,403
+12,1624888819,Bob,879.19,400
+13,1684209462,Bob,63.32,200
+14,1616059521,Frank,3.04,403
+15,1636964137,Frank,202.89,301
+16,1690836766,Grace,457.8,403
+17,1648058157,Heidi,785.16,400
+18,1665244127,Bob,9.7,403
+19,1650891195,Frank,110.99,301
+20,1601990036,Heidi,723.03,500
+21,1621905855,Heidi,729.37,403
+22,1604496865,Bob,885.57,500
+23,1637812289,Heidi,279.73,404
+24,1654544447,Eve,472.53,404
+25,1664680318,Grace,20.53,403
+26,1642630839,Frank,167.65,301
+27,1695519393,Frank,622.02,400
+28,1683694764,Charlie,760.66,400
+29,1657455657,Grace,930.76,400
+30,1686730057,Frank,750.49,404
+31,1688169716,Alice,850.26,500
+32,1696801614,Alice,227.92,200
+33,1636286418,Bob,572.99,301
+34,1625313938,Dave,950.1,200
+35,1608658394,Alice,573.66,404
+36,1691236559,Frank,6.78,301
+37,1655487637,Alice,916.61,301
+38,1661335987,Alice,780.43,404
+39,1628168104,Dave,675.79,400
+40,1649190338,Bob,799.34,500
+41,1666998816,Eve,968.05,500
+42,1602197700,Alice,497.6,400
+43,1683041878,Frank,326.82,301
+44,1696503131,Frank,97.88,403
+45,1666534357,Heidi,271.18,200
+46,1670848994,Dave,837.92,400
+47,1613453489,Charlie,414.51,301
+48,1618424540,Heidi,544.76,403
+49,1643461148,Dave,7.18,200
+50,1610556152,Charlie,337.18,400
+51,1698795444,Eve,237.45,404
+52,1601158447,Heidi,449.05,403
+53,1676850075,Eve,957.51,400
+54,1630125908,Alice,285.94,403
+55,1603618319,Frank,82.61,301
+56,1686571397,Grace,331.37,403
+57,1605552760,Dave,672.58,301
+58,1669253902,Charlie,789.41,403
+59,1682727783,Bob,845.69,403
+60,1625310314,Dave,873.26,403
+61,1695065496,Eve,281.83,403
+62,1641796314,Grace,234.58,500
+63,1694869413,Grace,801.19,403
+64,1685698412,Grace,964.52,400
+65,1659161071,Charlie,279.81,200
+66,1613900975,Charlie,186.67,400
+67,1663973248,Charlie,834.41,301
+68,1631747377,Bob,797.14,404
+69,1655593279,Charlie,917.69,404
+70,1667196419,Bob,794.59,403
+71,1612617878,Heidi,382.64,404
+72,1612962715,Heidi,493.58,404
+73,1641681361,Charlie,540.13,404
+74,1658083925,Eve,596.25,500
+75,1631669275,Grace,253.83,400
+76,1622683181,Heidi,303.26,200
+77,1641581357,Eve,804.35,301
+78,1641064114,Heidi,39.41,301
+79,1633818936,Grace,870.98,400
+80,1647060302,Bob,197.29,403
+81,1642497318,Dave,547.14,400
+82,1684279405,Frank,822.21,400
+83,1647085177,Alice,289.24,200
+84,1624579729,Dave,31.15,500
+85,1638632514,Alice,824.14,404
+86,1642489466,Frank,902.8,403
+87,1668551242,Frank,801.44,400
+88,1632654247,Alice,595.75,404
+89,1673835486,Heidi,738.38,500
+90,1612018814,Eve,448.88,400
+91,1610575900,Frank,431.66,400
+92,1696834347,Charlie,387.66,301
+93,1695986951,Eve,131.43,301
+94,1662661452,Frank,351.0,400
+95,1638503801,Frank,666.56,200
+96,1641828952,Charlie,591.94,200
+97,1655711117,Frank,183.08,301
+98,1666288431,Charlie,411.65,301
+99,1683968769,Eve,592.51,403
+100,1671454521,Dave,677.37,403
+101,1616584962,Alice,612.69,404
+102,1625703851,Charlie,336.97,500
+103,1637281283,Frank,476.51,500
+104,1646547316,Charlie,940.61,301
+105,1696129259,Bob,112.16,200
+106,1699738989,Alice,913.25,301
+107,1673768860,Grace,540.1,200
+108,1687020393,Heidi,611.19,500
+109,1602481508,Grace,380.12,404
+110,1649024298,Alice,828.66,200
+111,1625484145,Charlie,692.42,403
+112,1697640002,Eve,976.68,400
+113,1648123219,Dave,517.3,500
+114,1619761488,Dave,568.69,301
+115,1615066087,Frank,551.87,301
+116,1617843836,Alice,101.14,301
+117,1673387689,Grace,758.04,403
+118,1610292830,Frank,260.85,400
+119,1669905683,Alice,63.56,400
+120,1620514277,Eve,196.73,301
+121,1614477578,Bob,650.8,403
+122,1618432721,Alice,816.89,404
+123,1688566566,Bob,30.49,404
+124,1652652915,Frank,256.01,400
+125,1650789362,Frank,222.64,200
+126,1669763724,Frank,380.02,200
+127,1603141496,Eve,547.69,200
+128,1696715969,Charlie,568.23,403
+129,1659656275,Grace,275.04,403
+130,1694234289,Bob,196.93,404
+131,1697048465,Grace,380.39,500
+132,1649789338,Alice,924.36,301
+133,1671772176,Frank,339.14,400
+134,1683046545,Eve,119.89,400
+135,1648750259,Frank,769.56,301
+136,1687598310,Eve,592.48,403
+137,1669148299,Dave,223.81,500
+138,1669417210,Bob,756.17,404
+139,1622059701,Eve,659.65,400
+140,1678304066,Dave,792.15,200
+141,1686663797,Grace,951.96,400
+142,1654078158,Charlie,619.95,400
+143,1600829139,Alice,976.37,404
+144,1618165915,Frank,69.0,301
+145,1688651871,Charlie,440.45,400
+146,1601600090,Alice,755.64,400
+147,1694049829,Eve,888.36,400
+148,1675245883,Frank,978.84,301
+149,1660119470,Grace,872.31,500
+150,1621547792,Alice,773.68,500
+151,1602839257,Eve,704.8,301
+152,1647007632,Bob,479.42,200
+153,1627459522,Bob,744.23,200
+154,1614575169,Heidi,748.19,200
+155,1697765259,Frank,173.2,400
+156,1606277695,Heidi,155.22,404
+157,1691570514,Alice,1.57,404
+158,1690310201,Charlie,811.76,500
+159,1670837075,Grace,909.04,404
+160,1622652126,Bob,293.89,404
+161,1662453612,Charlie,777.41,403
+162,1675829573,Grace,961.79,400
+163,1675259955,Heidi,872.55,500
+164,1698936615,Bob,734.54,301
+165,1677885741,Dave,902.08,400
+166,1637876906,Grace,196.67,301
+167,1648614373,Frank,24.84,403
+168,1648240699,Alice,7.2,500
+169,1645530942,Bob,263.04,403
+170,1650494629,Heidi,278.11,400
+171,1626301554,Alice,858.65,200
+172,1649009560,Bob,188.72,403
+173,1645246570,Grace,104.83,200
+174,1648639274,Frank,110.49,500
+175,1653180210,Charlie,12.53,400
+176,1679758151,Alice,991.89,301
+177,1622043254,Grace,773.86,403
+178,1670180727,Alice,971.17,301
+179,1684249315,Heidi,735.24,200
+180,1655349396,Charlie,955.58,400
+181,1636292464,Grace,240.19,500
+182,1680784545,Charlie,780.35,403
+183,1606549400,Frank,954.33,400
+184,1625902974,Charlie,668.98,404
+185,1630254385,Grace,718.99,400
+186,1637267143,Eve,364.13,403
+187,1610788743,Grace,924.89,200
+188,1679876291,Dave,222.14,400
+189,1613064996,Heidi,92.3,400
+190,1616280446,Charlie,904.15,404
+191,1664666827,Bob,884.85,404
+192,1626912615,Dave,691.65,500
+193,1649653239,Bob,629.0,301
+194,1694445623,Alice,310.63,400
+195,1609583649,Grace,525.49,500
+196,1609215518,Bob,170.75,404
+197,1623412955,Alice,456.74,500
+198,1616252187,Bob,858.64,403
+199,1651230224,Bob,42.35,301
+200,1657033524,Alice,161.44,403
+201,1662446608,Frank,449.61,301
+202,1638627309,Eve,911.33,301
+203,1608070956,Eve,187.63,301
+204,1691323385,Dave,853.16,200
+205,1605486563,Heidi,676.1,500
+206,1681372398,Charlie,987.17,301
+207,1681385386,Dave,12.85,301
+208,1658474372,Charlie,494.07,400
+209,1605075244,Alice,929.03,403
+210,1618176558,Grace,960.09,500
+211,1629245442,Charlie,302.47,404
+212,1642032058,Bob,265.78,400
+213,1641465956,Heidi,38.33,301
+214,1637130593,Dave,809.62,200
+215,1698751366,Frank,767.78,403
+216,1656329564,Alice,211.0,404
+217,1613919411,Charlie,208.52,400
+218,1671948808,Dave,56.95,404
+219,1640792001,Eve,691.41,301
+220,1613536758,Grace,605.56,403
+221,1612086378,Bob,432.18,500
+222,1653223144,Frank,680.15,400
+223,1662239489,Frank,589.73,403
+224,1652341711,Bob,907.85,404
+225,1654082010,Eve,169.34,403
+226,1690126977,Eve,492.08,200
+227,1629439998,Frank,5.33,400
+228,1669954011,Heidi,779.72,404
+229,1677018205,Bob,256.63,500
+230,1660354267,Alice,372.74,301
+231,1622628615,Heidi,416.0,500
+232,1666982299,Charlie,171.1,400
+233,1669167688,Eve,681.69,403
+234,1642222088,Eve,990.64,200
+235,1616758472,Grace,496.0,301
+236,1602254671,Frank,577.11,200
+237,1689509054,Frank,798.43,404
+238,1646214637,Charlie,983.65,400
+239,1634354163,Alice,25.44,200
+240,1674071363,Frank,12.43,403
+241,1673181560,Heidi,796.1,500
+242,1684992963,Charlie,718.62,301
+243,1689993379,Heidi,812.0,404
+244,1645504003,Grace,836.86,500
+245,1636030580,Eve,725.45,301
+246,1671744266,Eve,194.32,404
+247,1660977281,Charlie,966.16,404
+248,1644330488,Alice,194.41,403
+249,1646109458,Bob,279.67,500
+250,1619913888,Dave,737.96,301
+251,1684368847,Charlie,476.64,500
+252,1691568217,Heidi,334.73,400
+253,1678603453,Frank,681.98,400
+254,1677475339,Dave,198.82,404
+255,1600632596,Bob,476.14,500
+256,1640011458,Alice,504.76,404
+257,1662222219,Frank,517.27,500
+258,1640925196,Grace,619.31,200
+259,1667998951,Frank,967.4,200
+260,1668464209,Bob,236.98,400
+261,1600872500,Charlie,618.42,404
+262,1660987471,Dave,511.22,404
+263,1674883762,Frank,369.98,301
+264,1646469991,Charlie,532.34,400
+265,1647243527,Eve,683.46,200
+266,1657764411,Eve,500.2,500
+267,1642837167,Grace,602.82,200
+268,1638124966,Dave,699.1,404
+269,1620421206,Frank,260.25,500
+270,1629072810,Dave,826.03,500
+271,1643760201,Frank,518.53,403
+272,1654871099,Bob,615.19,500
+273,1688030443,Dave,306.3,200
+274,1635552642,Charlie,917.47,404
+275,1684307732,Alice,820.22,301
+276,1679761168,Eve,12.96,200
+277,1665849613,Alice,900.62,400
+278,1610415659,Alice,655.51,301
+279,1647204121,Bob,161.89,200
+280,1636014677,Charlie,27.97,404
+281,1691318809,Heidi,125.09,200
+282,1690955880,Bob,366.64,400
+283,1611972235,Bob,902.94,301
+284,1607706150,Eve,603.49,400
+285,1636855473,Bob,667.27,301
+286,1695111843,Heidi,518.51,200
+287,1690855397,Bob,15.06,301
+288,1628219566,Dave,941.46,400
+289,1626375237,Grace,429.37,500
+290,1637966762,Eve,857.78,200
+291,1639140408,Charlie,840.46,500
+292,1666198339,Bob,259.35,404
+293,1603008587,Alice,771.18,301
+294,1603371091,Dave,370.38,301
+295,1604027919,Heidi,347.71,403
+296,1612842497,Heidi,727.23,200
+297,1688213047,Charlie,435.46,403
+298,1605384622,Alice,346.9,500
+299,1606793534,Bob,449.67,404
+300,1683462187,Frank,702.22,403
+301,1660930660,Charlie,330.02,404
+302,1644456363,Bob,167.22,301
+303,1631403888,Heidi,15.47,200
+304,1608690566,Frank,989.88,200
+305,1608929020,Bob,451.69,400
+306,1669030995,Heidi,125.89,404
+307,1620377073,Bob,876.39,301
+308,1626735177,Eve,640.11,500
+309,1699073325,Dave,777.75,200
+310,1678897519,Eve,574.49,500
+311,1615855836,Eve,66.89,301
+312,1680138988,Dave,419.63,301
+313,1669175774,Charlie,274.55,500
+314,1655369028,Grace,812.21,400
+315,1684836595,Grace,795.61,400
+316,1661698536,Frank,383.82,403
+317,1662943286,Dave,332.89,500
+318,1604178854,Eve,226.33,403
+319,1635877983,Heidi,926.54,200
+320,1685371109,Frank,496.72,404
+321,1684767041,Frank,735.53,404
+322,1652189307,Heidi,794.69,200
+323,1689820718,Dave,766.58,500
+324,1662763022,Eve,823.89,200
+325,1653852848,Alice,29.52,403
+326,1640111406,Heidi,376.93,301
+327,1662611727,Heidi,256.49,403
+328,1644476303,Alice,885.06,400
+329,1619347528,Frank,345.07,500
+330,1655132971,Alice,331.42,301
+331,1627621569,Alice,135.43,403
+332,1678988491,Grace,572.98,403
+333,1638620948,Grace,189.46,500
+334,1687409379,Heidi,250.55,400
+335,1645700938,Charlie,491.59,301
+336,1699028370,Frank,339.84,404
+337,1632830033,Heidi,974.35,301
+338,1659351909,Dave,115.05,404
+339,1666822181,Grace,929.53,400
+340,1655166750,Eve,368.2,400
+341,1653220460,Grace,206.24,500
+342,1641921104,Charlie,354.28,301
+343,1698543512,Alice,497.59,400
+344,1687478177,Alice,475.88,301
+345,1618404743,Bob,17.91,400
+346,1658205081,Dave,62.43,400
+347,1651022673,Heidi,660.53,200
+348,1693230187,Charlie,452.77,403
+349,1657094060,Charlie,164.14,404
+350,1612154461,Bob,791.26,403
+351,1675565951,Heidi,352.01,301
+352,1653585991,Charlie,560.94,400
+353,1656426902,Heidi,944.04,403
+354,1656638213,Grace,500.0,301
+355,1640119553,Grace,390.81,301
+356,1649993268,Frank,86.07,404
+357,1616536777,Dave,456.09,301
+358,1697332053,Alice,337.15,200
+359,1660182216,Dave,319.67,200
+360,1629352819,Alice,155.98,403
+361,1622716011,Bob,895.18,200
+362,1644858652,Grace,985.06,403
+363,1671872450,Bob,205.06,403
+364,1619804035,Dave,987.16,200
+365,1641587547,Grace,634.81,404
+366,1646120504,Bob,373.77,200
+367,1652209225,Grace,927.4,500
+368,1665453502,Alice,162.95,301
+369,1674241083,Charlie,109.34,400
+370,1662403400,Grace,829.33,403
+371,1688608649,Alice,650.1,500
+372,1654279398,Frank,650.84,200
+373,1611209941,Frank,126.51,200
+374,1651259584,Heidi,761.34,400
+375,1675458049,Charlie,809.51,404
+376,1666345260,Eve,486.82,403
+377,1683525775,Grace,554.64,301
+378,1690169727,Grace,406.79,301
+379,1607163703,Frank,664.89,404
+380,1633337303,Alice,190.27,200
+381,1620493337,Charlie,273.91,500
+382,1692673989,Dave,487.73,400
+383,1693628495,Grace,253.34,400
+384,1682360575,Eve,470.08,400
+385,1601202434,Eve,109.37,200
+386,1685078484,Heidi,27.21,200
+387,1691921682,Eve,41.52,404
+388,1635395264,Alice,935.64,400
+389,1670202520,Alice,63.97,404
+390,1651065843,Bob,888.42,301
+391,1608692215,Frank,73.43,500
+392,1681413387,Bob,238.08,400
+393,1677003607,Dave,401.1,403
+394,1612393367,Alice,659.19,200
+395,1627595290,Dave,874.6,403
+396,1609237483,Frank,49.02,500
+397,1677129197,Frank,956.9,200
+398,1663630622,Alice,728.69,404
+399,1633599972,Heidi,58.51,500
+400,1691833050,Charlie,518.93,400
+401,1600163185,Heidi,772.81,500
+402,1612667755,Charlie,881.87,301
+403,1623601156,Heidi,102.17,200
+404,1611651709,Grace,890.99,404
+405,1696151931,Alice,651.68,200
+406,1648387569,Charlie,373.28,301
+407,1673692673,Frank,907.07,404
+408,1669597170,Heidi,665.37,500
+409,1639584604,Charlie,331.24,403
+410,1644792075,Heidi,384.24,403
+411,1625884071,Grace,22.89,404
+412,1619596040,Alice,263.82,301
+413,1678299462,Dave,437.2,404
+414,1684948240,Dave,9.58,500
+415,1670831404,Charlie,981.49,200
+416,1616592208,Frank,459.57,301
+417,1619203503,Charlie,572.83,404
+418,1692648935,Charlie,694.51,404
+419,1600612378,Charlie,276.72,403
+420,1645293969,Charlie,252.79,400
+421,1600936858,Dave,850.8,301
+422,1646116796,Alice,704.84,400
+423,1684176169,Charlie,815.28,403
+424,1618252047,Dave,813.1,200
+425,1647306133,Bob,316.52,400
+426,1635951718,Bob,812.01,301
+427,1684576192,Frank,347.41,403
+428,1628129470,Dave,74.87,403
+429,1672095492,Dave,808.78,404
+430,1618289432,Grace,652.45,404
+431,1613085373,Alice,993.76,403
+432,1653767478,Heidi,956.2,301
+433,1688309486,Frank,627.02,400
+434,1609429331,Eve,904.07,301
+435,1633825362,Dave,790.92,400
+436,1649990646,Heidi,588.57,400
+437,1668667029,Grace,644.02,404
+438,1662974622,Dave,747.53,200
+439,1629224712,Alice,715.52,400
+440,1631969669,Grace,779.22,400
+441,1669850792,Grace,103.3,400
+442,1649950194,Frank,171.26,403
+443,1660032359,Frank,166.73,400
+444,1651498659,Heidi,328.69,403
+445,1679509048,Charlie,743.2,400
+446,1687916721,Charlie,366.78,404
+447,1638495181,Grace,460.31,403
+448,1620542667,Frank,278.69,403
+449,1695879749,Dave,115.81,500
+450,1684547769,Frank,500.19,301
+451,1635997798,Heidi,84.31,403
+452,1667537286,Bob,379.12,404
+453,1627818937,Dave,260.7,500
+454,1687577901,Grace,724.96,403
+455,1631934970,Grace,283.44,500
+456,1651712522,Bob,494.19,200
+457,1651956831,Dave,532.36,301
+458,1611625615,Heidi,439.98,301
+459,1624906627,Alice,959.07,500
+460,1693865927,Eve,323.57,500
+461,1676544664,Heidi,982.43,301
+462,1660993355,Bob,37.93,400
+463,1626103151,Bob,218.15,301
+464,1644543784,Heidi,622.38,200
+465,1680272353,Frank,481.27,400
+466,1631344474,Frank,900.78,400
+467,1689254380,Bob,884.43,500
+468,1642933650,Charlie,182.79,200
+469,1689453497,Charlie,153.33,500
+470,1621483728,Bob,833.05,400
+471,1669373818,Grace,848.03,200
+472,1611463491,Dave,881.63,400
+473,1677895001,Heidi,693.29,403
+474,1639932622,Charlie,608.96,500
+475,1684936232,Bob,609.86,404
+476,1699875058,Bob,443.54,500
+477,1694690258,Alice,520.31,400
+478,1688596323,Eve,570.95,403
+479,1660709363,Dave,49.77,301
+480,1606961906,Dave,369.74,301
+481,1671142130,Grace,601.82,301
+482,1688478907,Bob,895.11,200
+483,1668901049,Grace,413.12,400
+484,1635969020,Bob,574.4,200
+485,1682330683,Frank,422.05,200
+486,1680249739,Eve,272.58,404
+487,1662425628,Grace,55.27,301
+488,1672393221,Frank,657.61,400
+489,1609119949,Grace,65.0,404
+490,1607319537,Frank,275.38,400
+491,1663922386,Grace,417.34,403
+492,1659987088,Dave,13.89,500
+493,1694700277,Bob,93.29,500
+494,1659807133,Eve,527.55,400
+495,1693182334,Eve,992.85,404
+496,1673831283,Eve,698.68,301
+497,1654820866,Heidi,720.82,200
+498,1665980915,Frank,641.87,400
+499,1638724326,Dave,784.57,404
+500,1645043183,Grace,961.63,301
+501,1666807653,Frank,691.75,200
+502,1677374355,Heidi,802.77,400
+503,1657661355,Eve,77.57,400
+504,1618291197,Frank,498.0,400
+505,1646221226,Bob,935.52,200
+506,1668851642,Heidi,850.82,400
+507,1671081763,Alice,487.89,400
+508,1685949343,Alice,590.59,403
+509,1626311431,Charlie,875.27,404
+510,1638636189,Eve,93.52,400
+511,1628120910,Dave,489.34,301
+512,1682686038,Heidi,875.25,400
+513,1698388496,Frank,14.57,500
+514,1655731175,Eve,424.31,301
+515,1611430318,Alice,461.19,200
+516,1690119119,Alice,970.15,500
+517,1661091366,Dave,228.24,200
+518,1687748643,Charlie,408.79,301
+519,1643664418,Frank,732.63,500
+520,1663329884,Dave,876.2,400
+521,1609480806,Heidi,939.11,500
+522,1682115010,Frank,785.27,500
+523,1618312464,Bob,822.23,301
+524,1619465824,Dave,909.3,404
+525,1681673043,Alice,920.1,400
+526,1668424705,Eve,185.46,404
+527,1648404830,Alice,203.11,403
+528,1630892803,Dave,769.98,400
+529,1659316363,Eve,356.43,200
+530,1650618493,Bob,234.59,403
+531,1641153481,Alice,104.79,404
+532,1658596181,Heidi,808.17,200
+533,1693032858,Grace,331.56,301
+534,1695325411,Dave,831.65,403
+535,1653276120,Eve,660.51,200
+536,1678483527,Frank,874.9,301
+537,1639594914,Grace,724.72,403
+538,1665938438,Charlie,414.04,500
+539,1624009094,Grace,120.27,400
+540,1659159682,Dave,680.64,404
+541,1659068470,Heidi,471.76,200
+542,1631183228,Alice,415.41,400
+543,1617564441,Alice,462.94,400
+544,1641810783,Bob,455.66,500
+545,1607009606,Eve,758.31,400
+546,1665881072,Eve,241.28,400
+547,1687765687,Frank,849.75,404
+548,1638307584,Eve,267.95,400
+549,1644152922,Bob,182.31,301
+550,1612266861,Eve,679.35,500
+551,1635458024,Charlie,679.87,403
+552,1616467469,Heidi,357.1,404
+553,1697513360,Charlie,178.68,404
+554,1654283866,Eve,569.02,400
+555,1663353101,Charlie,589.79,200
+556,1633820035,Alice,434.2,404
+557,1654210168,Eve,64.7,301
+558,1604830622,Heidi,347.77,404
+559,1661510518,Heidi,354.78,403
+560,1652156790,Dave,642.86,500
+561,1691991640,Eve,456.11,403
+562,1615300472,Bob,404.06,301
+563,1673265686,Heidi,456.45,403
+564,1686751856,Heidi,726.89,404
+565,1620814051,Frank,65.79,500
+566,1662496998,Eve,420.6,500
+567,1660324950,Heidi,857.78,500
+568,1606595398,Grace,382.3,403
+569,1603611699,Eve,480.66,500
+570,1634484198,Frank,941.04,500
+571,1627428632,Bob,393.82,404
+572,1670555948,Bob,140.07,400
+573,1611982171,Dave,220.66,404
+574,1689773251,Dave,912.14,301
+575,1678243081,Charlie,6.58,301
+576,1645301666,Dave,464.68,400
+577,1697782049,Dave,808.5,404
+578,1675138414,Heidi,417.89,400
+579,1661109706,Dave,44.06,200
+580,1671480973,Eve,392.01,403
+581,1640293560,Alice,531.87,400
+582,1682611589,Heidi,379.59,500
+583,1684406285,Bob,784.27,301
+584,1620063312,Grace,579.99,301
+585,1647087907,Eve,119.48,301
+586,1677524508,Bob,60.58,200
+587,1603333620,Eve,409.88,301
+588,1617195792,Charlie,841.96,200
+589,1608632384,Alice,326.02,200
+590,1696133076,Charlie,488.38,200
+591,1635029663,Bob,919.22,200
+592,1679023601,Alice,517.99,500
+593,1682793033,Heidi,583.53,404
+594,1604881106,Dave,322.3,400
+595,1613946662,Alice,632.05,404
+596,1693507573,Charlie,850.48,200
+597,1605504904,Heidi,158.3,400
+598,1681151187,Grace,731.63,400
+599,1659780542,Alice,527.58,500
+600,1682899037,Charlie,958.83,301
+601,1625523384,Grace,370.84,404
+602,1617688116,Bob,435.87,500
+603,1676664149,Charlie,228.91,404
+604,1608151715,Heidi,953.34,301
+605,1689985589,Grace,578.44,400
+606,1643990937,Bob,765.21,403
+607,1614528213,Charlie,141.27,500
+608,1611850911,Heidi,610.19,400
+609,1664919848,Charlie,141.07,403
+610,1661881548,Bob,78.46,400
+611,1617076705,Dave,994.49,200
+612,1696626588,Dave,745.44,404
+613,1666273387,Eve,801.57,500
+614,1633871365,Grace,923.87,400
+615,1695436030,Grace,100.84,403
+616,1686406990,Bob,233.93,404
+617,1690393326,Eve,779.15,500
+618,1624280206,Dave,207.87,200
+619,1602116874,Frank,288.2,500
+620,1661517526,Frank,742.81,500
+621,1644752861,Dave,584.76,404
+622,1667417605,Charlie,863.01,500
+623,1663136689,Frank,693.87,200
+624,1654289103,Eve,236.02,404
+625,1611472431,Bob,710.58,200
+626,1657125546,Bob,761.35,301
+627,1609275640,Alice,6.66,403
+628,1663359937,Eve,506.18,301
+629,1600740243,Frank,691.97,500
+630,1671363986,Bob,851.52,400
+631,1612418951,Eve,33.97,404
+632,1683235088,Frank,63.87,400
+633,1616164165,Eve,525.31,400
+634,1699377227,Heidi,493.47,403
+635,1627194928,Grace,796.95,404
+636,1694262354,Heidi,844.74,400
+637,1665059153,Bob,565.81,404

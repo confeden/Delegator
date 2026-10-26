@@ -487,6 +487,6 @@ Test-Case "stale installers are every installer but the one just built" {
         [System.IO.File]::WriteAllText((Join-Path $dist $name), "")
     }
     $stale = @(Get-StaleInstallers -DistDir $dist -KeepInstaller (Join-Path $dist "DelegatorSetup-0.9.0.exe") | ForEach-Object { $_.Name } | Sort-Object)
-    Assert-Equal "DelegatorSetup-0.8.2.exe,DelegatorSetup-0.8.3.exe" ($stale -join ",")
+    Assert-Equal "DelegatorSetup-0.8.2.exe,DelegatorSetup-0.8.3.exe,DelegatorSetup-0.8.4.exe" ($stale -join ",")
     Assert-Equal 0 @(Get-StaleInstallers -DistDir (Join-Path $dist "missing") -KeepInstaller (Join-Path $dist "DelegatorSetup-0.9.0.exe")).Count
 }

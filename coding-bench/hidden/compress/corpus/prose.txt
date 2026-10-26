@@ -1,0 +1,2976 @@
+those methods does not support the operation with the
+   supplied arguments, it should return "NotImplemented".
+
+object.__radd__(self, other)
+object.__rsub__(self, other)
+object.__rmul__(self, other)
+object.__rmatmul__(self, other)
+object.__rtruediv__(self, other)
+object.__rfloordiv__(self, other)
+object.__rmod__(self, other)
+object.__rdivmod__(self, other)
+object.__rpow__(self, other[, modulo])
+object.__rlshift__(self, other)
+object.__rrshift__(self, other)
+object.__rand__(self, other)
+object.__rxor__(self, other)
+object.__ror__(self, other)
+
+   These methods are called to implement the binary arithmetic
+   operations ("+", "-", "*", "@", "/", "//", "%", "divmod()",
+   "pow()", "**", "<<", ">>", "&", "^", "|") with reflected (swapped)
+   operands.  These functions are only called if the operands are of
+   different types, when the left operand does not support the
+   corresponding operation [3], or the right operand’s class is
+   derived from the left operand’s class. [4] For instance, to
+   evaluate the expression "x - y", where *y* is an instance of a
+   class that has an "__rsub__()" method, "type(y).__rsub__(y, x)" is
+   called if "type(x).__sub__(x, y)" returns "NotImplemented" or
+   "type(y)" is a subclass of "type(x)". [5]
+
+   Note that "__rpow__()" should be defined to accept an optional
+   third argument if the three-argument version of the built-in
+   "pow()" function is to be supported.
+
+   Changed in version 3.14: Three-argument "pow()" now try calling
+   "__rpow__()" if necessary. Previously it was only called in two-
+   argument "pow()" and the binary power operator.
+
+   Note:
+
+     If the right operand’s type is a subclass of the left operand’s
+     type and that subclass provides a different implementation of the
+     reflected method for the operation, this method will be called
+     before the left operand’s non-reflected method. This behavior
+     allows subclasses to override their ancestors’ operations.
+
+object.__iadd__(self, other)
+object.__isub__(self, other)
+object.__imul__(self, other)
+object.__imatmul__(self, other)
+object.__itruediv__(self, other)
+object.__ifloordiv__(self, other)
+object.__imod__(self, other)
+object.__ipow__(self, other[, modulo])
+object.__ilshift__(self, other)
+object.__irshift__(self, other)
+object.__iand__(self, other)
+object.__ixor__(self, other)
+object.__ior__(self, other)
+
+   These methods are called to implement the augmented arithmetic
+   assignments ("+=", "-=", "*=", "@=", "/=", "//=", "%=", "**=",
+   "<<=", ">>=", "&=", "^=", "|=").  These methods should attempt to
+   do the operation in-place (modifying *self*) and return the result
+   (which could be, but does not have to be, *self*).  If a specific
+   method is not defined, or if that method returns "NotImplemented",
+   the augmented assignment falls back to the normal methods.  For
+   instance, if *x* is an instance of a class with an "__iadd__()"
+   method, "x += y" is equivalent to "x = x.__iadd__(y)" . If
+   "__iadd__()" does not exist, or if "x.__iadd__(y)" returns
+   "NotImplemented", "x.__add__(y)" and "y.__radd__(x)" are
+   considered, as with the evaluation of "x + y". In certain
+   situations, augmented assignment can result in unexpected errors
+   (see Why does a_tuple[i] += [‘item’] raise an exception when the
+   addition works?), but this behavior is in fact part of the data
+   model.
+
+object.__neg__(self)
+object.__pos__(self)
+object.__abs__(self)
+object.__invert__(self)
+
+   Called to implement the unary arithmetic operations ("-", "+",
+   "abs()" and "~").
+
+object.__complex__(self)
+object.__int__(self)
+object.__float__(self)
+
+   Called to implement the built-in functions "complex()", "int()" and
+   "float()".  Should return a value of the appropriate type.
+
+object.__index__(self)
+
+   Called to implement "operator.index()", and whenever Python needs
+   to losslessly convert the numeric object to an integer object (such
+   as in slicing, or in the built-in "bin()", "hex()" and "oct()"
+   functions). Presence of this method indicates that the numeric
+   object is an integer type.  Must return an integer.
+
+   If "__int__()", "__float__()" and "__complex__()" are not defined
+   then corresponding built-in functions "int()", "float()" and
+   "complex()" fall back to "__index__()".
+
+object.__round__(self[, ndigits])
+object.__trunc__(self)
+object.__floor__(self)
+object.__ceil__(self)
+
+   Called to implement the built-in function "round()" and "math"
+   functions "trunc()", "floor()" and "ceil()". Unless *ndigits* is
+   passed to "__round__()" all these methods should return the value
+   of the object truncated to an "Integral" (typically an "int").
+
+   Changed in version 3.14: "int()" no longer delegates to the
+   "__trunc__()" method.
+
+
+Objects, values and types
+*************************
+
+*Objects* are Python’s abstraction for data.  All data in a Python
+program is represented by objects or by relations between objects.
+Even code is represented by objects.
+
+Every object has an identity, a type and a value.  An object’s
+*identity* never changes once it has been created; you may think of it
+as the object’s address in memory.  The "is" operator compares the
+identity of two objects; the "id()" function returns an integer
+representing its identity.
+
+**CPython implementation detail:** For CPython, "id(x)" is the memory
+address where "x" is stored.
+
+An object’s type determines the operations that the object supports
+(e.g., “does it have a length?”) and also defines the possible values
+for objects of that type.  The "type()" function returns an object’s
+type (which is an object itself).  Like its identity, an object’s
+*type* is also unchangeable. [1]
+
+The *value* of some objects can change.  Objects whose value can
+change are said to be *mutable*; objects whose value is unchangeable
+once they are created are called *immutable*. (The value of an
+immutable container object that contains a reference to a mutable
+object can change when the latter’s value is changed; however the
+container is still considered immutable, because the collection of
+objects it contains cannot be changed.  So, immutability is not
+strictly the same as having an unchangeable value, it is more subtle.)
+An object’s mutability is determined by its type; for instance,
+numbers, strings and tuples are immutable, while dictionaries and
+lists are mutable.
+
+Objects are never explicitly destroyed; however, when they become
+unreachable they may be garbage-collected.  An implementation is
+allowed to postpone garbage collection or omit it altogether — it is a
+matter of implementation quality how garbage collection is
+implemented, as long as no objects are collected that are still
+reachable.
+
+**CPython implementation detail:** CPython currently uses a reference-
+counting scheme with (optional) delayed detection of cyclically linked
+garbage, which collects most objects as soon as they become
+unreachable, but is not guaranteed to collect garbage containing
+circular references.  See the documentation of the "gc" module for
+information on controlling the collection of cyclic garbage. Other
+implementations act differently and CPython may change. Do not depend
+on immediate finalization of objects when they become unreachable (so
+you should always close files explicitly).
+
+Note that the use of the implementation’s tracing or debugging
+facilities may keep objects alive that would normally be collectable.
+Also note that catching an exception with a "try"…"except" statement
+may keep objects alive.
+
+Some objects contain references to “external” resources such as open
+files or windows.  It is understood that these resources are freed
+when the object is garbage-collected, but since garbage collection is
+not guaranteed to happen, such objects also provide an explicit way to
+release the external resource, usually a "close()" method. Programs
+are strongly recommended to explicitly close such objects.  The
+"try"…"finally" statement and the "with" statement provide convenient
+ways to do this.
+
+Some objects contain references to other objects; these are called
+*containers*. Examples of containers are tuples, lists and
+dictionaries.  The references are part of a container’s value.  In
+most cases, when we talk about the value of a container, we imply the
+values, not the identities of the contained objects; however, when we
+talk about the mutability of a container, only the identities of the
+immediately contained objects are implied.  So, if an immutable
+container (like a tuple) contains a reference to a mutable object, its
+value changes if that mutable object is changed.
+
+Types affect almost all aspects of object behavior.  Even the
+importance of object identity is affected in some sense: for immutable
+types, operations that compute new values may actually return a
+reference to any existing object with the same type and value, while
+for mutable objects this is not allowed. For example, after "a = 1; b
+= 1", *a* and *b* may or may not refer to the same object with the
+value one, depending on the implementation. This is because "int" is
+an immutable type, so the reference to "1" can be reused. This
+behaviour depends on the implementation used, so should not be relied
+upon, but is something to be aware of when making use of object
+identity tests. However, after "c = []; d = []", *c* and *d* are
+guaranteed to refer to two different, unique, newly created empty
+lists. (Note that "e = f = []" assigns the *same* object to both *e*
+and *f*.)
+
+
+Operator precedence
+*******************
+
+The following table summarizes the operator precedence in Python, from
+highest precedence (most binding) to lowest precedence (least
+binding).  Operators in the same box have the same precedence.  Unless
+the syntax is explicitly given, operators are binary.  Operators in
+the same box group left to right (except for exponentiation and
+conditional expressions, which group from right to left).
+
+Note that comparisons, membership tests, and identity tests, all have
+the same precedence and have a left-to-right chaining feature as
+described in the Comparisons section.
+
++-------------------------------------------------+---------------------------------------+
+| Operator                                        | Description                           |
+|=================================================|=======================================|
+| "(expressions...)",  "[expressions...]", "{key: | Binding or parenthesized expression,  |
+| value...}", "{expressions...}"                  | list display, dictionary display, set |
+|                                                 | display                               |
++-------------------------------------------------+---------------------------------------+
+| "x[index]", "x[index:index]" "x(arguments...)", | Subscription (including slicing),     |
+| "x.attribute"                                   | call, attribute reference             |
++-------------------------------------------------+---------------------------------------+
+| "await x"                                       | Await expression                      |
++-------------------------------------------------+---------------------------------------+
+| "**"                                            | Exponentiation [5]                    |
++-------------------------------------------------+---------------------------------------+
+| "+x", "-x", "~x"                                | Positive, negative, bitwise NOT       |
++-------------------------------------------------+---------------------------------------+
+| "*", "@", "/", "//", "%"                        | Multiplication, matrix                |
+|                                                 | multiplication, division, floor       |
+|                                                 | division, remainder [6]               |
++-------------------------------------------------+---------------------------------------+
+| "+", "-"                                        | Addition and subtraction              |
++-------------------------------------------------+---------------------------------------+
+| "<<", ">>"                                      | Shifts                                |
++-------------------------------------------------+---------------------------------------+
+| "&"                                             | Bitwise AND                           |
++-------------------------------------------------+---------------------------------------+
+| "^"                                             | Bitwise XOR                           |
++-------------------------------------------------+---------------------------------------+
+| "|"                                             | Bitwise OR                            |
++-------------------------------------------------+---------------------------------------+
+| "in", "not in", "is", "is not", "<", "<=", ">", | Comparisons, including membership     |
+| ">=", "!=", "=="                                | tests and identity tests              |
++-------------------------------------------------+---------------------------------------+
+| "not x"                                         | Boolean NOT                           |
++-------------------------------------------------+---------------------------------------+
+| "and"                                           | Boolean AND                           |
++-------------------------------------------------+---------------------------------------+
+| "or"                                            | Boolean OR                            |
++-------------------------------------------------+---------------------------------------+
+| "if" – "else"                                   | Conditional expression                |
++-------------------------------------------------+---------------------------------------+
+| "lambda"                                        | Lambda expression                     |
++-------------------------------------------------+---------------------------------------+
+| ":="                                            | Assignment expression                 |
++-------------------------------------------------+---------------------------------------+
+
+-[ Footnotes ]-
+
+[1] While "abs(x%y) < abs(y)" is true mathematically, for floats it
+    may not be true numerically due to roundoff.  For example, and
+    assuming a platform on which a Python float is an IEEE 754 double-
+    precision number, in order that "-1e-100 % 1e100" have the same
+    sign as "1e100", the computed result is "-1e-100 + 1e100", which
+    is numerically exactly equal to "1e100".  The function
+    "math.fmod()" returns a result whose sign matches the sign of the
+    first argument instead, and so returns "-1e-100" in this case.
+    Which approach is more appropriate depends on the application.
+
+[2] If x is very close to an exact integer multiple of y, it’s
+    possible for "x//y" to be one larger than "(x-x%y)//y" due to
+    rounding.  In such cases, Python returns the latter result, in
+    order to preserve that "divmod(x,y)[0] * y + x % y" be very close
+    to "x".
+
+[3] The Unicode standard distinguishes between *code points* (e.g.
+    U+0041) and *abstract characters* (e.g. “LATIN CAPITAL LETTER A”).
+    While most abstract characters in Unicode are only represented
+    using one code point, there is a number of abstract characters
+    that can in addition be represented using a sequence of more than
+    one code point.  For example, the abstract character “LATIN
+    CAPITAL LETTER C WITH CEDILLA” can be represented as a single
+    *precomposed character* at code position U+00C7, or as a sequence
+    of a *base character* at code position U+0043 (LATIN CAPITAL
+    LETTER C), followed by a *combining character* at code position
+    U+0327 (COMBINING CEDILLA).
+
+    The comparison operators on strings compare at the level of
+    Unicode code points. This may be counter-intuitive to humans.  For
+    example, ""\u00C7" == "\u0043\u0327"" is "False", even though both
+    strings represent the same abstract character “LATIN CAPITAL
+    LETTER C WITH CEDILLA”.
+
+    To compare strings at the level of abstract characters (that is,
+    in a way intuitive to humans), use "unicodedata.normalize()".
+
+[4] Due to automatic garbage-collection, free lists, and the dynamic
+    nature of descriptors, you may notice seemingly unusual behaviour
+    in certain uses of the "is" operator, like those involving
+    comparisons between instance methods, or constants.  Check their
+    documentation for more info.
+
+[5] The power operator "**" binds less tightly than an arithmetic or
+    bitwise unary operator on its right, that is, "2**-1" is "0.5".
+
+[6] The "%" operator is also used for string formatting; the same
+    precedence applies.
+
+
+The "pass" statement
+********************
+
+   pass_stmt: "pass"
+
+"pass" is a null operation — when it is executed, nothing happens. It
+is useful as a placeholder when a statement is required syntactically,
+but no code needs to be executed, for example:
+
+   def f(arg): pass    # a function that does nothing (yet)
+
+   class C: pass       # a class with no methods (yet)
+
+
+The power operator
+******************
+
+The power operator binds more tightly than unary operators on its
+left; it binds less tightly than unary operators on its right.  The
+syntax is:
+
+   power: (await_expr | primary) ["**" u_expr]
+
+Thus, in an unparenthesized sequence of power and unary operators, the
+operators are evaluated from right to left (this does not constrain
+the evaluation order for the operands): "-1**2" results in "-1".
+
+The power operator has the same semantics as the built-in "pow()"
+function, when called with two arguments: it yields its left argument
+raised to the power of its right argument. Numeric arguments are first
+converted to a common type, and the result is of that type.
+
+For int operands, the result has the same type as the operands unless
+the second argument is negative; in that case, all arguments are
+converted to float and a float result is delivered. For example,
+"10**2" returns "100", but "10**-2" returns "0.01".
+
+Raising "0.0" to a negative power results in a "ZeroDivisionError".
+Raising a negative number to a fractional power results in a "complex"
+number. (In earlier versions it raised a "ValueError".)
+
+This operation can be customized using the special "__pow__()" and
+"__rpow__()" methods.
+
+
+The "raise" statement
+*********************
+
+   raise_stmt: "raise" [expression ["from" expression]]
+
+If no expressions are present, "raise" re-raises the exception that is
+currently being handled, which is also known as the *active
+exception*. If there isn’t currently an active exception, a
+"RuntimeError" exception is raised indicating that this is an error.
+
+Otherwise, "raise" evaluates the first expression as the exception
+object.  It must be either a subclass or an instance of
+"BaseException". If it is a class, the exception instance will be
+obtained when needed by instantiating the class with no arguments.
+
+The *type* of the exception is the exception instance’s class, the
+*value* is the instance itself.
+
+A traceback object is normally created automatically when an exception
+is raised and attached to it as the "__traceback__" attribute. You can
+create an exception and set your own traceback in one step using the
+"with_traceback()" exception method (which returns the same exception
+instance, with its traceback set to its argument), like so:
+
+   raise Exception("foo occurred").with_traceback(tracebackobj)
+
+The "from" clause is used for exception chaining: if given, the second
+*expression* must be another exception class or instance. If the
+second expression is an exception instance, it will be attached to the
+raised exception as the "__cause__" attribute (which is writable). If
+the expression is an exception class, the class will be instantiated
+and the resulting exception instance will be attached to the raised
+exception as the "__cause__" attribute. If the raised exception is not
+handled, both exceptions will be printed:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except Exception as exc:
+   ...     raise RuntimeError("Something bad happened") from exc
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 2, in <module>
+       print(1 / 0)
+             ~~^~~
+   ZeroDivisionError: division by zero
+
+   The above exception was the direct cause of the following exception:
+
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+       raise RuntimeError("Something bad happened") from exc
+   RuntimeError: Something bad happened
+
+A similar mechanism works implicitly if a new exception is raised when
+an exception is already being handled.  An exception may be handled
+when an "except" or "finally" clause, or a "with" statement, is used.
+The previous exception is then attached as the new exception’s
+"__context__" attribute:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except:
+   ...     raise RuntimeError("Something bad happened")
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 2, in <module>
+       print(1 / 0)
+             ~~^~~
+   ZeroDivisionError: division by zero
+
+   During handling of the above exception, another exception occurred:
+
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+       raise RuntimeError("Something bad happened")
+   RuntimeError: Something bad happened
+
+Exception chaining can be explicitly suppressed by specifying "None"
+in the "from" clause:
+
+   >>> try:
+   ...     print(1 / 0)
+   ... except:
+   ...     raise RuntimeError("Something bad happened") from None
+   ...
+   Traceback (most recent call last):
+     File "<stdin>", line 4, in <module>
+   RuntimeError: Something bad happened
+
+Additional information on exceptions can be found in section
+Exceptions, and information about handling exceptions is in section
+The try statement.
+
+Changed in version 3.3: "None" is now permitted as "Y" in "raise X
+from Y".Added the "__suppress_context__" attribute to suppress
+automatic display of the exception context.
+
+Changed in version 3.11: If the traceback of the active exception is
+modified in an "except" clause, a subsequent "raise" statement re-
+raises the exception with the modified traceback. Previously, the
+exception was re-raised with the traceback it had when it was caught.
+
+
+The "return" statement
+**********************
+
+   return_stmt: "return" [expression_list]
+
+"return" may only occur syntactically nested in a function definition,
+not within a nested class definition.
+
+If an expression list is present, it is evaluated, else "None" is
+substituted.
+
+"return" leaves the current function call with the expression list (or
+"None") as return value.
+
+When "return" passes control out of a "try" statement with a "finally"
+clause, that "finally" clause is executed before really leaving the
+function.
+
+In a generator function, the "return" statement indicates that the
+generator is done and will cause "StopIteration" to be raised. The
+returned value (if any) is used as an argument to construct
+"StopIteration" and becomes the "StopIteration.value" attribute.
+
+In an asynchronous generator function, an empty "return" statement
+indicates that the asynchronous generator is done and will cause
+"StopAsyncIteration" to be raised.  A non-empty "return" statement is
+a syntax error in an asynchronous generator function.
+
+
+Emulating container types
+*************************
+
+The following methods can be defined to implement container objects.
+None of them are provided by the "object" class itself. Containers
+usually are *sequences* (such as "lists" or "tuples") or *mappings*
+(like *dictionaries*), but can represent other containers as well.
+The first set of methods is used either to emulate a sequence or to
+emulate a mapping; the difference is that for a sequence, the
+allowable keys should be the integers *k* for which "0 <= k < N" where
+*N* is the length of the sequence, or "slice" objects, which define a
+range of items.  It is also recommended that mappings provide the
+methods "keys()", "values()", "items()", "get()", "clear()",
+"setdefault()", "pop()", "popitem()", "copy()", and "update()"
+behaving similar to those for Python’s standard "dictionary" objects.
+The "collections.abc" module provides a "MutableMapping" *abstract
+base class* to help create those methods from a base set of
+"__getitem__()", "__setitem__()", "__delitem__()", and "keys()".
+
+Mutable sequences should provide methods "append()", "clear()",
+"count()", "extend()", "index()", "insert()", "pop()", "remove()", and
+"reverse()", like Python standard "list" objects. Finally, sequence
+types should implement addition (meaning concatenation) and
+multiplication (meaning repetition) by defining the methods
+"__add__()", "__radd__()", "__iadd__()", "__mul__()", "__rmul__()" and
+"__imul__()" described below; they should not define other numerical
+operators.
+
+It is recommended that both mappings and sequences implement the
+"__contains__()" method to allow efficient use of the "in" operator;
+for mappings, "in" should search the mapping’s keys; for sequences, it
+should search through the values.  It is further recommended that both
+mappings and sequences implement the "__iter__()" method to allow
+efficient iteration through the container; for mappings, "__iter__()"
+should iterate through the object’s keys; for sequences, it should
+iterate through the values.
+
+object.__len__(self)
+
+   Called to implement the built-in function "len()".  Should return
+   the length of the object, an integer ">=" 0.  Also, an object that
+   doesn’t define a "__bool__()" method and whose "__len__()" method
+   returns zero is considered to be false in a Boolean context.
+
+   **CPython implementation detail:** In CPython, the length is
+   required to be at most "sys.maxsize". If the length is larger than
+   "sys.maxsize" some features (such as "len()") may raise
+   "OverflowError".  To prevent raising "OverflowError" by truth value
+   testing, an object must define a "__bool__()" method.
+
+object.__length_hint__(self)
+
+   Called to implement "operator.length_hint()". Should return an
+   estimated length for the object (which may be greater or less than
+   the actual length). The length must be an integer ">=" 0. The
+   return value may also be "NotImplemented", which is treated the
+   same as if the "__length_hint__" method didn’t exist at all. This
+   method is purely an optimization and is never required for
+   correctness.
+
+   Added in version 3.4.
+
+object.__getitem__(self, subscript)
+
+   Called to implement *subscription*, that is, "self[subscript]". See
+   Subscriptions and slicings for details on the syntax.
+
+   There are two types of built-in objects that support subscription
+   via "__getitem__()":
+
+   * **sequences**, where *subscript* (also called *index*) should be
+     an integer or a "slice" object. See the sequence documentation
+     for the expected behavior, including handling "slice" objects and
+     negative indices.
+
+   * **mappings**, where *subscript* is also called the *key*. See
+     mapping documentation for the expected behavior.
+
+   If *subscript* is of an inappropriate type, "__getitem__()" should
+   raise "TypeError". If *subscript* has an inappropriate value,
+   "__getitem__()" should raise an "LookupError" or one of its
+   subclasses ("IndexError" for sequences; "KeyError" for mappings).
+
+   Note:
+
+     Slicing is handled by "__getitem__()", "__setitem__()", and
+     "__delitem__()". A call like
+
+        a[1:2] = b
+
+     is translated to
+
+        a[slice(1, 2, None)] = b
+
+     and so forth. Missing slice items are always filled in with
+     "None".
+
+   Note:
+
+     The sequence iteration protocol (used, for example, in "for"
+     loops), expects that an "IndexError" will be raised for illegal
+     indexes to allow proper detection of the end of a sequence.
+
+   Note:
+
+     When subscripting a *class*, the special class method
+     "__class_getitem__()" may be called instead of "__getitem__()".
+     See __class_getitem__ versus __getitem__ for more details.
+
+object.__setitem__(self, key, value)
+
+   Called to implement assignment to "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support changes to the values for keys, or if new keys
+   can be added, or for sequences if elements can be replaced.  The
+   same exceptions should be raised for improper *key* values as for
+   the "__getitem__()" method.
+
+object.__delitem__(self, key)
+
+   Called to implement deletion of "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support removal of keys, or for sequences if elements
+   can be removed from the sequence.  The same exceptions should be
+   raised for improper *key* values as for the "__getitem__()" method.
+
+object.__missing__(self, key)
+
+   Called by "dict"."__getitem__()" to implement "self[key]" for dict
+   subclasses when key is not in the dictionary.
+
+object.__iter__(self)
+
+   This method is called when an *iterator* is required for a
+   container. This method should return a new iterator object that can
+   iterate over all the objects in the container.  For mappings, it
+   should iterate over the keys of the container.
+
+object.__reversed__(self)
+
+   Called (if present) by the "reversed()" built-in to implement
+   reverse iteration.  It should return a new iterator object that
+   iterates over all the objects in the container in reverse order.
+
+   If the "__reversed__()" method is not provided, the "reversed()"
+   built-in will fall back to using the sequence protocol ("__len__()"
+   and "__getitem__()").  Objects that support the sequence protocol
+   should only provide "__reversed__()" if they can provide an
+   implementation that is more efficient than the one provided by
+   "reversed()".
+
+The membership test operators ("in" and "not in") are normally
+implemented as an iteration through a container. However, container
+objects can supply the following special method with a more efficient
+implementation, which also does not require the object be iterable.
+
+object.__contains__(self, item)
+
+   Called to implement membership test operators.  Should return true
+   if *item* is in *self*, false otherwise.  For mapping objects, this
+   should consider the keys of the mapping rather than the values or
+   the key-item pairs.
+
+   For objects that don’t define "__contains__()", the membership test
+   first tries iteration via "__iter__()", then the old sequence
+   iteration protocol via "__getitem__()", see this section in the
+   language reference.
+
+
+Shifting operations
+*******************
+
+The shifting operations have lower priority than the arithmetic
+operations:
+
+   shift_expr: a_expr | shift_expr ("<<" | ">>") a_expr
+
+These operators accept integers as arguments.  They shift the first
+argument to the left or right by the number of bits given by the
+second argument.
+
+The left shift operation can be customized using the special
+"__lshift__()" and "__rlshift__()" methods. The right shift operation
+can be customized using the special "__rshift__()" and "__rrshift__()"
+methods.
+
+A right shift by *n* bits is defined as floor division by "pow(2,n)".
+A left shift by *n* bits is defined as multiplication with "pow(2,n)".
+
+
+Slicings
+********
+
+A more advanced form of subscription, *slicing*, is commonly used to
+extract a portion of a sequence. In this form, the subscript is a
+*slice*: up to three expressions separated by colons. Any of the
+expressions may be omitted, but a slice must contain at least one
+colon:
+
+   >>> number_names = ['zero', 'one', 'two', 'three', 'four', 'five']
+   >>> number_names[1:3]
+   ['one', 'two']
+   >>> number_names[1:]
+   ['one', 'two', 'three', 'four', 'five']
+   >>> number_names[:3]
+   ['zero', 'one', 'two']
+   >>> number_names[:]
+   ['zero', 'one', 'two', 'three', 'four', 'five']
+   >>> number_names[::2]
+   ['zero', 'two', 'four']
+   >>> number_names[:-3]
+   ['zero', 'one', 'two']
+   >>> del number_names[4:]
+   >>> number_names
+   ['zero', 'one', 'two', 'three']
+
+When a slice is evaluated, the interpreter constructs a "slice" object
+whose "start", "stop" and "step" attributes, respectively, are the
+results of the expressions between the colons. Any missing expression
+evaluates to "None". This "slice" object is then passed to the
+"__getitem__()" or "__class_getitem__()" *special method*, as above.
+
+   # continuing with the SubscriptionDemo instance defined above:
+   >>> demo[2:3]
+   subscripted with: slice(2, 3, None)
+   >>> demo[::'spam']
+   subscripted with: slice(None, None, 'spam')
+
+
+Special Attributes
+******************
+
+The implementation adds a few special read-only attributes to several
+object types, where they are relevant.  Some of these are not reported
+by the "dir()" built-in function.
+
+definition.__name__
+
+   The name of the class, function, method, descriptor, or generator
+   instance.
+
+definition.__qualname__
+
+   The *qualified name* of the class, function, method, descriptor, or
+   generator instance.
+
+   Added in version 3.3.
+
+definition.__module__
+
+   The name of the module in which a class or function was defined.
+
+definition.__doc__
+
+   The documentation string of a class or function, or "None" if
+   undefined.
+
+definition.__type_params__
+
+   The type parameters of generic classes, functions, and type
+   aliases. For classes and functions that are not generic, this will
+   be an empty tuple.
+
+   Added in version 3.12.
+
+
+Special method names
+********************
+
+A class can implement certain operations that are invoked by special
+syntax (such as arithmetic operations or subscripting and slicing) by
+defining methods with special names. This is Python’s approach to
+*operator overloading*, allowing classes to define their own behavior
+with respect to language operators.  For instance, if a class defines
+a method named "__getitem__()", and "x" is an instance of this class,
+then "x[i]" is roughly equivalent to "type(x).__getitem__(x, i)".
+Except where mentioned, attempts to execute an operation raise an
+exception when no appropriate method is defined (typically
+"AttributeError" or "TypeError").
+
+Setting a special method to "None" indicates that the corresponding
+operation is not available.  For example, if a class sets "__iter__()"
+to "None", the class is not iterable, so calling "iter()" on its
+instances will raise a "TypeError" (without falling back to
+"__getitem__()"). [2]
+
+When implementing a class that emulates any built-in type, it is
+important that the emulation only be implemented to the degree that it
+makes sense for the object being modelled.  For example, some
+sequences may work well with retrieval of individual elements, but
+extracting a slice may not make sense. (One example of this is the
+NodeList interface in the W3C’s Document Object Model.)
+
+
+Basic customization
+===================
+
+object.__new__(cls[, ...])
+
+   Called to create a new instance of class *cls*.  "__new__()" is a
+   static method (special-cased so you need not declare it as such)
+   that takes the class of which an instance was requested as its
+   first argument.  The remaining arguments are those passed to the
+   object constructor expression (the call to the class).  The return
+   value of "__new__()" should be the new object instance (usually an
+   instance of *cls*).
+
+   Typical implementations create a new instance of the class by
+   invoking the superclass’s "__new__()" method using
+   "super().__new__(cls[, ...])" with appropriate arguments and then
+   modifying the newly created instance as necessary before returning
+   it.
+
+   If "__new__()" is invoked during object construction and it returns
+   an instance of *cls*, then the new instance’s "__init__()" method
+   will be invoked like "__init__(self[, ...])", where *self* is the
+   new instance and the remaining arguments are the same as were
+   passed to the object constructor.
+
+   If "__new__()" does not return an instance of *cls*, then the new
+   instance’s "__init__()" method will not be invoked.
+
+   "__new__()" is intended mainly to allow subclasses of immutable
+   types (like int, str, or tuple) to customize instance creation.  It
+   is also commonly overridden in custom metaclasses in order to
+   customize class creation.
+
+object.__init__(self[, ...])
+
+   Called after the instance has been created (by "__new__()"), but
+   before it is returned to the caller.  The arguments are those
+   passed to the class constructor expression.  If a base class has an
+   "__init__()" method, the derived class’s "__init__()" method, if
+   any, must explicitly call it to ensure proper initialization of the
+   base class part of the instance; for example:
+   "super().__init__([args...])".
+
+   Because "__new__()" and "__init__()" work together in constructing
+   objects ("__new__()" to create it, and "__init__()" to customize
+   it), no non-"None" value may be returned by "__init__()"; doing so
+   will cause a "TypeError" to be raised at runtime.
+
+object.__del__(self)
+
+   Called when the instance is about to be destroyed.  This is also
+   called a finalizer or (improperly) a destructor.  If a base class
+   has a "__del__()" method, the derived class’s "__del__()" method,
+   if any, must explicitly call it to ensure proper deletion of the
+   base class part of the instance.
+
+   It is possible (though not recommended!) for the "__del__()" method
+   to postpone destruction of the instance by creating a new reference
+   to it.  This is called object *resurrection*.  It is
+   implementation-dependent whether "__del__()" is called a second
+   time when a resurrected object is about to be destroyed; the
+   current *CPython* implementation only calls it once.
+
+   It is not guaranteed that "__del__()" methods are called for
+   objects that still exist when the interpreter exits.
+   "weakref.finalize" provides a straightforward way to register a
+   cleanup function to be called when an object is garbage collected.
+
+   Note:
+
+     "del x" doesn’t directly call "x.__del__()" — the former
+     decrements the reference count for "x" by one, and the latter is
+     only called when "x"’s reference count reaches zero.
+
+   **CPython implementation detail:** It is possible for a reference
+   cycle to prevent the reference count of an object from going to
+   zero.  In this case, the cycle will be later detected and deleted
+   by the *cyclic garbage collector*.  A common cause of reference
+   cycles is when an exception has been caught in a local variable.
+   The frame’s locals then reference the exception, which references
+   its own traceback, which references the locals of all frames caught
+   in the traceback.
+
+   See also: Documentation for the "gc" module.
+
+   Warning:
+
+     Due to the precarious circumstances under which "__del__()"
+     methods are invoked, exceptions that occur during their execution
+     are ignored, and a warning is printed to "sys.stderr" instead.
+     In particular:
+
+     * "__del__()" can be invoked when arbitrary code is being
+       executed, including from any arbitrary thread.  If "__del__()"
+       needs to take a lock or invoke any other blocking resource, it
+       may deadlock as the resource may already be taken by the code
+       that gets interrupted to execute "__del__()".
+
+     * "__del__()" can be executed during interpreter shutdown.  As a
+       consequence, the global variables it needs to access (including
+       other modules) may already have been deleted or set to "None".
+       Python guarantees that globals whose name begins with a single
+       underscore are deleted from their module before other globals
+       are deleted; if no other references to such globals exist, this
+       may help in assuring that imported modules are still available
+       at the time when the "__del__()" method is called.
+
+object.__repr__(self)
+
+   Called by the "repr()" built-in function to compute the “official”
+   string representation of an object.  If at all possible, this
+   should look like a valid Python expression that could be used to
+   recreate an object with the same value (given an appropriate
+   environment).  If this is not possible, a string of the form
+   "<...some useful description...>" should be returned. The return
+   value must be a string object. If a class defines "__repr__()" but
+   not "__str__()", then "__repr__()" is also used when an “informal”
+   string representation of instances of that class is required.
+
+   This is typically used for debugging, so it is important that the
+   representation is information-rich and unambiguous. A default
+   implementation is provided by the "object" class itself.
+
+object.__str__(self)
+
+   Called by "str(object)", the default "__format__()" implementation,
+   and the built-in function "print()", to compute the “informal” or
+   nicely printable string representation of an object.  The return
+   value must be a str object.
+
+   This method differs from "object.__repr__()" in that there is no
+   expectation that "__str__()" return a valid Python expression: a
+   more convenient or concise representation can be used.
+
+   The default implementation defined by the built-in type "object"
+   calls "object.__repr__()".
+
+object.__bytes__(self)
+
+   Called by bytes to compute a byte-string representation of an
+   object. This should return a "bytes" object. The "object" class
+   itself does not provide this method.
+
+object.__format__(self, format_spec)
+
+   Called by the "format()" built-in function, and by extension,
+   evaluation of formatted string literals and the "str.format()"
+   method, to produce a “formatted” string representation of an
+   object. The *format_spec* argument is a string that contains a
+   description of the formatting options desired. The interpretation
+   of the *format_spec* argument is up to the type implementing
+   "__format__()", however most classes will either delegate
+   formatting to one of the built-in types, or use a similar
+   formatting option syntax.
+
+   See Format specification mini-language for a description of the
+   standard formatting syntax.
+
+   The return value must be a string object.
+
+   The default implementation by the "object" class should be given an
+   empty *format_spec* string. It delegates to "__str__()".
+
+   Changed in version 3.4: The __format__ method of "object" itself
+   raises a "TypeError" if passed any non-empty string.
+
+   Changed in version 3.7: "object.__format__(x, '')" is now
+   equivalent to "str(x)" rather than "format(str(x), '')".
+
+object.__lt__(self, other)
+object.__le__(self, other)
+object.__eq__(self, other)
+object.__ne__(self, other)
+object.__gt__(self, other)
+object.__ge__(self, other)
+
+   These are the so-called “rich comparison” methods. The
+   correspondence between operator symbols and method names is as
+   follows: "x<y" calls "x.__lt__(y)", "x<=y" calls "x.__le__(y)",
+   "x==y" calls "x.__eq__(y)", "x!=y" calls "x.__ne__(y)", "x>y" calls
+   "x.__gt__(y)", and "x>=y" calls "x.__ge__(y)".
+
+   A rich comparison method may return the singleton "NotImplemented"
+   if it does not implement the operation for a given pair of
+   arguments. By convention, "False" and "True" are returned for a
+   successful comparison. However, these methods can return any value,
+   so if the comparison operator is used in a Boolean context (e.g.,
+   in the condition of an "if" statement), Python will call "bool()"
+   on the value to determine if the result is true or false.
+
+   By default, "object" implements "__eq__()" by using "is", returning
+   "NotImplemented" in the case of a false comparison: "True if x is y
+   else NotImplemented". For "__ne__()", by default it delegates to
+   "__eq__()" and inverts the result unless it is "NotImplemented".
+   There are no other implied relationships among the comparison
+   operators or default implementations; for example, the truth of
+   "(x<y or x==y)" does not imply "x<=y". To automatically generate
+   ordering operations from a single root operation, see
+   "functools.total_ordering()".
+
+   By default, the "object" class provides implementations consistent
+   with Value comparisons: equality compares according to object
+   identity, and order comparisons raise "TypeError". Each default
+   method may generate these results directly, but may also return
+   "NotImplemented".
+
+   See the paragraph on "__hash__()" for some important notes on
+   creating *hashable* objects which support custom comparison
+   operations and are usable as dictionary keys.
+
+   There are no swapped-argument versions of these methods (to be used
+   when the left argument does not support the operation but the right
+   argument does); rather, "__lt__()" and "__gt__()" are each other’s
+   reflection, "__le__()" and "__ge__()" are each other’s reflection,
+   and "__eq__()" and "__ne__()" are their own reflection. If the
+   operands are of different types, and the right operand’s type is a
+   direct or indirect subclass of the left operand’s type, the
+   reflected method of the right operand has priority, otherwise the
+   left operand’s method has priority.  Virtual subclassing is not
+   considered.
+
+   When no appropriate method returns any value other than
+   "NotImplemented", the "==" and "!=" operators will fall back to
+   "is" and "is not", respectively.
+
+object.__hash__(self)
+
+   Called by built-in function "hash()" and for operations on members
+   of hashed collections including "set", "frozenset", and "dict".
+   The "__hash__()" method should return an integer. The only required
+   property is that objects which compare equal have the same hash
+   value; it is advised to mix together the hash values of the
+   components of the object that also play a part in comparison of
+   objects by packing them into a tuple and hashing the tuple.
+   Example:
+
+      def __hash__(self):
+          return hash((self.name, self.nick, self.color))
+
+   Note:
+
+     "hash()" truncates the value returned from an object’s custom
+     "__hash__()" method to the size of a "Py_ssize_t".  This is
+     typically 8 bytes on 64-bit builds and 4 bytes on 32-bit builds.
+     If an object’s   "__hash__()" must interoperate on builds of
+     different bit sizes, be sure to check the width on all supported
+     builds.  An easy way to do this is with "python -c "import sys;
+     print(sys.hash_info.width)"".
+
+   If a class does not define an "__eq__()" method it should not
+   define a "__hash__()" operation either; if it defines "__eq__()"
+   but not "__hash__()", its instances will not be usable as items in
+   hashable collections.  If a class defines mutable objects and
+   implements an "__eq__()" method, it should not implement
+   "__hash__()", since the implementation of *hashable* collections
+   requires that a key’s hash value is immutable (if the object’s hash
+   value changes, it will be in the wrong hash bucket).
+
+   User-defined classes have "__eq__()" and "__hash__()" methods by
+   default (inherited from the "object" class); with them, all objects
+   compare unequal (except with themselves) and "x.__hash__()" returns
+   an appropriate value such that "x == y" implies both that "x is y"
+   and "hash(x) == hash(y)".
+
+   A class that overrides "__eq__()" and does not define "__hash__()"
+   will have its "__hash__()" implicitly set to "None".  When the
+   "__hash__()" method of a class is "None", instances of the class
+   will raise an appropriate "TypeError" when a program attempts to
+   retrieve their hash value, and will also be correctly identified as
+   unhashable when checking "isinstance(obj,
+   collections.abc.Hashable)".
+
+   If a class that overrides "__eq__()" needs to retain the
+   implementation of "__hash__()" from a parent class, the interpreter
+   must be told this explicitly by setting "__hash__ =
+   <ParentClass>.__hash__".
+
+   If a class that does not override "__eq__()" wishes to suppress
+   hash support, it should include "__hash__ = None" in the class
+   definition. A class which defines its own "__hash__()" that
+   explicitly raises a "TypeError" would be incorrectly identified as
+   hashable by an "isinstance(obj, collections.abc.Hashable)" call.
+
+   Note:
+
+     By default, the "__hash__()" values of str and bytes objects are
+     “salted” with an unpredictable random value.  Although they
+     remain constant within an individual Python process, they are not
+     predictable between repeated invocations of Python.This is
+     intended to provide protection against a denial-of-service caused
+     by carefully chosen inputs that exploit the worst case
+     performance of a dict insertion, *O*(*n*^2) complexity.  See
+     https://ocert.org/advisories/ocert-2011-003.html for
+     details.Changing hash values affects the iteration order of sets.
+     Python has never made guarantees about this ordering (and it
+     typically varies between 32-bit and 64-bit builds).See also
+     "PYTHONHASHSEED".
+
+   Changed in version 3.3: Hash randomization is enabled by default.
+
+object.__bool__(self)
+
+   Called to implement truth value testing and the built-in operation
+   "bool()"; should return "False" or "True".  When this method is not
+   defined, "__len__()" is called, if it is defined, and the object is
+   considered true if its result is nonzero.  If a class defines
+   neither "__len__()" nor "__bool__()" (which is true of the "object"
+   class itself), all its instances are considered true.
+
+
+Customizing attribute access
+============================
+
+The following methods can be defined to customize the meaning of
+attribute access (use of, assignment to, or deletion of "x.name") for
+class instances.
+
+object.__getattr__(self, name)
+
+   Called when the default attribute access fails with an
+   "AttributeError" (either "__getattribute__()" raises an
+   "AttributeError" because *name* is not an instance attribute or an
+   attribute in the class tree for "self"; or "__get__()" of a *name*
+   property raises "AttributeError").  This method should either
+   return the (computed) attribute value or raise an "AttributeError"
+   exception. The "object" class itself does not provide this method.
+
+   Note that if the attribute is found through the normal mechanism,
+   "__getattr__()" is not called.  (This is an intentional asymmetry
+   between "__getattr__()" and "__setattr__()".) This is done both for
+   efficiency reasons and because otherwise "__getattr__()" would have
+   no way to access other attributes of the instance.  Note that at
+   least for instance variables, you can take total control by not
+   inserting any values in the instance attribute dictionary (but
+   instead inserting them in another object).  See the
+   "__getattribute__()" method below for a way to actually get total
+   control over attribute access.
+
+object.__getattribute__(self, name)
+
+   Called unconditionally to implement attribute accesses for
+   instances of the class. If the class also defines "__getattr__()",
+   the latter will not be called unless "__getattribute__()" either
+   calls it explicitly or raises an "AttributeError". This method
+   should return the (computed) attribute value or raise an
+   "AttributeError" exception. In order to avoid infinite recursion in
+   this method, its implementation should always call the base class
+   method with the same name to access any attributes it needs, for
+   example, "object.__getattribute__(self, name)".
+
+   Note:
+
+     This method may still be bypassed when looking up special methods
+     as the result of implicit invocation via language syntax or
+     built-in functions. See Special method lookup.
+
+   For certain sensitive attribute accesses, raises an auditing event
+   "object.__getattr__" with arguments "obj" and "name".
+
+object.__setattr__(self, name, value)
+
+   Called when an attribute assignment is attempted.  This is called
+   instead of the normal mechanism (i.e. store the value in the
+   instance dictionary). *name* is the attribute name, *value* is the
+   value to be assigned to it.
+
+   If "__setattr__()" wants to assign to an instance attribute, it
+   should call the base class method with the same name, for example,
+   "object.__setattr__(self, name, value)".
+
+   For certain sensitive attribute assignments, raises an auditing
+   event "object.__setattr__" with arguments "obj", "name", "value".
+
+object.__delattr__(self, name)
+
+   Like "__setattr__()" but for attribute deletion instead of
+   assignment.  This should only be implemented if "del obj.name" is
+   meaningful for the object.
+
+   For certain sensitive attribute deletions, raises an auditing event
+   "object.__delattr__" with arguments "obj" and "name".
+
+object.__dir__(self)
+
+   Called when "dir()" is called on the object. An iterable must be
+   returned. "dir()" converts the returned iterable to a list and
+   sorts it.
+
+
+Customizing module attribute access
+-----------------------------------
+
+module.__getattr__()
+module.__dir__()
+
+Special names "__getattr__" and "__dir__" can be also used to
+customize access to module attributes. The "__getattr__" function at
+the module level should accept one argument which is the name of an
+attribute and return the computed value or raise an "AttributeError".
+If an attribute is not found on a module object through the normal
+lookup, i.e. "object.__getattribute__()", then "__getattr__" is
+searched in the module "__dict__" before raising an "AttributeError".
+If found, it is called with the attribute name and the result is
+returned.
+
+The "__dir__" function should accept no arguments, and return an
+iterable of strings that represents the names accessible on module. If
+present, this function overrides the standard "dir()" search on a
+module.
+
+module.__class__
+
+For a more fine grained customization of the module behavior (setting
+attributes, properties, etc.), one can set the "__class__" attribute
+of a module object to a subclass of "types.ModuleType". For example:
+
+   import sys
+   from types import ModuleType
+
+   class VerboseModule(ModuleType):
+       def __repr__(self):
+           return f'Verbose {self.__name__}'
+
+       def __setattr__(self, attr, value):
+           print(f'Setting {attr}...')
+           super().__setattr__(attr, value)
+
+   sys.modules[__name__].__class__ = VerboseModule
+
+Note:
+
+  Defining module "__getattr__" and setting module "__class__" only
+  affect lookups made using the attribute access syntax – directly
+  accessing the module globals (whether by code within the module, or
+  via a reference to the module’s globals dictionary) is unaffected.
+
+Changed in version 3.5: "__class__" module attribute is now writable.
+
+Added in version 3.7: "__getattr__" and "__dir__" module attributes.
+
+See also:
+
+  **PEP 562** - Module __getattr__ and __dir__
+     Describes the "__getattr__" and "__dir__" functions on modules.
+
+
+Implementing Descriptors
+------------------------
+
+The following methods only apply when an instance of the class
+containing the method (a so-called *descriptor* class) appears in an
+*owner* class (the descriptor must be in either the owner’s class
+dictionary or in the class dictionary for one of its parents).  In the
+examples below, “the attribute” refers to the attribute whose name is
+the key of the property in the owner class’ "__dict__".  The "object"
+class itself does not implement any of these protocols.
+
+object.__get__(self, instance, owner=None)
+
+   Called to get the attribute of the owner class (class attribute
+   access) or of an instance of that class (instance attribute
+   access). The optional *owner* argument is the owner class, while
+   *instance* is the instance that the attribute was accessed through,
+   or "None" when the attribute is accessed through the *owner*.
+
+   This method should return the computed attribute value or raise an
+   "AttributeError" exception.
+
+   **PEP 252** specifies that "__get__()" is callable with one or two
+   arguments.  Python’s own built-in descriptors support this
+   specification; however, it is likely that some third-party tools
+   have descriptors that require both arguments.  Python’s own
+   "__getattribute__()" implementation always passes in both arguments
+   whether they are required or not.
+
+object.__set__(self, instance, value)
+
+   Called to set the attribute on an instance *instance* of the owner
+   class to a new value, *value*.
+
+   Note, adding "__set__()" or "__delete__()" changes the kind of
+   descriptor to a “data descriptor”.  See Invoking Descriptors for
+   more details.
+
+object.__delete__(self, instance)
+
+   Called to delete the attribute on an instance *instance* of the
+   owner class.
+
+Instances of descriptors may also have the "__objclass__" attribute
+present:
+
+object.__objclass__
+
+   The attribute "__objclass__" is interpreted by the "inspect" module
+   as specifying the class where this object was defined (setting this
+   appropriately can assist in runtime introspection of dynamic class
+   attributes). For callables, it may indicate that an instance of the
+   given type (or a subclass) is expected or required as the first
+   positional argument (for example, CPython sets this attribute for
+   unbound methods that are implemented in C).
+
+
+Invoking Descriptors
+--------------------
+
+In general, a descriptor is an object attribute with “binding
+behavior”, one whose attribute access has been overridden by methods
+in the descriptor protocol:  "__get__()", "__set__()", and
+"__delete__()". If any of those methods are defined for an object, it
+is said to be a descriptor.
+
+The default behavior for attribute access is to get, set, or delete
+the attribute from an object’s dictionary. For instance, "a.x" has a
+lookup chain starting with "a.__dict__['x']", then
+"type(a).__dict__['x']", and continuing through the base classes of
+"type(a)" excluding metaclasses.
+
+However, if the looked-up value is an object defining one of the
+descriptor methods, then Python may override the default behavior and
+invoke the descriptor method instead.  Where this occurs in the
+precedence chain depends on which descriptor methods were defined and
+how they were called.
+
+The starting point for descriptor invocation is a binding, "a.x". How
+the arguments are assembled depends on "a":
+
+Direct Call
+   The simplest and least common call is when user code directly
+   invokes a descriptor method:    "x.__get__(a)".
+
+Instance Binding
+   If binding to an object instance, "a.x" is transformed into the
+   call: "type(a).__dict__['x'].__get__(a, type(a))".
+
+Class Binding
+   If binding to a class, "A.x" is transformed into the call:
+   "A.__dict__['x'].__get__(None, A)".
+
+Super Binding
+   A dotted lookup such as "super(A, a).x" searches
+   "a.__class__.__mro__" for a base class "B" following "A" and then
+   returns "B.__dict__['x'].__get__(a, A)".  If not a descriptor, "x"
+   is returned unchanged.
+
+For instance bindings, the precedence of descriptor invocation depends
+on which descriptor methods are defined.  A descriptor can define any
+combination of "__get__()", "__set__()" and "__delete__()".  If it
+does not define "__get__()", then accessing the attribute will return
+the descriptor object itself unless there is a value in the object’s
+instance dictionary.  If the descriptor defines "__set__()" and/or
+"__delete__()", it is a data descriptor; if it defines neither, it is
+a non-data descriptor.  Normally, data descriptors define both
+"__get__()" and "__set__()", while non-data descriptors have just the
+"__get__()" method.  Data descriptors with "__get__()" and "__set__()"
+(and/or "__delete__()") defined always override a redefinition in an
+instance dictionary.  In contrast, non-data descriptors can be
+overridden by instances.
+
+Python methods (including those decorated with "@staticmethod" and
+"@classmethod") are implemented as non-data descriptors.  Accordingly,
+instances can redefine and override methods.  This allows individual
+instances to acquire behaviors that differ from other instances of the
+same class.
+
+The "property()" function is implemented as a data descriptor.
+Accordingly, instances cannot override the behavior of a property.
+
+
+__slots__
+---------
+
+*__slots__* allow us to explicitly declare data members (like
+properties) and deny the creation of "__dict__" and *__weakref__*
+(unless explicitly declared in *__slots__* or available in a parent.)
+
+The space saved over using "__dict__" can be significant. Attribute
+lookup speed can be significantly improved as well.
+
+object.__slots__
+
+   This class variable can be assigned a string, iterable, or sequence
+   of strings with variable names used by instances.  *__slots__*
+   reserves space for the declared variables and prevents the
+   automatic creation of "__dict__" and *__weakref__* for each
+   instance.
+
+Notes on using *__slots__*:
+
+* When inheriting from a class without *__slots__*, the "__dict__" and
+  *__weakref__* attribute of the instances will always be accessible.
+
+* Without a "__dict__" variable, instances cannot be assigned new
+  variables not listed in the *__slots__* definition.  Attempts to
+  assign to an unlisted variable name raises "AttributeError". If
+  dynamic assignment of new variables is desired, then add
+  "'__dict__'" to the sequence of strings in the *__slots__*
+  declaration.
+
+* Without a *__weakref__* variable for each instance, classes defining
+  *__slots__* do not support "weak references" to its instances. If
+  weak reference support is needed, then add "'__weakref__'" to the
+  sequence of strings in the *__slots__* declaration.
+
+* *__slots__* are implemented at the class level by creating
+  descriptors for each variable name.  As a result, class attributes
+  cannot be used to set default values for instance variables defined
+  by *__slots__*; otherwise, the class attribute would overwrite the
+  descriptor assignment.
+
+* The action of a *__slots__* declaration is not limited to the class
+  where it is defined.  *__slots__* declared in parents are available
+  in child classes. However, instances of a child subclass will get a
+  "__dict__" and *__weakref__* unless the subclass also defines
+  *__slots__* (which should only contain names of any *additional*
+  slots).
+
+* If a class defines a slot also defined in a base class, the instance
+  variable defined by the base class slot is inaccessible (except by
+  retrieving its descriptor directly from the base class). This
+  renders the meaning of the program undefined.  In the future, a
+  check may be added to prevent this.
+
+* "TypeError" will be raised if nonempty *__slots__* are defined for a
+  class derived from a ""variable-length" built-in type" such as
+  "int", "bytes", and "tuple".
+
+* Any non-string *iterable* may be assigned to *__slots__*.
+
+* If a "dictionary" is used to assign *__slots__*, the dictionary keys
+  will be used as the slot names. The values of the dictionary can be
+  used to provide per-attribute docstrings that will be recognised by
+  "inspect.getdoc()" and displayed in the output of "help()".
+
+* "__class__" assignment works only if both classes have the same
+  *__slots__*.
+
+* Multiple inheritance with multiple slotted parent classes can be
+  used, but only one parent is allowed to have attributes created by
+  slots (the other bases must have empty slot layouts) - violations
+  raise "TypeError".
+
+* If an *iterator* is used for *__slots__* then a *descriptor* is
+  created for each of the iterator’s values. However, the *__slots__*
+  attribute will be an empty iterator.
+
+
+Customizing class creation
+==========================
+
+Whenever a class inherits from another class, "__init_subclass__()" is
+called on the parent class. This way, it is possible to write classes
+which change the behavior of subclasses. This is closely related to
+class decorators, but where class decorators only affect the specific
+class they’re applied to, "__init_subclass__" solely applies to future
+subclasses of the class defining the method.
+
+classmethod object.__init_subclass__(cls)
+
+   This method is called whenever the containing class is subclassed.
+   *cls* is then the new subclass. If defined as a normal instance
+   method, this method is implicitly converted to a class method.
+
+   Keyword arguments which are given to a new class are passed to the
+   parent class’s "__init_subclass__". For compatibility with other
+   classes using "__init_subclass__", one should take out the needed
+   keyword arguments and pass the others over to the base class, as
+   in:
+
+      class Philosopher:
+          def __init_subclass__(cls, /, default_name, **kwargs):
+              super().__init_subclass__(**kwargs)
+              cls.default_name = default_name
+
+      class AustralianPhilosopher(Philosopher, default_name="Bruce"):
+          pass
+
+   The default implementation "object.__init_subclass__" does nothing,
+   but raises an error if it is called with any arguments.
+
+   Note:
+
+     The metaclass hint "metaclass" is consumed by the rest of the
+     type machinery, and is never passed to "__init_subclass__"
+     implementations. The actual metaclass (rather than the explicit
+     hint) can be accessed as "type(cls)".
+
+   Added in version 3.6.
+
+When a class is created, "type.__new__()" scans the class variables
+and makes callbacks to those with a "__set_name__()" hook.
+
+object.__set_name__(self, owner, name)
+
+   Automatically called at the time the owning class *owner* is
+   created. The object has been assigned to *name* in that class:
+
+      class A:
+          x = C()  # Automatically calls: x.__set_name__(A, 'x')
+
+   If the class variable is assigned after the class is created,
+   "__set_name__()" will not be called automatically. If needed,
+   "__set_name__()" can be called directly:
+
+      class A:
+         pass
+
+      c = C()
+      A.x = c                  # The hook is not called
+      c.__set_name__(A, 'x')   # Manually invoke the hook
+
+   See Creating the class object for more details.
+
+   Added in version 3.6.
+
+
+Metaclasses
+-----------
+
+By default, classes are constructed using "type()". The class body is
+executed in a new namespace and the class name is bound locally to the
+result of "type(name, bases, namespace)".
+
+The class creation process can be customized by passing the
+"metaclass" keyword argument in the class definition line, or by
+inheriting from an existing class that included such an argument. In
+the following example, both "MyClass" and "MySubclass" are instances
+of "Meta":
+
+   class Meta(type):
+       pass
+
+   class MyClass(metaclass=Meta):
+       pass
+
+   class MySubclass(MyClass):
+       pass
+
+Any other keyword arguments that are specified in the class definition
+are passed through to all metaclass operations described below.
+
+When a class definition is executed, the following steps occur:
+
+* MRO entries are resolved;
+
+* the appropriate metaclass is determined;
+
+* the class namespace is prepared;
+
+* the class body is executed;
+
+* the class object is created.
+
+
+Resolving MRO entries
+---------------------
+
+object.__mro_entries__(self, bases)
+
+   If a base that appears in a class definition is not an instance of
+   "type", then an "__mro_entries__()" method is searched on the base.
+   If an "__mro_entries__()" method is found, the base is substituted
+   with the result of a call to "__mro_entries__()" when creating the
+   class. The method is called with the original bases tuple passed to
+   the *bases* parameter, and must return a tuple of classes that will
+   be used instead of the base. The returned tuple may be empty: in
+   these cases, the original base is ignored.
+
+See also:
+
+  "types.resolve_bases()"
+     Dynamically resolve bases that are not instances of "type".
+
+  "types.get_original_bases()"
+     Retrieve a class’s “original bases” prior to modifications by
+     "__mro_entries__()".
+
+  **PEP 560**
+     Core support for typing module and generic types.
+
+
+Determining the appropriate metaclass
+-------------------------------------
+
+The appropriate metaclass for a class definition is determined as
+follows:
+
+* if no bases and no explicit metaclass are given, then "type()" is
+  used;
+
+* if an explicit metaclass is given and it is *not* an instance of
+  "type()", then it is used directly as the metaclass;
+
+* if an instance of "type()" is given as the explicit metaclass, or
+  bases are defined, then the most derived metaclass is used.
+
+The most derived metaclass is selected from the explicitly specified
+metaclass (if any) and the metaclasses (i.e. "type(cls)") of all
+specified base classes. The most derived metaclass is one which is a
+subtype of *all* of these candidate metaclasses. If none of the
+candidate metaclasses meets that criterion, then the class definition
+will fail with "TypeError".
+
+
+Preparing the class namespace
+-----------------------------
+
+Once the appropriate metaclass has been identified, then the class
+namespace is prepared. If the metaclass has a "__prepare__" attribute,
+it is called as "namespace = metaclass.__prepare__(name, bases,
+**kwds)" (where the additional keyword arguments, if any, come from
+the class definition). The "__prepare__" method should be implemented
+as a "classmethod". The namespace returned by "__prepare__" is passed
+in to "__new__", but when the final class object is created the
+namespace is copied into a new "dict".
+
+If the metaclass has no "__prepare__" attribute, then the class
+namespace is initialised as an empty ordered mapping.
+
+See also:
+
+  **PEP 3115** - Metaclasses in Python 3000
+     Introduced the "__prepare__" namespace hook
+
+
+Executing the class body
+------------------------
+
+The class body is executed (approximately) as "exec(body, globals(),
+namespace)". The key difference from a normal call to "exec()" is that
+lexical scoping allows the class body (including any methods) to
+reference names from the current and outer scopes when the class
+definition occurs inside a function.
+
+However, even when the class definition occurs inside the function,
+methods defined inside the class still cannot see names defined at the
+class scope. Class variables must be accessed through the first
+parameter of instance or class methods, or through the implicit
+lexically scoped "__class__" reference described in the next section.
+
+
+Creating the class object
+-------------------------
+
+Once the class namespace has been populated by executing the class
+body, the class object is created by calling "metaclass(name, bases,
+namespace, **kwds)" (the additional keywords passed here are the same
+as those passed to "__prepare__").
+
+This class object is the one that will be referenced by the zero-
+argument form of "super()". "__class__" is an implicit closure
+reference created by the compiler if any methods in a class body refer
+to either "__class__" or "super". This allows the zero argument form
+of "super()" to correctly identify the class being defined based on
+lexical scoping, while the class or instance that was used to make the
+current call is identified based on the first argument passed to the
+method.
+
+**CPython implementation detail:** In CPython 3.6 and later, the
+"__class__" cell is passed to the metaclass as a "__classcell__" entry
+in the class namespace. If present, this must be propagated up to the
+"type.__new__" call in order for the class to be initialised
+correctly. Failing to do so will result in a "RuntimeError" in Python
+3.8.
+
+When using the default metaclass "type", or any metaclass that
+ultimately calls "type.__new__", the following additional
+customization steps are invoked after creating the class object:
+
+1. The "type.__new__" method collects all of the attributes in the
+   class namespace that define a "__set_name__()" method;
+
+2. Those "__set_name__" methods are called with the class being
+   defined and the assigned name of that particular attribute;
+
+3. The "__init_subclass__()" hook is called on the immediate parent of
+   the new class in its method resolution order.
+
+After the class object is created, it is passed to the class
+decorators included in the class definition (if any) and the resulting
+object is bound in the local namespace as the defined class.
+
+When a new class is created by "type.__new__", the object provided as
+the namespace parameter is copied to a new ordered mapping and the
+original object is discarded. The new copy is wrapped in a read-only
+proxy, which becomes the "__dict__" attribute of the class object.
+
+See also:
+
+  **PEP 3135** - New super
+     Describes the implicit "__class__" closure reference
+
+
+Uses for metaclasses
+--------------------
+
+The potential uses for metaclasses are boundless. Some ideas that have
+been explored include enum, logging, interface checking, automatic
+delegation, automatic property creation, proxies, frameworks, and
+automatic resource locking/synchronization.
+
+
+Customizing instance and subclass checks
+========================================
+
+The following methods are used to override the default behavior of the
+"isinstance()" and "issubclass()" built-in functions.
+
+In particular, the metaclass "abc.ABCMeta" implements these methods in
+order to allow the addition of Abstract Base Classes (ABCs) as
+“virtual base classes” to any class or type (including built-in
+types), including other ABCs.
+
+type.__instancecheck__(self, instance)
+
+   Return true if *instance* should be considered a (direct or
+   indirect) instance of *class*. If defined, called to implement
+   "isinstance(instance, class)".
+
+type.__subclasscheck__(self, subclass)
+
+   Return true if *subclass* should be considered a (direct or
+   indirect) subclass of *class*.  If defined, called to implement
+   "issubclass(subclass, class)".
+
+Note that these methods are looked up on the type (metaclass) of a
+class.  They cannot be defined as class methods in the actual class.
+This is consistent with the lookup of special methods that are called
+on instances, only in this case the instance is itself a class.
+
+See also:
+
+  **PEP 3119** - Introducing Abstract Base Classes
+     Includes the specification for customizing "isinstance()" and
+     "issubclass()" behavior through "__instancecheck__()" and
+     "__subclasscheck__()", with motivation for this functionality in
+     the context of adding Abstract Base Classes (see the "abc"
+     module) to the language.
+
+
+Emulating generic types
+=======================
+
+When using *type annotations*, it is often useful to *parameterize* a
+*generic type* using Python’s square-brackets notation. For example,
+the annotation "list[int]" might be used to signify a "list" in which
+all the elements are of type "int".
+
+See also:
+
+  **PEP 484** - Type Hints
+     Introducing Python’s framework for type annotations
+
+  Generic Alias Types
+     Documentation for objects representing parameterized generic
+     classes
+
+  Generics, user-defined generics and "typing.Generic"
+     Documentation on how to implement generic classes that can be
+     parameterized at runtime and understood by static type-checkers.
+
+A class can *generally* only be parameterized if it defines the
+special class method "__class_getitem__()".
+
+classmethod object.__class_getitem__(cls, key)
+
+   Return an object representing the specialization of a generic class
+   by type arguments found in *key*.
+
+   When defined on a class, "__class_getitem__()" is automatically a
+   class method. As such, there is no need for it to be decorated with
+   "@classmethod" when it is defined.
+
+
+The purpose of *__class_getitem__*
+----------------------------------
+
+The purpose of "__class_getitem__()" is to allow runtime
+parameterization of standard-library generic classes in order to more
+easily apply *type hints* to these classes.
+
+To implement custom generic classes that can be parameterized at
+runtime and understood by static type-checkers, users should either
+inherit from a standard library class that already implements
+"__class_getitem__()", or inherit from "typing.Generic", which has its
+own implementation of "__class_getitem__()".
+
+Custom implementations of "__class_getitem__()" on classes defined
+outside of the standard library may not be understood by third-party
+type-checkers such as mypy. Using "__class_getitem__()" on any class
+for purposes other than type hinting is discouraged.
+
+
+*__class_getitem__* versus *__getitem__*
+----------------------------------------
+
+Usually, the subscription of an object using square brackets will call
+the "__getitem__()" instance method defined on the object’s class.
+However, if the object being subscribed is itself a class, the class
+method "__class_getitem__()" may be called instead.
+"__class_getitem__()" should return a GenericAlias object if it is
+properly defined.
+
+Presented with the *expression* "obj[x]", the Python interpreter
+follows something like the following process to decide whether
+"__getitem__()" or "__class_getitem__()" should be called:
+
+   from inspect import isclass
+
+   def subscribe(obj, x):
+       """Return the result of the expression 'obj[x]'"""
+
+       class_of_obj = type(obj)
+
+       # If the class of obj defines __getitem__,
+       # call class_of_obj.__getitem__(obj, x)
+       if hasattr(class_of_obj, '__getitem__'):
+           return class_of_obj.__getitem__(obj, x)
+
+       # Else, if obj is a class and defines __class_getitem__,
+       # call obj.__class_getitem__(x)
+       elif isclass(obj) and hasattr(obj, '__class_getitem__'):
+           return obj.__class_getitem__(x)
+
+       # Else, raise an exception
+       else:
+           raise TypeError(
+               f"'{class_of_obj.__name__}' object is not subscriptable"
+           )
+
+In Python, all classes are themselves instances of other classes. The
+class of a class is known as that class’s *metaclass*, and most
+classes have the "type" class as their metaclass. "type" does not
+define "__getitem__()", meaning that expressions such as "list[int]",
+"dict[str, float]" and "tuple[str, bytes]" all result in
+"__class_getitem__()" being called:
+
+   >>> # list has class "type" as its metaclass, like most classes:
+   >>> type(list)
+   <class 'type'>
+   >>> type(dict) == type(list) == type(tuple) == type(str) == type(bytes)
+   True
+   >>> # "list[int]" calls "list.__class_getitem__(int)"
+   >>> list[int]
+   list[int]
+   >>> # list.__class_getitem__ returns a GenericAlias object:
+   >>> type(list[int])
+   <class 'types.GenericAlias'>
+
+However, if a class has a custom metaclass that defines
+"__getitem__()", subscribing the class may result in different
+behaviour. An example of this can be found in the "enum" module:
+
+   >>> from enum import Enum
+   >>> class Menu(Enum):
+   ...     """A breakfast menu"""
+   ...     SPAM = 'spam'
+   ...     BACON = 'bacon'
+   ...
+   >>> # Enum classes have a custom metaclass:
+   >>> type(Menu)
+   <class 'enum.EnumMeta'>
+   >>> # EnumMeta defines __getitem__,
+   >>> # so __class_getitem__ is not called,
+   >>> # and the result is not a GenericAlias object:
+   >>> Menu['SPAM']
+   <Menu.SPAM: 'spam'>
+   >>> type(Menu['SPAM'])
+   <enum 'Menu'>
+
+See also:
+
+  **PEP 560** - Core Support for typing module and generic types
+     Introducing "__class_getitem__()", and outlining when a
+     subscription results in "__class_getitem__()" being called
+     instead of "__getitem__()"
+
+
+Emulating callable objects
+==========================
+
+object.__call__(self[, args...])
+
+   Called when the instance is “called” as a function; if this method
+   is defined, "x(arg1, arg2, ...)" roughly translates to
+   "type(x).__call__(x, arg1, ...)". The "object" class itself does
+   not provide this method.
+
+
+Emulating container types
+=========================
+
+The following methods can be defined to implement container objects.
+None of them are provided by the "object" class itself. Containers
+usually are *sequences* (such as "lists" or "tuples") or *mappings*
+(like *dictionaries*), but can represent other containers as well.
+The first set of methods is used either to emulate a sequence or to
+emulate a mapping; the difference is that for a sequence, the
+allowable keys should be the integers *k* for which "0 <= k < N" where
+*N* is the length of the sequence, or "slice" objects, which define a
+range of items.  It is also recommended that mappings provide the
+methods "keys()", "values()", "items()", "get()", "clear()",
+"setdefault()", "pop()", "popitem()", "copy()", and "update()"
+behaving similar to those for Python’s standard "dictionary" objects.
+The "collections.abc" module provides a "MutableMapping" *abstract
+base class* to help create those methods from a base set of
+"__getitem__()", "__setitem__()", "__delitem__()", and "keys()".
+
+Mutable sequences should provide methods "append()", "clear()",
+"count()", "extend()", "index()", "insert()", "pop()", "remove()", and
+"reverse()", like Python standard "list" objects. Finally, sequence
+types should implement addition (meaning concatenation) and
+multiplication (meaning repetition) by defining the methods
+"__add__()", "__radd__()", "__iadd__()", "__mul__()", "__rmul__()" and
+"__imul__()" described below; they should not define other numerical
+operators.
+
+It is recommended that both mappings and sequences implement the
+"__contains__()" method to allow efficient use of the "in" operator;
+for mappings, "in" should search the mapping’s keys; for sequences, it
+should search through the values.  It is further recommended that both
+mappings and sequences implement the "__iter__()" method to allow
+efficient iteration through the container; for mappings, "__iter__()"
+should iterate through the object’s keys; for sequences, it should
+iterate through the values.
+
+object.__len__(self)
+
+   Called to implement the built-in function "len()".  Should return
+   the length of the object, an integer ">=" 0.  Also, an object that
+   doesn’t define a "__bool__()" method and whose "__len__()" method
+   returns zero is considered to be false in a Boolean context.
+
+   **CPython implementation detail:** In CPython, the length is
+   required to be at most "sys.maxsize". If the length is larger than
+   "sys.maxsize" some features (such as "len()") may raise
+   "OverflowError".  To prevent raising "OverflowError" by truth value
+   testing, an object must define a "__bool__()" method.
+
+object.__length_hint__(self)
+
+   Called to implement "operator.length_hint()". Should return an
+   estimated length for the object (which may be greater or less than
+   the actual length). The length must be an integer ">=" 0. The
+   return value may also be "NotImplemented", which is treated the
+   same as if the "__length_hint__" method didn’t exist at all. This
+   method is purely an optimization and is never required for
+   correctness.
+
+   Added in version 3.4.
+
+object.__getitem__(self, subscript)
+
+   Called to implement *subscription*, that is, "self[subscript]". See
+   Subscriptions and slicings for details on the syntax.
+
+   There are two types of built-in objects that support subscription
+   via "__getitem__()":
+
+   * **sequences**, where *subscript* (also called *index*) should be
+     an integer or a "slice" object. See the sequence documentation
+     for the expected behavior, including handling "slice" objects and
+     negative indices.
+
+   * **mappings**, where *subscript* is also called the *key*. See
+     mapping documentation for the expected behavior.
+
+   If *subscript* is of an inappropriate type, "__getitem__()" should
+   raise "TypeError". If *subscript* has an inappropriate value,
+   "__getitem__()" should raise an "LookupError" or one of its
+   subclasses ("IndexError" for sequences; "KeyError" for mappings).
+
+   Note:
+
+     Slicing is handled by "__getitem__()", "__setitem__()", and
+     "__delitem__()". A call like
+
+        a[1:2] = b
+
+     is translated to
+
+        a[slice(1, 2, None)] = b
+
+     and so forth. Missing slice items are always filled in with
+     "None".
+
+   Note:
+
+     The sequence iteration protocol (used, for example, in "for"
+     loops), expects that an "IndexError" will be raised for illegal
+     indexes to allow proper detection of the end of a sequence.
+
+   Note:
+
+     When subscripting a *class*, the special class method
+     "__class_getitem__()" may be called instead of "__getitem__()".
+     See __class_getitem__ versus __getitem__ for more details.
+
+object.__setitem__(self, key, value)
+
+   Called to implement assignment to "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support changes to the values for keys, or if new keys
+   can be added, or for sequences if elements can be replaced.  The
+   same exceptions should be raised for improper *key* values as for
+   the "__getitem__()" method.
+
+object.__delitem__(self, key)
+
+   Called to implement deletion of "self[key]".  Same note as for
+   "__getitem__()".  This should only be implemented for mappings if
+   the objects support removal of keys, or for sequences if elements
+   can be removed from the sequence.  The same exceptions should be
+   raised for improper *key* values as for the "__getitem__()" method.
+
+object.__missing__(self, key)
+
+   Called by "dict"."__getitem__()" to implement "self[key]" for dict
+   subclasses when key is not in the dictionary.
+
+object.__iter__(self)
+
+   This method is called when an *iterator* is required for a
+   container. This method should return a new iterator object that can
+   iterate over all the objects in the container.  For mappings, it
+   should iterate over the keys of the container.
+
+object.__reversed__(self)
+
+   Called (if present) by the "reversed()" built-in to implement
+   reverse iteration.  It should return a new iterator object that
+   iterates over all the objects in the container in reverse order.
+
+   If the "__reversed__()" method is not provided, the "reversed()"
+   built-in will fall back to using the sequence protocol ("__len__()"
+   and "__getitem__()").  Objects that support the sequence protocol
+   should only provide "__reversed__()" if they can provide an
+   implementation that is more efficient than the one provided by
+   "reversed()".
+
+The membership test operators ("in" and "not in") are normally
+implemented as an iteration through a container. However, container
+objects can supply the following special method with a more efficient
+implementation, which also does not require the object be iterable.
+
+object.__contains__(self, item)
+
+   Called to implement membership test operators.  Should return true
+   if *item* is in *self*, false otherwise.  For mapping objects, this
+   should consider the keys of the mapping rather than the values or
+   the key-item pairs.
+
+   For objects that don’t define "__contains__()", the membership test
+   first tries iteration via "__iter__()", then the old sequence
+   iteration protocol via "__getitem__()", see this section in the
+   language reference.
+
+
+Emulating numeric types
+=======================
+
+The following methods can be defined to emulate numeric objects.
+Methods corresponding to operations that are not supported by the
+particular kind of number implemented (e.g., bitwise operations for
+non-integral numbers) should be left undefined.
+
+object.__add__(self, other)
+object.__sub__(self, other)
+object.__mul__(self, other)
+object.__matmul__(self, other)
+object.__truediv__(self, other)
+object.__floordiv__(self, other)
+object.__mod__(self, other)
+object.__divmod__(self, other)
+object.__pow__(self, other[, modulo])
+object.__lshift__(self, other)
+object.__rshift__(self, other)
+object.__and__(self, other)
+object.__xor__(self, other)
+object.__or__(self, other)
+
+   These methods are called to implement the binary arithmetic
+   operations ("+", "-", "*", "@", "/", "//", "%", "divmod()",
+   "pow()", "**", "<<", ">>", "&", "^", "|").  For instance, to
+   evaluate the expression "x + y", where *x* is an instance of a
+   class that has an "__add__()" method, "type(x).__add__(x, y)" is
+   called.  The "__divmod__()" method should be the equivalent to
+   using "__floordiv__()" and "__mod__()"; it should not be related to
+   "__truediv__()".  Note that "__pow__()" should be defined to accept
+   an optional third argument if the three-argument version of the
+   built-in "pow()" function is to be supported.
+
+   If one of those methods does not support the operation with the
+   supplied arguments, it should return "NotImplemented".
+
+object.__radd__(self, other)
+object.__rsub__(self, other)
+object.__rmul__(self, other)
+object.__rmatmul__(self, other)
+object.__rtruediv__(self, other)
+object.__rfloordiv__(self, other)
+object.__rmod__(self, other)
+object.__rdivmod__(self, other)
+object.__rpow__(self, other[, modulo])
+object.__rlshift__(self, other)
+object.__rrshift__(self, other)
+object.__rand__(self, other)
+object.__rxor__(self, other)
+object.__ror__(self, other)
+
+   These methods are called to implement the binary arithmetic
+   operations ("+", "-", "*", "@", "/", "//", "%", "divmod()",
+   "pow()", "**", "<<", ">>", "&", "^", "|") with reflected (swapped)
+   operands.  These functions are only called if the operands are of
+   different types, when the left operand does not support the
+   corresponding operation [3], or the right operand’s class is
+   derived from the left operand’s class. [4] For instance, to
+   evaluate the expression "x - y", where *y* is an instance of a
+   class that has an "__rsub__()" method, "type(y).__rsub__(y, x)" is
+   called if "type(x).__sub__(x, y)" returns "NotImplemented" or
+   "type(y)" is a subclass of "type(x)". [5]
+
+   Note that "__rpow__()" should be defined to accept an optional
+   third argument if the three-argument version of the built-in
+   "pow()" function is to be supported.
+
+   Changed in version 3.14: Three-argument "pow()" now try calling
+   "__rpow__()" if necessary. Previously it was only called in two-
+   argument "pow()" and the binary power operator.
+
+   Note:
+
+     If the right operand’s type is a subclass of the left operand’s
+     type and that subclass provides a different implementation of the
+     reflected method for the operation, this method will be called
+     before the left operand’s non-reflected method. This behavior
+     allows subclasses to override their ancestors’ operations.
+
+object.__iadd__(self, other)
+object.__isub__(self, other)
+object.__imul__(self, other)
+object.__imatmul__(self, other)
+object.__itruediv__(self, other)
+object.__ifloordiv__(self, other)
+object.__imod__(self, other)
+object.__ipow__(self, other[, modulo])
+object.__ilshift__(self, other)
+object.__irshift__(self, other)
+object.__iand__(self, other)
+object.__ixor__(self, other)
+object.__ior__(self, other)
+
+   These methods are called to implement the augmented arithmetic
+   assignments ("+=", "-=", "*=", "@=", "/=", "//=", "%=", "**=",
+   "<<=", ">>=", "&=", "^=", "|=").  These methods should attempt to
+   do the operation in-place (modifying *self*) and return the result
+   (which could be, but does not have to be, *self*).  If a specific
+   method is not defined, or if that method returns "NotImplemented",
+   the augmented assignment falls back to the normal methods.  For
+   instance, if *x* is an instance of a class with an "__iadd__()"
+   method, "x += y" is equivalent to "x = x.__iadd__(y)" . If
+   "__iadd__()" does not exist, or if "x.__iadd__(y)" returns
+   "NotImplemented", "x.__add__(y)" and "y.__radd__(x)" are
+   considered, as with the evaluation of "x + y". In certain
+   situations, augmented assignment can result in unexpected errors
+   (see Why does a_tuple[i] += [‘item’] raise an exception when the
+   addition works?), but this behavior is in fact part of the data
+   model.
+
+object.__neg__(self)
+object.__pos__(self)
+object.__abs__(self)
+object.__invert__(self)
+
+   Called to implement the unary arithmetic operations ("-", "+",
+   "abs()" and "~").
+
+object.__complex__(self)
+object.__int__(self)
+object.__float__(self)
+
+   Called to implement the built-in functions "complex()", "int()" and
+   "float()".  Should return a value of the appropriate type.
+
+object.__index__(self)
+
+   Called to implement "operator.index()", and whenever Python needs
+   to losslessly convert the numeric object to an integer object (such
+   as in slicing, or in the built-in "bin()", "hex()" and "oct()"
+   functions). Presence of this method indicates that the numeric
+   object is an integer type.  Must return an integer.
+
+   If "__int__()", "__float__()" and "__complex__()" are not defined
+   then corresponding built-in functions "int()", "float()" and
+   "complex()" fall back to "__index__()".
+
+object.__round__(self[, ndigits])
+object.__trunc__(self)
+object.__floor__(self)
+object.__ceil__(self)
+
+   Called to implement the built-in function "round()" and "math"
+   functions "trunc()", "floor()" and "ceil()". Unless *ndigits* is
+   passed to "__round__()" all these methods should return the value
+   of the object truncated to an "Integral" (typically an "int").
+
+   Changed in version 3.14: "int()" no longer delegates to the
+   "__trunc__()" method.
+
+
+With Statement Context Managers
+===============================
+
+A *context manager* is an object that defines the runtime context to
+be established when executing a "with" statement. The context manager
+handles the entry into, and the exit from, the desired runtime context
+for the execution of the block of code.  Context managers are normally
+invoked using the "with" statement (described in section The with
+statement), but can also be used by directly invoking their methods.
+
+Typical uses of context managers include saving and restoring various
+kinds of global state, locking and unlocking resources, closing opened
+files, etc.
+
+For more information on context managers, see Context Manager Types.
+The "object" class itself does not provide the context manager
+methods.
+
+object.__enter__(self)
+
+   Enter the runtime context related to this object. The "with"
+   statement will bind this method’s return value to the target(s)
+   specified in the "as" clause of the statement, if any.
+
+object.__exit__(self, exc_type, exc_value, traceback)
+
+   Exit the runtime context related to this object. The parameters
+   describe the exception that caused the context to be exited. If the
+   context was exited without an exception, all three arguments will
+   be "None".
+
+   If an exception is supplied, and the method wishes to suppress the
+   exception (i.e., prevent it from being propagated), it should
+   return a true value. Otherwise, the exception will be processed
+   normally upon exit from this method.
+
+   Note that "__exit__()" methods should not reraise the passed-in
+   exception; this is the caller’s responsibility.
+
+See also:
+
+  **PEP 343** - The “with” statement
+     The specification, background, and examples for the Python "with"
+     statement.
+
+
+Customizing positional arguments in class pattern matching
+==========================================================
+
+When using a class name in a pattern, positional arguments in the
+pattern are not allowed by default, i.e. "case MyClass(x, y)" is
+typically invalid without special support in "MyClass". To be able to
+use that kind of pattern, the class needs to define a *__match_args__*
+attribute.
+
+object.__match_args__
+
+   This class variable can be assigned a tuple of strings. When this
+   class is used in a class pattern with positional arguments, each
+   positional argument will be converted into a keyword argument,
+   using the corresponding value in *__match_args__* as the keyword.
+   The absence of this attribute is equivalent to setting it to "()".
+
+For example, if "MyClass.__match_args__" is "("left", "center",
+"right")" that means that "case MyClass(x, y)" is equivalent to "case
+MyClass(left=x, center=y)". Note that the number of arguments in the
+pattern must be smaller than or equal to the number of elements in
+*__match_args__*; if it is larger, the pattern match attempt will
+raise a "TypeError".
+
+Added in version 3.10.
+
+See also:
+
+  **PEP 634** - Structural Pattern Matching
+     The specification for the Python "match" statement.
+
+
+Emulating buffer types
+======================
+
+The buffer protocol provides a way for Python objects to expose
+efficient access to a low-level memory array. This protocol is
+implemented by builtin types such as "bytes" and "memoryview", and
+third-party libraries may define additional buffer types.
+
+While buffer types are usually implemented in C, it is also possible
+to implement the protocol in Python.
+
+object.__buffer__(self, flags)
+
+   Called when a buffer is requested from *self* (for example, by the
+   "memoryview" constructor). The *flags* argument is an integer
+   representing the kind of buffer requested, affecting for example
+   whether the returned buffer is read-only or writable.
+   "inspect.BufferFlags" provides a convenient way to interpret the
+   flags. The method must return a "memoryview" object.
+
+   **Thread safety:** In *free-threaded* Python, implementations must
+   manage any internal export counter using atomic operations. The
+   method must be safe to call concurrently from multiple threads, and
+   the returned buffer’s underlying data must remain valid until the
+   corresponding "__release_buffer__()" call completes. See Thread
+   safety for memoryview objects for details.
+
+object.__release_buffer__(self, buffer)
+
+   Called when a buffer is no longer needed. The *buffer* argument is
+   a "memoryview" object that was previously returned by
+   "__buffer__()". The method must release any resources associated
+   with the buffer. This method should return "None".
+
+   **Thread safety:** In *free-threaded* Python, any export counter
+   decrement must use atomic operations. Resource cleanup must be
+   thread-safe, as the final release may race with concurrent releases
+   from other threads.
+
+   Buffer objects that do not need to perform any cleanup are not
+   required to implement this method.
+
+Added in version 3.12.
+
+See also:
+
+  **PEP 688** - Making the buffer protocol accessible in Python
+     Introduces the Python "__buffer__" and "__release_buffer__"
+     methods.
+
+  "collections.abc.Buffer"
+     ABC for buffer types.
+
+
+Annotations
+===========
+
+Functions, classes, and modules may contain *annotations*, which are a
+way to associate information (usually *type hints*) with a symbol.
+
+object.__annotations__
+
+   This attribute contains the annotations for an object. It is lazily
+   evaluated, so accessing the attribute may execute arbitrary code
+   and raise exceptions. If evaluation is successful, the attribute is
+   set to a dictionary mapping from variable names to annotations.
+
+   Changed in version 3.14: Annotations are now lazily evaluated.
+
+object.__annotate__(format)
+
+   An *annotate function*. Returns a new dictionary object mapping
+   attribute/parameter names to their annotation values.
+
+   Takes a format parameter specifying the format in which annotations
+   values should be provided. It must be a member of the
+   "annotationlib.Format" enum, or an integer with a value
+   corresponding to a member of the enum.
+
+   If an annotate function doesn’t support the requested format, it
+   must raise "NotImplementedError". Annotate functions must always
+   support "VALUE" format; they must not raise "NotImplementedError()"
+   when called with this format.
+
+   When called with  "VALUE" format, an annotate function may raise
+   "NameError"; it must not raise "NameError" when called requesting
+   any other format.
+
+   If an object does not have any annotations, "__annotate__" should
+   preferably be set to "None" (it can’t be deleted), rather than set
+   to a function that returns an empty dict.
+
+   Added in version 3.14.
+
+See also:
+
+  **PEP 649** — Deferred evaluation of annotation using descriptors
+     Introduces lazy evaluation of annotations and the "__annotate__"
+     function.
+
+
+Special method lookup
+=====================
+
+For custom classes, implicit invocations of special methods are only
+guaranteed to work correctly if defined on an object’s type, not in
+the object’s instance dictionary.  That behaviour is the reason why
+the following code raises an exception:
+
+   >>> class C:
+   ...     pass
+   ...
+   >>> c = C()
+   >>> c.__len__ = lambda: 5
+   >>> len(c)
+   Traceback (most recent call last):
+     File "<stdin>", line 1, in <module>
+   TypeError: object of type 'C' has no len()
+
+The rationale behind this behaviour lies with a number of special
+methods such as "__hash__()" and "__repr__()" that are implemented by
+all objects, including type objects. If the implicit lookup of these
+methods used the conventional lookup process, they would fail when
+invoked on the type object itself:
+
+   >>> 1 .__hash__() == hash(1)
+   True
+   >>> int.__hash__() == hash(int)
+   Traceback (most recent call last):
+     File "<stdin>", line 1, in <module>
+   TypeError: descriptor '__hash__' of 'int' object needs an argument
+
+Incorrectly attempting to invoke an unbound method of a class in this
+way is sometimes referred to as ‘metaclass confusion’, and is avoided
+by bypassing the instance when looking up special methods:
+
+   >>> type(1).__hash__(1) == hash(1)
+   True
+   >>> type(int).__hash__(int) == hash(int)
+   True
+
+In addition to bypassing any instance attributes in the interest of
+correctness, implicit special method lookup generally also bypasses
+the "__getattribute__()" method even of the object’s metaclass:
+
+   >>> class Meta(type):
+   ...     def __getattribute__(*args):
+   ...         print("Metaclass getattribute invoked")
+   ...         return type.__getattribute__(*args)
+   ...
+   >>> class C(object, metaclass=Meta):
+   ...     def __len__(self):
+   ...         return 10
+   ...     def __getattribute__(*args):
+   ...         print("Class getattribute invoked")
+   ...         return object.__getattribute__(*args)
+   ...
+   >>> c = C()
+   >>> c.__len__()                 # Explicit lookup via instance
+   Class getattribute invoked
+   10
+   >>> type(c).__len__(c)          # Explicit lookup via type
+   Metaclass getattribute invoked
+   10
+   >>> len(c)                      # Implicit lookup
+   10
+
+Bypassing the "__getattribute__()" machinery in this fashion provides
+significant scope for speed optimisations within the interpreter, at
+the cost of some flexibility in the handling of special methods (the
+special method *must* be set on the class object itself in order to be
+consistently invoked by the interpreter).
+
+
+String Methods
+**************
+
+Strings implement all of the common sequence operations, along with
+the additional methods described below.
+
+Strings also support two styles of string formatting, one providing a
+large degree of flexibility and customization (see "str.format()",
+Format string syntax and Custom string formatting) and the other based
+on C "printf" style formatting that handles a narrower range of types
+and is slightly harder to use correctly, but is often faster for the
+cases it can handle (printf-style String Formatting).
+
+The Text Processing Services section of the standard library covers a
+number of other modules that provide various text related utilities
+(including regular expression support in the "re" module).
+
+str.capitalize()
+
+   Return a copy of the string with its first character capitalized
+   and the rest lowercased.
+
+   Changed in version 3.8: The first character is now put into
+   titlecase rather than uppercase. This means that characters like
+   digraphs will only have their first letter capitalized, instead of
+   the full character.
+
+str.casefold()
+
+   Return a casefolded copy of the string. Casefolded strings may be
+   used for caseless matching.
+
+   Casefolding is similar to lowercasing but more aggressive because
+   it is intended to remove all case distinctions in a string. For
+   example, the German lowercase letter "'ß'" is equivalent to ""ss"".
+   Since it is already lowercase, "lower()" would do nothing to "'ß'";
+   "casefold()" converts it to ""ss"". For example:
+
+      >>> 'straße'.lower()
+      'straße'
+      >>> 'straße'.casefold()
+      'strasse'
+
+   The casefolding algorithm is described in section 3.13 ‘Default
+   Case Folding’ of the Unicode Standard.
+
+   Added in version 3.3.
+
+str.center(width, fillchar=' ', /)
+
+   Return centered in a string of length *width*. Padding is done
+   using the specified *fillchar* (default is an ASCII space). The
+   original string is returned if *width* is less than or equal to
+   "len(s)".  For example:
+
+      >>> 'Python'.center(10)
+      '  Python  '
+      >>> 'Python'.center(10, '-')
+      '--Python--'
+      >>> 'Python'.center(4)
+      'Python'
+
+str.count(sub[, start[, end]])
+
+   Return the number of non-overlapping occurrences of substring *sub*
+   in the range [*start*, *end*].  Optional arguments *start* and
+   *end* are interpreted as in slice notation.
+
+   If *sub* is empty, returns the number of empty strings between
+   characters which is the length of the string plus one. For example:
+
+      >>> 'spam, spam, spam'.count('spam')
+      3
+      >>> 'spam, spam, spam'.count('spam', 5)
+      2
+      >>> 'spam, spam, spam'.count('spam', 5, 10)
+      1
+      >>> 'spam, spam, spam'.count('eggs')
+      0
+      >>> 'spam, spam, spam'.count('')
+      17
+
+str.encode(encoding='utf-8', errors='strict')
+
+   Return the string encoded to "bytes".
+
+   *encoding* defaults to "'utf-8'"; see Standard Encodings for
+   possible values.
+
+   *errors* controls how encoding errors are handled. If "'strict'"
+   (the default), a "UnicodeError" exception is raised. Other possible
+   values are "'ignore'", "'replace'", "'xmlcharrefreplace'",
+   "'backslashreplace'" and any other name registered via
+   "codecs.register_error()". See Error Handlers for details.
+
+   For performance reasons, the value of *errors* is not checked for
+   validity unless an encoding error actually occurs, Python
+   Development Mode is enabled or a debug build is used. For example:
+
+      >>> encoded_str_to_bytes = 'Python'.encode()
+      >>> type(encoded_str_to_bytes)
+      <class 'bytes'>
+      >>> encoded_str_to_bytes
+      b'Python'
+
+   Changed in version 3.1: Added support for keyword arguments.
+
+   Changed in version 3.9: The value of the *errors* argument is now
+   checked in Python Development Mode and in debug mode.
+
+str.endswith(suffix[, start[, end]])
+
+   Return "True" if the string ends with the specified *suffix*,
+   otherwise return "False".  *suffix* can also be a tuple of suffixes
+   to look for.  With optional *start*, test beginning at that
+   position.  With optional *end*, stop comparing at that position.
+   Using *start* and *end* is equivalent to
+   "str[start:end].endswith(suffix)". For example:
+
+      >>> 'Python'.endswith('on')
+      True
+      >>> 'a tuple of suffixes'.endswith(('at', 'in'))
+      False
+      >>> 'a tuple of suffixes'.endswith(('at', 'es'))
+      True
+      >>> 'Python is amazing'.endswith('is', 0, 9)
+      True
+
+   See also "startswith()" and "removesuffix()".
+
+str.expandtabs(tabsize=8)
+
+   Return a copy of the string where all tab characters are replaced
+   by one or more spaces, depending on the current column and the
+   given tab size.  Tab positions occur every *tabsize* characters
+   (default is 8, giving tab positions at columns 0, 8, 16 and so on).
+   To expand the string, the current column is set to zero and the
+   string is examined character by character.  If the character is a
+   tab ("\t"), one or more space characters are inserted in the result
+   until the current column is equal to the next tab position. (The
+   tab character itself is not copied.)  If the character is a newline
+   ("\n") or return ("\r"), it is copied and the current column is
+   reset to zero.  Any other character is copied unchanged and the
+   current column is incremented by one regardless of how the
+   character is represented when printed. For example:
+
+      >>> '01\t012\t0123\t01234'.expandtabs()
+      '01      012     0123    01234'
+      >>> '01\t012\t0123\t01234'.expandtabs(4)
+      '01  012 0123    01234'
+      >>> print('01\t012\n0123\t01234'.expandtabs(4))
+      01  012
+      0123    01234
+
+str.find(sub[, start[, end]])
+
+   Return the lowest index in the string where substring *sub* is
+   found within the slice "s[start:end]".  Optional arguments *start*
+   and *end* are interpreted as in slice notation.  Return "-1" if
+   *sub* is not found. For example:
+
+      >>> 'spam, spam, spam'.find('sp')
+      0
+      >>> 'spam, spam, spam'.find('sp', 5)
+      6
+
+   See also "rfind()" and "index()".
+
+   Note:
+
+     The "find()" method should be used only if you need to know the
+     position of *sub*.  To check if *sub* is a substring or not, use
+     the "in" operator:
+
+        >>> 'Py' in 'Python'
+        True
+
+str.format(*args, **kwargs)
+
+   Perform a string formatting operation.  The string on which this
+   method is called can contain literal text or replacement fields
+   delimited by braces "{}".  Each replacement field contains either
+   the numeric index of a positional argument, or the name of a
+   keyword argument.  Returns a copy of the string where each
+   replacement field is replaced with the string value of the
+   corresponding argument. For example:
+
+      >>> "The sum of 1 + 2 is {0}".format(1+2)
+      'The sum of 1 + 2 is 3'
+      >>> "The sum of {a} + {b} is {answer}".format(answer=1+2, a=1, b=2)
+      'The sum of 1 + 2 is 3'
+      >>> "{1} expects the {0} Inquisition!".format("Spanish", "Nobody")
+      'Nobody expects the Spanish Inquisition!'
+
+   See Format string syntax for a description of the various
+   formatting options that can be specified in format strings.
+
+   Note:
+
+     When formatting a number ("int", "float", "complex",
+     "decimal.Decimal" and subclasses) with the "n" type (ex:
+     "'{:n}'.format(1234)"), the function temporarily sets the
+     "LC_CTYPE" locale to the "LC_NUMERIC" locale to decode
+     "decimal_point" and "thousands_sep" fields of "localeconv()" if
+     they are non-ASCII or longer than 1 byte, and the "LC_NUMERIC"
+     locale is different than the "LC_CTYPE" locale.  This temporary
+     change affects other threads.
+
+   Changed in version 3.7: When formatting a number with the "n" type,
+   the function sets temporarily the "LC_CTYPE" locale to the
+   "LC_NUMERIC" locale in some cases.
+
+str.format_map(mapping, /)
+
+   Similar to "str.format(**mapping)", except that "mapping" is used
+   directly and not copied to a "dict".  This is useful if for example
+   "mapping" is a dict subclass:
+
+   >>> class Default(dict):
+   ...     def __missing__(self, key):
+   ...         return key
+   ...
+   >>> '{name} was born in {country}'.format_map(Default(name='Guido'))
+   'Guido was born in country'
+
+   Added in version 3.2.
+
+str.index(sub[, start[, end]])
+
+   Like "find()", but raise "ValueError" when the substring is not
+   found. For example:
+
+      >>> 'spam, spam, spam'.index('spam')
+      0
+      >>> 'spam, spam, spam'.index('eggs')
+      Traceback (most recent call last):
+        File "<python-input-0>", line 1, in <module>
+          'spam, spam, spam'.index('eggs')
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+      ValueError: substring not found
+
+   See also "rindex()".
+
+str.isalnum()
+
+   Return "True" if all characters in the string are alphanumeric and
+   there is at least one character, "False" otherwise.  A character
+   "c" is alphanumeric if one of the following returns "True":
+   "c.isalpha()", "c.isdecimal()", "c.isdigit()", or "c.isnumeric()".
+   For example:
+
+      >>> 'abc123'.isalnum()
+      True
+      >>> 'abc123!@#'.isalnum()
+      False
+      >>> ''.isalnum()
+      False
+      >>> ' '.isalnum()
+      False
+
+str.isalpha()
+
+   Return "True" if all characters in the string are alphabetic and
+   there is at least one character, "False" otherwise.  Alphabetic
+   characters are those characters defined in the Unicode character
+   database as “Letter”, i.e., those with general category property
+   being one of “Lm”, “Lt”, “Lu”, “Ll”, or “Lo”.  Note that this is
+   different from the Alphabetic property defined in the section 4.10
+   ‘Letters, Alphabetic, and Ideographic’ of the Unicode Standard. For
+   example:
+
+      >>> 'Letters and spaces'.isalpha()
+      False
+      >>> 'LettersOnly'.isalpha()
+      True
+      >>> 'µ'.isalpha()  # non-ASCII characters can be considered alphabetical too
+      True
+
+   See Unicode Properties.
+
+str.isascii()
+
+   Return "True" if the string is empty or all characters in the
+   string are ASCII, "False" otherwise. ASCII characters have code
+   points in the range U+0000-U+007F. For example:
+
+      >>> 'ASCII characters'.isascii()
+      True
+      >>> 'µ'.isascii()
+      False
+
+   Added in version 3.7.
+
+str.isdecimal()
+
+   Return "True" if all characters in the string are decimal
+   characters and there is at least one character, "False" otherwise.
+   Decimal characters are those that can be used to form numbers in
+   base 10, such as U+0660, ARABIC-INDIC DIGIT ZERO.  Formally a
+   decimal character is a character in the Unicode General Category
+   “Nd”. For example:
+
+      >>> '0123456789'.isdecimal()
+      True
+      >>> '٠١٢٣٤٥٦٧٨٩'.isdecimal()  # Arabic-Indic digits zero to nine
+      True
+      >>> 'alphabetic'.isdecimal()
+      False
+
+str.isdigit()
+
+   Return "True" if all characters in the string are digits and there
+   is at least one character, "False" otherwise.  Digits include
+   decimal characters and digits that need special handling, such as
+   the compatibility superscript digits. This covers digits which
+   cannot be used to form numbers in base 10, like the Kharosthi
+   numbers.  Formally, a digit is a character that has the property
+   value Numeric_Type=Digit or Numeric_Type=Decimal.
+
+str.isidentifier()
+
+   Return "True" if the string is a valid identifier according to the
+   language definition, section Names (identifiers and keywords).
+
+   "keyword.iskeyword()" can be used to test whether string "s" is a
+   reserved identifier, such as "def" and "class".
+
+   Example:
+
+      >>> from keyword import iskeyword
+
+      >>> 'hello'.isidentifier(), iskeyword('hello')
+      (True, False)
+      >>> 'def'.isidentifier(), iskeyword('def')
+      (True, True)
+
+str.islower()
+
+   Return "True" if all cased characters [4] in the string are
+   lowercase and there is at least one cased character, "False"
+   otherwise.
+
+str.isnumeric()
+
+   Return "True" if all characters in the string are numeric
+   characters, and there is at least one character, "False" otherwise.
+   Numeric characters include digit characters, and all characters
+   that have the Unicode numeric value property, e.g. U+2155, VULGAR
+   FRACTION ONE FIFTH.  Formally, numeric characters are those with
+   the property value Numeric_Type=Digit, Numeric_Type=Decimal or
+   Numeric_Type=Numeric. For example:
+
+      >>> '0123456789'.isnumeric()
+      True
+      >>> '٠١٢٣٤٥٦٧٨٩'.isnumeric()  # Arabic-indic digit zero to nine
+      True
+      >>> '⅕'.isnumeric()  # Vulgar fraction one fifth
+      True
+      >>> '²'.isdecimal(), '²'.isdigit(),  '²'.isnumeric()
+      (False, True, True)
+
+   See also "isdecimal()" and "isdigit()". Numeric characters are a
+   superset of decimal numbers.
+
+str.isprintable()
+
+   Return "True" if all characters in the string are printable,
+   "False" if it contains at least one non-printable character.
+
+   Here “printable” means the character is suitable for "repr()" to
+   use in its output; “non-printable” means that "repr()" on built-in
+   types will hex-escape the character.  It has no bearing on the
+   handling of strings written to "sys.stdout" or "sys.stderr".
+
+   The printable characters are those which in the Unicode character
+   database (see "unicodedata") have a general category in group
+   Letter, Mark, Number, Punctuation, or Symbol (L, M, N, P, or S);
+   plus the ASCII space 0x20. Nonprintable characters are those in
+   group Separator or Other (Z or C), except the ASCII space.
+
+   For example:
+
+      >>> ''.isprintable(), ' '.isprintable()
+      (True, True)
+      >>> '\t'.isprintable(), '\n'.isprintable()
+      (False, False)
+
+   See also "isspace()".
+
+str.isspace()
+
+   Return "True" if there are only whitespace characters in the string
+   and there is at least one character, "False" otherwise.
+
+   For example:
+
+      >>> ''.isspace()
+      False
+      >>> ' '.isspace()
+      True
+      >>> '\t\n'.isspace() # TAB and BREAK LINE
+      True
+      >>> '\u3000'.isspace() # IDEOGRAPHIC SPACE
+      True
+
+   A character is *whitespace* if in the Unicode character database
+   (see "unicodedata"), either its general category is "Zs"
+   (“Separator, space”), or its bidirectional class is one of "WS",
+   "B", or "S".
+
+   See also "isprintable()".
+
+str.istitle()
+
+   Return "True" if the string is a titlecased string and there is at
+   least one character, for example uppercase characters may only
+   follow uncased characters and lowercase characters only cased ones.
+   Return "False" otherwise.
+
+   For example:
+
+      >>> 'Spam, Spam, Spam'.istitle()
+      True
+      >>> 'spam, spam, spam'.istitle()
+      False
+      >>> 'SPAM, SPAM, SPAM'.istitle()
+      False
+
+   See also "title()".
+
+str.isupper()
+
+   Return "True" if all cased characters [4] in the string are
+   uppercase and there is at least one cased character, "False"
+   otherwise.
+
+   >>> 'BANANA'.isupper()
+   True
+   >>> 'banana'.isupper()
+   False
+   >>> 'baNana'.isupper()
+   False
+   >>> ' '.isupper()
+   False
+
+str.join(iterable, /)
+
+   Return a string which is the concatenation of the strings in
+   *iterable*. A "TypeError" will be raised if there are any non-
+   string values in *iterable*, including "bytes" objects.  The
+   separator between elements is the string providing this method. For
+   example:
+
+      >>> ', '.join(['spam', 'spam', 'spam'])
+      'spam, spam, spam'
+      >>> '-'.join('Python')
+      'P-y-t-h-o-n'
+
+   See also "split()".
+
+str.ljust(width, fillchar=' ', /)
+
+   Return the string left justified in a string of length *width*.
+   Padding is done using the specified *fillchar* (default is an ASCII
+   space). The original string is returned if *width* is less than or
+   equal to "len(s)".
+
+   For example:
+
+      >>> 'Python'.ljust(10)
+      'Python    '
+      >>> 'Python'.ljust(10, '.')
+      'Python....'
+      >>> 'Monty Python'.ljust(10, '.')
+      'Monty Python'
+
+   See also "rjust()".
+
+str.lower()
+
+   Return a copy of the string with all the cased characters [4]
+   converted to lowercase. For example:
+
+      >>> 'Lower Method Example'.lower()
+      'lower method example'
+
+   The lowercasing algorithm used is described in section 3.13
+   ‘Default Case Folding’ of the Unicode Standard.
+
+str.lstrip(chars=None, /)
+
+   Return a copy of the string with leading characters removed.  The
+   *chars* argument is a string specifying the set of characters to be
+   removed.  If omitted or "None", the *chars* argument defaults to
+   removing whitespace.  The *chars* argument is not a prefix; rather,
+   all combinations of its values are stripped:
+
+      >>> '   spacious   '.lstrip()
+      'spacious   '
+      >>> 'www.example.com'.lstrip('cmowz.')
+      'example.com'
+
+   See "str.removeprefix()" for a method that will remove a single
+   prefix string rather than all of a set of characters.  For example:
+
+      >>> 'Arthur: three!'.lstrip('Arthur: ')
+      'ee!'
+      >>> 'Arthur: three!'.removeprefix('Arthur: ')
+      'three!'
+
+static str.maketrans(dict, /)
+static str.maketrans(from, to, remove='', /)
+
+   This static method returns a translation table usable for
+   "str.translate()".
+
+   If there is only one argument, it must be a dictionary mapping
+   Unicode ordinals (integers) or characters (strings of length 1) to
+   Unicode ordinals, strings (of arbitrary lengths) or "None".
+   Character keys will then be converted to ordinals.
+
+   If there are two arguments, they must be strings of equal length,

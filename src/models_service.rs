@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -108,7 +108,9 @@ const OPENCODE_CLI_TIMEOUT: Duration = Duration::from_secs(60);
 /// the owner measured it as stronger than what `gemini-pro-latest` currently
 /// resolves to (3.1 Pro). Image / TTS / live-audio / customtools variants are
 /// deliberately absent — they cannot answer a delegation.
-const GEMINI_DELEGATE_MODELS: [(&str, &str); 9] = [
+const GEMINI_DELEGATE_MODELS: [(&str, &str); 11] = [
+    ("gemini-4-argon", "Gemini 4 Argon"),
+    ("gemini-3.8-flash", "Gemini 3.8 Flash"),
     ("gemini-3.7-flash", "Gemini 3.7 Flash"),
     ("gemini-3.6-flash", "Gemini 3.6 Flash"),
     ("gemini-3.5-flash", "Gemini 3.5 Flash"),
@@ -303,9 +305,53 @@ fn is_delegate_compatible_gemini_model(id: &str, methods: &[String]) -> bool {
     !SPECIALIZED_MARKERS.iter().any(|marker| id.contains(marker))
 }
 
+/// `gemini-3.8-flash` -> ("flash", 3.8); `gemini-3.1-pro-preview` -> ("pro", 3.1).
+/// The family key is the alias it feeds: `gemini-flash-latest` = "flash",
+/// `gemini-pro-latest` = "pro", `gemini-flash-lite-latest` = "flash-lite".
+/// Anything with another suffix (customtools, tts, ...) is not a plain text
+/// model and is ignored, as is a name without a leading version number.
+fn gemini_family_version(id: &str) -> Option<(&'static str, f64)> {
+    let rest = id.strip_prefix("gemini-")?;
+    let (number, family) = rest.split_once('-')?;
+    let version: f64 = number.parse().ok()?;
+    let family = family.strip_suffix("-preview").unwrap_or(family);
+    let key = match family {
+        "flash" => "flash",
+        "pro" => "pro",
+        "flash-lite" => "flash-lite",
+        _ => return None,
+    };
+    Some((key, version))
+}
+
+/// The newest version of each family among `ids`, by number: what the
+/// `-latest` aliases resolve to today. The runtime ranks an alias by it, so
+/// "higher number = higher priority" also holds for aliases.
+pub fn gemini_alias_versions<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, f64> {
+    let mut newest: HashMap<String, f64> = HashMap::new();
+    for (key, version) in ids.into_iter().filter_map(gemini_family_version) {
+        let slot = newest.entry(key.to_string()).or_insert(version);
+        if version > *slot {
+            *slot = version;
+        }
+    }
+    newest
+}
+
 pub async fn fetch_gemini_models(api_key: &str) -> Result<Vec<ModelInfo>, String> {
+    fetch_gemini_catalog(api_key)
+        .await
+        .map(|(models, _)| models)
+}
+
+/// The enableable models plus the alias -> version table. The table is read off
+/// the API's own list (not the curated one above), so a new release moves it
+/// without an app update.
+pub async fn fetch_gemini_catalog(
+    api_key: &str,
+) -> Result<(Vec<ModelInfo>, HashMap<String, f64>), String> {
     if api_key.trim().is_empty() {
-        return Ok(builtin_gemini_models());
+        return Ok((builtin_gemini_models(), HashMap::new()));
     }
 
     let client = reqwest::Client::builder()
@@ -315,6 +361,7 @@ pub async fn fetch_gemini_models(api_key: &str) -> Result<Vec<ModelInfo>, String
     let mut result = builtin_gemini_models();
     let mut seen: HashSet<String> = result.iter().map(|model| model.id.clone()).collect();
     let mut page_token: Option<String> = None;
+    let mut api_ids: Vec<String> = Vec::new();
 
     loop {
         let mut request = client
@@ -331,18 +378,18 @@ pub async fn fetch_gemini_models(api_key: &str) -> Result<Vec<ModelInfo>, String
             .map_err(|_| "Gemini catalog unavailable".to_string());
         let resp = match resp {
             Ok(resp) => resp,
-            Err(_) => return Ok(builtin_gemini_models()),
+            Err(_) => return Ok((builtin_gemini_models(), HashMap::new())),
         };
         if !resp.status().is_success() {
             // The API can be region-restricted even when Gemini CLI OAuth is
             // usable. Keep the control panel configurable with the official
             // delegate-compatible fallback catalog.
-            return Ok(builtin_gemini_models());
+            return Ok((builtin_gemini_models(), HashMap::new()));
         }
 
         let body: GeminiModelsResponse = match resp.json().await {
             Ok(body) => body,
-            Err(_) => return Ok(builtin_gemini_models()),
+            Err(_) => return Ok((builtin_gemini_models(), HashMap::new())),
         };
 
         for m in body.models.unwrap_or_default() {
@@ -351,6 +398,12 @@ pub async fn fetch_gemini_models(api_key: &str) -> Result<Vec<ModelInfo>, String
                 .strip_prefix("models/")
                 .unwrap_or(&m.name)
                 .to_string();
+            if m.supported_generation_methods
+                .iter()
+                .any(|method| method.eq_ignore_ascii_case("generateContent"))
+            {
+                api_ids.push(clean_id.to_ascii_lowercase());
+            }
             if !seen.insert(clean_id.clone())
                 || !is_delegate_compatible_gemini_model(&clean_id, &m.supported_generation_methods)
             {
@@ -373,7 +426,8 @@ pub async fn fetch_gemini_models(api_key: &str) -> Result<Vec<ModelInfo>, String
 
     result.sort_by(|a, b| a.id.cmp(&b.id));
 
-    Ok(result)
+    let versions = gemini_alias_versions(api_ids.iter().map(String::as_str));
+    Ok((result, versions))
 }
 
 pub async fn fetch_opencode_models(api_key: &str) -> Result<OpenCodeCatalog, String> {
@@ -588,6 +642,43 @@ pub async fn probe_provider_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alias_versions_follow_the_highest_number_per_family() {
+        let ids = [
+            "gemini-2.5-pro",
+            "gemini-3.1-pro-preview",
+            "gemini-3.1-pro-preview-customtools",
+            "gemini-3.5-flash",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash",
+            "gemini-3.8-flash-tts",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-4-argon",
+            "gemini-flash-latest",
+            "gemini-nano-banana-2.1",
+        ];
+        let versions = gemini_alias_versions(ids);
+        assert_eq!(versions.get("flash"), Some(&3.8));
+        assert_eq!(versions.get("pro"), Some(&3.1));
+        assert_eq!(versions.get("flash-lite"), Some(&3.5));
+        // argon is its own model, never an alias, and tts/customtools do not count.
+        assert_eq!(versions.len(), 3);
+    }
+
+    #[test]
+    fn newest_models_can_be_enabled() {
+        let methods = vec!["generateContent".to_string()];
+        assert!(is_delegate_compatible_gemini_model(
+            "gemini-4-argon",
+            &methods
+        ));
+        assert!(is_delegate_compatible_gemini_model(
+            "gemini-3.8-flash",
+            &methods
+        ));
+    }
 
     #[test]
     fn builtin_opencode_models_match_current_free_aliases() {

@@ -1,10 +1,7 @@
 use crate::config::{self, is_supported_proxy_url, unix_now, AppConfig};
 use crate::dependency_service::DependencyStatus;
 use crate::gui::background;
-use crate::gui::benchmark::{
-    cancel_run, export_last, fetch_last, fetch_status, format_points, level_label, pulse_alpha,
-    BenchmarkReport, RunStatus, PULSE_PERIOD_SEC,
-};
+use crate::gui::benchmark::{pulse_alpha, BenchmarkView, PULSE_PERIOD_SEC};
 use crate::gui::opencode_setup::{
     install_dependencies, install_plan, load_zen_strengths, open_url, order_opencode_models,
     upgrade_opencode_cli, CliJob, CliJobResult, InstallStep, NODEJS_DOWNLOAD_URL,
@@ -16,7 +13,7 @@ use crate::gui::updater::{progress_label, run_update, update_button_label};
 use crate::gui::usage::{fetch_usage, format_count, UsageReport};
 use crate::ide_detector::IdeDetector;
 use crate::models_service::{
-    fetch_gemini_models, fetch_opencode_models, ModelInfo, OpenCodeCatalog,
+    fetch_gemini_catalog, fetch_opencode_models, ModelInfo, OpenCodeCatalog,
 };
 use crate::provider_verdicts::VerdictStore;
 use crate::runtime_service::RuntimeService;
@@ -56,7 +53,7 @@ pub struct ProviderRefreshOutcome {
 pub enum AppMessage {
     /// New status line from the core supervisor thread.
     CoreStatus(String),
-    GeminiModelsFetched(Result<Vec<ModelInfo>, String>),
+    GeminiModelsFetched(Result<(Vec<ModelInfo>, HashMap<String, f64>), String>),
     OpenCodeModelsFetched(Result<OpenCodeCatalog, String>),
     UsageFetched(Result<UsageReport, String>),
     ProxyTested(ProxyTestResult),
@@ -68,14 +65,6 @@ pub enum AppMessage {
     UpdateChecked(UpdateStatus),
     /// One daily provider catalog + probe round finished (§12a).
     ProviderCatalogRefreshed(Vec<ProviderRefreshOutcome>),
-    /// Last stored benchmark report (or the reason it could not be read).
-    BenchmarkFetched(Result<Option<BenchmarkReport>, String>),
-    /// Report written to the Desktop: the paths, or why it failed.
-    BenchmarkExported(Result<Vec<String>, String>),
-    /// Live state of a run in flight (None = nothing is running).
-    BenchmarkStatus(Option<RunStatus>),
-    /// A stalled run was dropped by the core (or the drop failed).
-    BenchmarkCancelled(Result<(), String>),
     /// Whole percent of the installer download.
     UpdateProgress(u8),
     /// The updater script is running (Ok) or nothing was started (Err).
@@ -204,18 +193,10 @@ pub struct DelegatorApp {
     // «Прокси» tab: per-proxy connectivity test state, keyed by proxy id.
     proxy_tests: HashMap<String, ProxyTestState>,
 
-    // «Бенчмарк» tab: the last stored report plus the export status line.
-    benchmark_report: Option<BenchmarkReport>,
-    benchmark_error: Option<String>,
-    benchmark_loading: bool,
+    // «Бенчмарк» tab: newest grade per mode + the active-run flag.
+    benchmark_view: BenchmarkView,
+    benchmark_read_at: Option<Instant>,
     benchmark_tab_was_active: bool,
-    benchmark_export: Option<Result<Vec<String>, String>>,
-    benchmark_exporting: bool,
-    /// Progress of a run in flight, polled while the tab is open.
-    benchmark_status: Option<RunStatus>,
-    benchmark_status_polled_at: Option<Instant>,
-    /// True while the previous poll saw a run, so its end can trigger a reload.
-    benchmark_was_running: bool,
 
     // Provider limits, read from <RT>\cooldowns.json. A free tier running out
     // used to be invisible here — the owner found out because a benchmark run
@@ -335,15 +316,9 @@ impl DelegatorApp {
             stats_tab_was_active: false,
             window_width_fitted: false,
             proxy_tests: HashMap::new(),
-            benchmark_report: None,
-            benchmark_error: None,
-            benchmark_loading: false,
+            benchmark_view: BenchmarkView::default(),
+            benchmark_read_at: None,
             benchmark_tab_was_active: false,
-            benchmark_export: None,
-            benchmark_exporting: false,
-            benchmark_status: None,
-            benchmark_status_polled_at: None,
-            benchmark_was_running: false,
             gemini_limit: None,
             opencode_limit: None,
             limits_read_at: None,
@@ -419,7 +394,7 @@ impl DelegatorApp {
 
         let tx1 = self.tx.clone();
         tokio::spawn(async move {
-            let res = fetch_gemini_models(&google_key).await;
+            let res = fetch_gemini_catalog(&google_key).await;
             let _ = tx1.send(AppMessage::GeminiModelsFetched(res));
         });
 
@@ -583,70 +558,26 @@ impl DelegatorApp {
         self.start_opencode_upgrade();
     }
 
-    /// Reads the last benchmark result from the core. The benchmark itself is
-    /// run from the IDE chat («-benchmark»), because only the IDE can make the
-    /// user's own model answer the tasks.
-    fn refresh_benchmark(&mut self) {
-        if self.benchmark_loading {
-            return;
-        }
-        self.benchmark_loading = true;
-        self.benchmark_error = None;
-        let tx = self.tx.clone();
-        let ctx = self.egui_ctx.clone();
-        tokio::spawn(async move {
-            let result = fetch_last().await.map(|envelope| envelope.report);
-            let _ = tx.send(AppMessage::BenchmarkFetched(result));
-            ctx.request_repaint();
-        });
-    }
-
-    /// Polls the live state of a run. One local GET; fast while the «Бенчмарк»
-    /// tab is open (a frozen screen looks like a hang), slow from any other tab
-    /// — enough to keep the tab pulsing without turning idle into work.
-    ///
-    /// It is NOT gated on the tab being open any more: the run is driven from
-    /// the IDE chat, so the user is normally looking at something else, and a
-    /// highlight nobody polls for can never appear. The tray stays at 0 % CPU
-    /// regardless, because a hidden window never runs `update()` at all.
-    fn poll_benchmark_status(&mut self, foreground: bool) {
-        const POLL_ACTIVE: Duration = Duration::from_millis(1500);
-        const POLL_BACKGROUND: Duration = Duration::from_millis(4000);
-        let interval = if foreground {
-            POLL_ACTIVE
-        } else {
-            POLL_BACKGROUND
-        };
-        if self
-            .benchmark_status_polled_at
-            .is_some_and(|at| at.elapsed() < interval)
+    /// Re-reads the newest grade files and the active-run flag: a few small
+    /// local files, no network. The benchmark itself is run from the IDE chat
+    /// («-benchmark»). At most every 5 s (or at once on `force`); off the tab
+    /// only the flag is read, for the tab pulse.
+    fn refresh_benchmark(&mut self, force: bool) {
+        const REFRESH: Duration = Duration::from_secs(5);
+        if !force
+            && self
+                .benchmark_read_at
+                .is_some_and(|at| at.elapsed() < REFRESH)
         {
             return;
         }
-        self.benchmark_status_polled_at = Some(Instant::now());
-        let tx = self.tx.clone();
-        let ctx = self.egui_ctx.clone();
-        tokio::spawn(async move {
-            if let Ok(status) = fetch_status().await {
-                let _ = tx.send(AppMessage::BenchmarkStatus(status));
-                ctx.request_repaint();
-            }
-        });
-    }
-
-    fn start_benchmark_export(&mut self, formats: Vec<&'static str>) {
-        if self.benchmark_exporting {
-            return;
+        self.benchmark_read_at = Some(Instant::now());
+        let rt = crate::config::runtime_home_dir();
+        if force || self.active_tab == SelectedTab::Benchmark {
+            self.benchmark_view = crate::gui::benchmark::load(&rt);
+        } else {
+            self.benchmark_view.active = crate::gui::benchmark::load_active_flag(&rt);
         }
-        self.benchmark_exporting = true;
-        self.benchmark_export = None;
-        let tx = self.tx.clone();
-        let ctx = self.egui_ctx.clone();
-        tokio::spawn(async move {
-            let result = export_last(formats).await;
-            let _ = tx.send(AppMessage::BenchmarkExported(result));
-            ctx.request_repaint();
-        });
     }
 
     fn refresh_usage(&mut self) {
@@ -728,20 +659,6 @@ impl DelegatorApp {
         let (gemini, opencode) = read_limits(&crate::config::runtime_home_dir());
         self.gemini_limit = gemini;
         self.opencode_limit = opencode;
-    }
-
-    /// Forgets a run the IDE chat abandoned. Nothing is lost that was not lost
-    /// already: the answers live in the core's memory and no `finish` is coming.
-    fn cancel_benchmark(&mut self, run_id: String) {
-        let tx = self.tx.clone();
-        let ctx = self.egui_ctx.clone();
-        self.benchmark_status = None;
-        self.benchmark_was_running = false;
-        tokio::spawn(async move {
-            let result = cancel_run(run_id).await;
-            let _ = tx.send(AppMessage::BenchmarkCancelled(result));
-            ctx.request_repaint();
-        });
     }
 
     fn opencode_models_need_attention(&self) -> bool {
@@ -1258,6 +1175,97 @@ impl DelegatorApp {
     /// models. Before this the same three things lived in three top-level tabs
     /// («API-ключи», «Модели Gemini», «Модели OpenCode»), so adding a fourth
     /// provider meant adding two more tabs to a row that already had to wrap.
+    /// Second column of «Интеграция»: the web chats Delegator can hand a task to.
+    /// Gemini is the first; Qwen and the rest get their own block under it.
+    fn draw_web_column(&mut self, ui: &mut egui::Ui) {
+        const MODELS: [(&str, &str); 5] = [
+            ("best", "Самая новая (авто)"),
+            ("argon", "Argon"),
+            ("3.1-pro", "3.1 Pro"),
+            ("3.8-flash", "3.8 Flash"),
+            ("3.5-flash-lite", "3.5 Flash-Lite"),
+        ];
+        const LEVELS: [(&str, &str); 5] = [
+            ("best", "Максимальный (авто)"),
+            ("high", "Высокий"),
+            ("medium", "Средний"),
+            ("low", "Низкий"),
+            ("auto", "Как в Gemini"),
+        ];
+        fn label_of(options: &[(&str, &str)], id: &str) -> String {
+            options
+                .iter()
+                .find(|(key, _)| *key == id)
+                .map_or_else(|| id.to_string(), |(_, label)| (*label).to_string())
+        }
+
+        ui.strong("Web");
+        ui.add_space(5.0);
+        if ui
+            .checkbox(&mut self.config.gemini_web_enabled, "Gemini (через Chrome)")
+            .on_hover_text(
+                "Задачи из IDE уходят в вашу сессию Gemini в Chrome — к самой сильной модели, \
+                 одним запросом, без промежуточных ступеней. Если Chrome недоступен, работает \
+                 обычная цепочка моделей. Нужно расширение из папки extensions\\gemini-web-bridge \
+                 (один раз: chrome://extensions → Загрузить распакованное). Окно Gemini \
+                 расширение открывает и закрывает само.",
+            )
+            .changed()
+        {
+            self.config.save();
+        }
+        ui.add_enabled_ui(self.config.gemini_web_enabled, |ui| {
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label("Модель");
+                egui::ComboBox::from_id_salt("gemini_web_model")
+                    .selected_text(label_of(&MODELS, &self.config.gemini_web_model))
+                    .show_ui(ui, |ui| {
+                        for (id, label) in MODELS {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut self.config.gemini_web_model,
+                                    id.to_string(),
+                                    label,
+                                )
+                                .changed();
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label("Рассуждение");
+                egui::ComboBox::from_id_salt("gemini_web_reasoning")
+                    .selected_text(label_of(&LEVELS, &self.config.gemini_web_reasoning))
+                    .show_ui(ui, |ui| {
+                        for (id, label) in LEVELS {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut self.config.gemini_web_reasoning,
+                                    id.to_string(),
+                                    label,
+                                )
+                                .changed();
+                        }
+                    });
+            });
+            if changed {
+                self.config.save();
+            }
+        });
+        if ui
+            .checkbox(&mut self.config.puter_web_enabled, "Puter (через Chrome)")
+            .on_hover_text(
+                "Задачи из IDE уходят в вашу сессию Puter (builder.puter.com) в Chrome — к модели \
+                 Claude Opus 5.5, оплата с вашего баланса Puter. Нужен тот же расширенный мост \
+                 extensions\\gemini-web-bridge и вход в Puter в этом Chrome. Вкладку Puter \
+                 расширение открывает и закрывает само.",
+            )
+            .changed()
+        {
+            self.config.save();
+        }
+    }
+
     fn draw_api_tab(&mut self, ui: &mut egui::Ui) {
         let providers = self.api_provider_buttons();
         ui.horizontal_wrapped(|ui| {
@@ -1757,16 +1765,74 @@ impl DelegatorApp {
 
 /// One-word verdict chip: a filled, outlined label so the winning side of a row
 /// is visible at a glance without reading numbers.
-fn highlight_label(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    let fill = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 40);
-    egui::Frame::none()
-        .fill(fill)
-        .stroke(egui::Stroke::new(1.0, color))
-        .rounding(4.0)
-        .inner_margin(egui::Margin::symmetric(5.0, 1.0))
-        .show(ui, |ui| {
-            ui.colored_label(color, text);
-        });
+/// One compact block per mode; details live in the hover tooltips.
+fn benchmark_block(
+    ui: &mut egui::Ui,
+    title: &str,
+    grade: &crate::gui::benchmark::Grade,
+    weak: egui::Color32,
+) {
+    use crate::gui::benchmark::format_points;
+    let model = if grade.model.is_empty() {
+        "—"
+    } else {
+        grade.model.as_str()
+    };
+    ui.horizontal(|ui| {
+        ui.strong(title);
+        ui.label(model);
+        ui.colored_label(weak, grade.graded_at.get(..16).unwrap_or(&grade.graded_at));
+        ui.strong(format!("{} / 100", format_points(grade.total)))
+            .on_hover_text(format!(
+                "Прогон: {}\nВерсия набора: {}",
+                grade.run, grade.bench_version
+            ));
+    });
+    ui.horizontal(|ui| {
+        for (name, task) in [
+            ("routing", &grade.tasks.routing),
+            ("compress", &grade.tasks.compress),
+            ("sat", &grade.tasks.sat),
+        ] {
+            ui.label(format!(
+                "{name} {} / {}",
+                format_points(task.score),
+                format_points(task.max)
+            ))
+            .on_hover_text(task.note.as_str());
+        }
+        if let Some(minutes) = grade.minutes {
+            ui.colored_label(weak, format!("{} мин", format_points(minutes)));
+        }
+        if let Some(error) = grade.calibration_error {
+            ui.colored_label(weak, format!("калибровка {}", format_points(error)))
+                .on_hover_text(
+                    "Ошибка калибровки: насколько самооценка модели расходится с проверкой.",
+                );
+        }
+    });
+    if let Some(delegation) = &grade.delegation {
+        let top = delegation
+            .top_models(3)
+            .iter()
+            .map(|(name, count)| format!("{name} ×{count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        ui.colored_label(
+            weak,
+            format!(
+                "вызовов {}, успешных {}, через веб {}, модели: {}",
+                delegation.calls,
+                delegation.ok,
+                delegation.web_calls,
+                if top.is_empty() {
+                    "—".to_string()
+                } else {
+                    top
+                }
+            ),
+        );
+    }
 }
 
 /// Extra line for an IDE row whose scope is easy to misread.
@@ -2039,14 +2105,11 @@ impl eframe::App for DelegatorApp {
         self.stats_tab_was_active = stats_tab_active;
 
         let benchmark_tab_active = self.active_tab == SelectedTab::Benchmark;
-        if benchmark_tab_active && !self.benchmark_tab_was_active {
-            self.refresh_benchmark();
-        }
-        self.poll_benchmark_status(benchmark_tab_active);
+        self.refresh_benchmark(benchmark_tab_active && !self.benchmark_tab_was_active);
         self.refresh_limits();
-        // Between polls nothing would wake the loop, and the slow heartbeat
+        // Between reads nothing would wake the loop, and the slow heartbeat
         // would stall on whatever frame the user last caused.
-        if !benchmark_tab_active && self.benchmark_status.is_none() {
+        if !benchmark_tab_active && self.benchmark_view.active.is_none() {
             ctx.request_repaint_after(Duration::from_millis(4000));
         }
         self.benchmark_tab_was_active = benchmark_tab_active;
@@ -2058,7 +2121,16 @@ impl eframe::App for DelegatorApp {
                 AppMessage::GeminiModelsFetched(res) => {
                     self.is_loading_gemini = false;
                     match res {
-                        Ok(list) => self.gemini_models = list,
+                        Ok((list, versions)) => {
+                            self.gemini_models = list;
+                            // An empty table means "could not ask" (no key, offline):
+                            // keep the last known numbers rather than wipe them.
+                            if !versions.is_empty() && versions != self.config.gemini_alias_versions
+                            {
+                                self.config.gemini_alias_versions = versions;
+                                self.config.save();
+                            }
+                        }
                         Err(err) => self.status_message = format!("Gemini error: {}", err),
                     }
                 }
@@ -2132,36 +2204,6 @@ impl eframe::App for DelegatorApp {
                     } else {
                         self.proxy_tests.remove(&result.id);
                     }
-                }
-                AppMessage::BenchmarkFetched(result) => {
-                    self.benchmark_loading = false;
-                    match result {
-                        Ok(report) => {
-                            self.benchmark_report = report;
-                            self.benchmark_error = None;
-                        }
-                        Err(error) => self.benchmark_error = Some(error),
-                    }
-                }
-                AppMessage::BenchmarkExported(result) => {
-                    self.benchmark_exporting = false;
-                    self.benchmark_export = Some(result);
-                }
-                AppMessage::BenchmarkCancelled(result) => {
-                    if let Err(error) = result {
-                        self.benchmark_error = Some(error);
-                    }
-                    self.refresh_benchmark();
-                }
-                AppMessage::BenchmarkStatus(status) => {
-                    let running = status.is_some();
-                    // A run that just ended has written its report: pick it up
-                    // without making the user press «Обновить».
-                    if self.benchmark_was_running && !running {
-                        self.refresh_benchmark();
-                    }
-                    self.benchmark_was_running = running;
-                    self.benchmark_status = status;
                 }
                 AppMessage::ProviderCatalogRefreshed(outcomes) => {
                     // `config` was written by the worker and the generation
@@ -2279,11 +2321,7 @@ impl eframe::App for DelegatorApp {
             // tray `update()` never runs at all (see gui::background).
             // A stalled run must not keep breathing: the pulse means "work is
             // happening", and nothing is happening any more.
-            let benchmark_accent = if self
-                .benchmark_status
-                .as_ref()
-                .is_some_and(|status| !status.stalled)
-            {
+            let benchmark_accent = if self.benchmark_view.active.is_some() {
                 ctx.request_repaint_after(Duration::from_millis(40));
                 TabAccent::Busy(pulse_alpha(ctx.input(|i| i.time), PULSE_PERIOD_SEC))
             } else {
@@ -2350,70 +2388,63 @@ impl eframe::App for DelegatorApp {
 
                     let detected = IdeDetector::detect_all(&self.config.ide_states);
 
+                    // Two columns: the IDEs that delegate, and the web chats they
+                    // delegate TO. Gemini is the first web chat; more join below it.
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        if ui
-                            .checkbox(
-                                &mut self.config.gemini_web_enabled,
-                                "Gemini Web (через Chrome)",
-                            )
-                            .on_hover_text(
-                                "Запросы gemini-web/* идут через вашу сессию Gemini в Chrome. \
-                                 Нужно расширение из папки extensions\\gemini-web-bridge \
-                                 (один раз: chrome://extensions → Загрузить распакованное). \
-                                 Окно Gemini расширение открывает и закрывает само.",
-                            )
-                            .changed()
-                        {
-                            self.config.save();
-                        }
-                        ui.add_space(5.0);
+                        ui.columns(2, |columns| {
+                            columns[0].strong("IDE");
+                            columns[0].add_space(5.0);
+                            let ui = &mut columns[0];
                         for ide in detected {
-                            let mut is_enabled = self
-                                .config
-                                .ide_states
-                                .get(&ide.name)
-                                .copied()
-                                .unwrap_or(false);
+                                let mut is_enabled = self
+                                    .config
+                                    .ide_states
+                                    .get(&ide.name)
+                                    .copied()
+                                    .unwrap_or(false);
 
-                            ui.horizontal(|ui| {
-                                // Hooks are only written for installed IDEs, so a
-                                // checkbox for an undetected one would do nothing.
-                                let mut checkbox = ui.add_enabled(
-                                    ide.is_detected,
-                                    egui::Checkbox::new(
-                                        &mut is_enabled,
-                                        IdeDetector::display_name(&ide.name),
-                                    ),
-                                );
-                                if !ide.is_detected {
-                                    checkbox =
-                                        checkbox.on_hover_text("IDE не найдена на этом компьютере");
-                                } else if let Some(hint) = ide_row_hint(&ide.name) {
-                                    checkbox = checkbox.on_hover_text(hint);
-                                }
-                                if ide.is_detected && checkbox.changed() {
-                                    self.config.ide_states.insert(ide.name.clone(), is_enabled);
-                                    self.config.save();
-                                    let _ = IdeDetector::apply_hook(
-                                        &ide.name,
-                                        is_enabled && self.config.delegator_enabled,
+                                ui.horizontal(|ui| {
+                                    // Hooks are only written for installed IDEs, so a
+                                    // checkbox for an undetected one would do nothing.
+                                    let mut checkbox = ui.add_enabled(
+                                        ide.is_detected,
+                                        egui::Checkbox::new(
+                                            &mut is_enabled,
+                                            IdeDetector::display_name(&ide.name),
+                                        ),
                                     );
-                                }
+                                    if !ide.is_detected {
+                                        checkbox =
+                                            checkbox.on_hover_text("IDE не найдена на этом компьютере");
+                                    } else if let Some(hint) = ide_row_hint(&ide.name) {
+                                        checkbox = checkbox.on_hover_text(hint);
+                                    }
+                                    if ide.is_detected && checkbox.changed() {
+                                        self.config.ide_states.insert(ide.name.clone(), is_enabled);
+                                        self.config.save();
+                                        let _ = IdeDetector::apply_hook(
+                                            &ide.name,
+                                            is_enabled && self.config.delegator_enabled,
+                                        );
+                                    }
 
-                                if ide.is_detected {
-                                    ui.colored_label(self.theme.success_color(), "✔ Обнаружена");
-                                } else {
-                                    ui.colored_label(
-                                        self.theme.weak_text_color(),
-                                        "Не обнаружена",
-                                    );
-                                }
+                                    if ide.is_detected {
+                                        ui.colored_label(self.theme.success_color(), "✔ Обнаружена");
+                                    } else {
+                                        ui.colored_label(
+                                            self.theme.weak_text_color(),
+                                            "Не обнаружена",
+                                        );
+                                    }
 
-                                if ide.is_hooked && self.config.delegator_enabled {
-                                    ui.colored_label(self.theme.accent_color(), "[Подключено]");
-                                }
-                            });
-                        }
+                                    if ide.is_hooked && self.config.delegator_enabled {
+                                        ui.colored_label(self.theme.accent_color(), "[Подключено]");
+                                    }
+                                });
+                            }
+
+                            self.draw_web_column(&mut columns[1]);
+                        });
                     });
                 }
                 SelectedTab::Api => self.draw_api_tab(ui),
@@ -2544,406 +2575,58 @@ impl eframe::App for DelegatorApp {
                 }
                 SelectedTab::Benchmark => {
                     ui.horizontal(|ui| {
-                        ui.label("Замер качества: ваша модель против неё же с Delegator.");
+                        ui.label("Кодовый бенчмарк 1.5: ваша модель без делегирования и с Delegator.");
                         if ui.button("Обновить").clicked() {
-                            self.refresh_benchmark();
-                        }
-                        if self.benchmark_loading {
-                            ui.spinner();
+                            self.refresh_benchmark(true);
                         }
                     });
                     ui.colored_label(
                         self.theme.weak_text_color(),
-                        "Запуск — командой «-benchmark» в чате вашей IDE: только она может заставить отвечать вашу модель.",
+                        "«-benchmark» в чате IDE — модель без делегирования; «-benchmark d» — та же модель с Delegator (запускайте в двух чатах, можно одновременно).",
                     )
                     .on_hover_text(
-                        "12 случайных задач трёх уровней. Оценка механическая: код запускается, \
-                         SQL сравнивается построчно. Ответы не оценивает ни одна модель.",
+                        "Прогон ведёт агент IDE, а не это окно. Оценка механическая: ответы не \
+                         оценивает ни одна модель. Результат появится здесь, когда прогон закончится.",
                     );
                     ui.separator();
 
-                    // A run is in flight: show what it is doing right now. The
-                    // last report stays visible underneath for comparison.
-                    // The IDE chat died mid-run: say so instead of showing a
-                    // progress bar that will never move again.
-                    let mut cancel_request: Option<String> = None;
-                    if let Some(status) = self.benchmark_status.clone().filter(|s| s.stalled) {
-                        let warning = self.theme.warning_color();
-                        let fill = egui::Color32::from_rgba_unmultiplied(
-                            warning.r(),
-                            warning.g(),
-                            warning.b(),
-                            28,
-                        );
-                        egui::Frame::none()
-                            .fill(fill)
-                            .stroke(egui::Stroke::new(1.5, warning))
-                            .rounding(6.0)
-                            .inner_margin(10.0)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.strong("Прогон прерван");
-                                    ui.colored_label(
-                                        self.theme.weak_text_color(),
-                                        format!(
-                                            "решено задач: {} из {}",
-                                            status.answered_model, status.tasks_total
-                                        ),
-                                    );
-                                });
-                                ui.colored_label(warning, status.stalled_line());
-                                if ui.button("Прекратить прогон").clicked() {
-                                    cancel_request = Some(status.run_id.clone());
-                                }
-                            });
-                        ui.add_space(8.0);
+                    if let Some(active) = &self.benchmark_view.active {
+                        let mode = if active.mode.is_empty() { "—" } else { active.mode.as_str() };
+                        let model = if active.model.is_empty() { "—" } else { active.model.as_str() };
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.strong(format!("Идёт прогон: {mode} {model}"))
+                                .on_hover_text(format!(
+                                    "Прогон: {}\nНачат: {}",
+                                    active.run, active.started
+                                ));
+                        });
+                        ui.add_space(6.0);
                     }
 
-                    if let Some(status) = self.benchmark_status.clone().filter(|s| !s.stalled) {
-                        let status = &status;
-                        let accent = self.theme.accent_color();
-                        let fill = egui::Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            28,
-                        );
-                        egui::Frame::none()
-                            .fill(fill)
-                            .stroke(egui::Stroke::new(1.5, accent))
-                            .rounding(6.0)
-                            .inner_margin(10.0)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spinner();
-                                    ui.strong("Бенчмарк идёт");
-                                    ui.colored_label(
-                                        self.theme.weak_text_color(),
-                                        format!("модель: {}", status.model_label),
-                                    );
-                                });
-                                ui.add(
-                                    egui::ProgressBar::new(status.fraction())
-                                        .desired_width(ui.available_width())
-                                        .text(status.line()),
-                                );
-                                if !status.current_title.is_empty() {
-                                    ui.colored_label(
-                                        self.theme.weak_text_color(),
-                                        format!("Сейчас: {}", status.current_title),
-                                    );
-                                }
-                                // The chat can die without the core noticing for
-                                // ten minutes (a rate limit, a closed session),
-                                // and until then the tab kept saying «идёт» with
-                                // no way out. Stopping it by hand is that way.
-                                ui.horizontal(|ui| {
-                                    ui.colored_label(
-                                        self.theme.weak_text_color(),
-                                        "Окно можно закрыть — прогон идёт в чате IDE.",
-                                    );
-                                    if ui
-                                        .small_button("Прекратить")
-                                        .on_hover_text(
-                                            "Если чат IDE упал или вы остановили прогон вручную: \
-                                             Delegator забудет его и перестанет ждать. Отчёта по \
-                                             этому прогону не будет.",
-                                        )
-                                        .clicked()
-                                    {
-                                        cancel_request = Some(status.run_id.clone());
-                                    }
-                                });
-                            });
-                        ui.add_space(8.0);
-                    }
-
-                    if let Some(run_id) = cancel_request {
-                        self.cancel_benchmark(run_id);
-                    }
-
-                    if let Some(error) = &self.benchmark_error {
-                        ui.colored_label(
-                            self.theme.warning_color(),
-                            "Нет связи с ядром Delegator — нажмите «Обновить».",
-                        )
-                        .on_hover_text(error.as_str());
-                    }
-
-                    let mut export_request: Option<Vec<&'static str>> = None;
+                    let weak = self.theme.weak_text_color();
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        let Some(report) = &self.benchmark_report else {
-                            if !self.benchmark_loading
-                                && self.benchmark_error.is_none()
-                                && self.benchmark_status.is_none()
-                            {
+                        let view = &self.benchmark_view;
+                        if view.native.is_none() && view.delegator.is_none() {
+                            if view.active.is_none() {
                                 ui.label("Бенчмарк ещё не запускался.");
                             }
                             return;
-                        };
-                        let compare = report.is_compare();
-                        ui.horizontal(|ui| {
-                            ui.strong(format!("Модель: {}", report.model_label));
-                            ui.colored_label(
-                                self.theme.weak_text_color(),
-                                format!(
-                                    "Delegator v{} · набор задач v{} · seed {}",
-                                    report.delegator_version, report.benchmark_version, report.seed
-                                ),
-                            );
-                        });
-                        ui.colored_label(self.theme.weak_text_color(), &report.finished_at);
-                        ui.add_space(8.0);
-
-                        let success = self.theme.success_color();
-                        let error_color = self.theme.error_color();
-                        let weak = self.theme.weak_text_color();
-                        egui::Grid::new("benchmark_grid")
-                            .striped(true)
-                            .min_col_width(70.0)
-                            .show(ui, |ui| {
-                                ui.strong("#");
-                                ui.strong("Задача");
-                                ui.strong("Уровень");
-                                ui.strong("Модель");
-                                if compare {
-                                    ui.strong("С Delegator");
-                                    ui.strong("Кто лучше");
-                                }
-                                ui.end_row();
-
-                                for task in &report.tasks {
-                                    ui.label(task.index.to_string());
-                                    ui.label(&task.title);
-                                    ui.colored_label(weak, level_label(&task.level));
-
-                                    let model_ok = task.model.as_ref().map(|arm| arm.passed).unwrap_or(false);
-                                    let model_cell = ui.colored_label(
-                                        if model_ok { success } else { error_color },
-                                        task.model
-                                            .as_ref()
-                                            .map(|arm| arm.cell(task.points))
-                                            .unwrap_or_else(|| format!("0/{}", task.points)),
-                                    );
-                                    // The tooltip names the constraints that failed:
-                                    // «7 из 9» is only useful if you can see which two.
-                                    if let Some(arm) = task.model.as_ref() {
-                                        let hint = arm.failure_hint();
-                                        if !hint.is_empty() {
-                                            model_cell.on_hover_text(hint);
-                                        }
-                                    }
-
-                                    if compare {
-                                        let delegator_ok =
-                                            task.delegator.as_ref().map(|arm| arm.passed).unwrap_or(false);
-                                        let delegator_cell = ui.colored_label(
-                                            if delegator_ok { success } else { error_color },
-                                            task.delegator
-                                                .as_ref()
-                                                .map(|arm| arm.cell(task.points))
-                                                .unwrap_or_else(|| format!("0/{}", task.points)),
-                                        );
-                                        if let Some(arm) = task.delegator.as_ref() {
-                                            let hint = arm.failure_hint();
-                                            if !hint.is_empty() {
-                                                delegator_cell.on_hover_text(hint);
-                                            }
-                                        }
-                                        // Highlight the winner of this task; a draw stays grey so
-                                        // the eye lands only where the arms actually differ.
-                                        match task.winner.as_str() {
-                                            "delegator" => {
-                                                highlight_label(ui, "Delegator", success);
-                                            }
-                                            "model" => {
-                                                highlight_label(ui, "модель", error_color);
-                                            }
-                                            _ => {
-                                                ui.colored_label(weak, "поровну");
-                                            }
-                                        }
-                                    }
-                                    ui.end_row();
-                                }
-
-                                ui.strong("");
-                                ui.strong("Итого");
-                                ui.label("");
-                                let model_total = report.totals.model.unwrap_or(0.0);
-                                let delegator_total = report.totals.delegator.unwrap_or(0.0);
-                                let model_wins = !compare || model_total >= delegator_total;
-                                ui.colored_label(
-                                    if model_wins { success } else { weak },
-                                    egui::RichText::new(format!(
-                                        "{}/{}",
-                                        format_points(model_total),
-                                        report.max_points
-                                    ))
-                                    .strong(),
-                                );
-                                if compare {
-                                    ui.colored_label(
-                                        if delegator_total >= model_total { success } else { weak },
-                                        egui::RichText::new(format!(
-                                            "{}/{}",
-                                            format_points(delegator_total),
-                                            report.max_points
-                                        ))
-                                        .strong(),
-                                    );
-                                    if let Some(counts) = &report.counts {
-                                        ui.colored_label(
-                                            weak,
-                                            format!(
-                                                "+{} / −{}",
-                                                counts.better, counts.worse
-                                            ),
-                                        );
-                                    } else {
-                                        ui.label("");
-                                    }
-                                }
-                                ui.end_row();
-                            });
-
-                        // Two sentences that used to be invisible: what
-                        // Delegator scores WITHOUT the model's answer to lean
-                        // on, and how many of the twelve tasks were a real
-                        // comparison at all.
-                        if let Some(alone) = report.totals.alone {
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Delegator сам, без вашего ответа: {}/{}",
-                                    format_points(alone),
-                                    report.max_points
-                                ))
-                                .strong(),
-                            )
-                            .on_hover_text(
-                                "Единственное плечо, которое проверяет саму идею: модели \
-                                 Delegator решают ту же задачу с нуля. Проверка вашего ответа \
-                                 не может поднять балл, если ответ уже верный.",
-                            );
                         }
-                        if let Some(comparability) = &report.comparability {
-                            if comparability.pairs > 0 {
-                                ui.colored_label(weak, comparability.line());
-                            }
+                        for (title, grade) in [
+                            ("Без делегирования", view.native.as_ref()),
+                            ("С Delegator", view.delegator.as_ref()),
+                        ] {
+                            let Some(grade) = grade else {
+                                continue;
+                            };
+                            benchmark_block(ui, title, grade, weak);
+                            ui.add_space(8.0);
                         }
-
-                        // Where the lead or the lag is. A single total answers
-                        // «помог ли Delegator» and never answers «на чём».
-                        if let Some(profile) = &report.profile {
-                            let rows = profile.rows();
-                            if !rows.is_empty() {
-                                ui.add_space(10.0);
-                                ui.strong("Где сильнее и где слабее");
-                                egui::Grid::new("benchmark_profile")
-                                    .striped(true)
-                                    .min_col_width(70.0)
-                                    .show(ui, |ui| {
-                                        ui.strong("");
-                                        ui.strong("Задач");
-                                        ui.strong("Модель");
-                                        if compare {
-                                            ui.strong("С Delegator");
-                                        }
-                                        ui.end_row();
-                                        for group in rows {
-                                            ui.label(&group.label);
-                                            ui.colored_label(weak, group.tasks.to_string());
-                                            ui.label(format!(
-                                                "{}/{}",
-                                                format_points(group.model),
-                                                group.max_points
-                                            ));
-                                            if compare {
-                                                let delegator = group.delegator.unwrap_or(0.0);
-                                                ui.colored_label(
-                                                    if delegator > group.model {
-                                                        success
-                                                    } else if delegator < group.model {
-                                                        error_color
-                                                    } else {
-                                                        weak
-                                                    },
-                                                    format!(
-                                                        "{}/{}",
-                                                        format_points(delegator),
-                                                        group.max_points
-                                                    ),
-                                                );
-                                            }
-                                            ui.end_row();
-                                        }
-                                    });
-                            }
-                        }
-
-                        ui.add_space(10.0);
-                        ui.label(&report.verdict);
-                        // «Не доказано» on its own reads as a failure of
-                        // Delegator; usually it is a failure of the sample size,
-                        // and the report has to say which.
-                        if let Some(stats) = &report.stats {
-                            if !stats.text.is_empty() {
-                                ui.colored_label(weak, &stats.text).on_hover_text(
-                                    "Точный тест Макнемара по задачам, где стороны разошлись \
-                                     полностью. Статистики нет без расхождений — это про размер \
-                                     выборки, а не про качество.",
-                                );
-                            }
-                        }
-                        ui.add_space(10.0);
-
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(
-                                    !self.benchmark_exporting,
-                                    egui::Button::new("Сохранить текстом"),
-                                )
-                                .on_hover_text("Файл .txt на рабочий стол")
-                                .clicked()
-                            {
-                                export_request = Some(vec!["txt"]);
-                            }
-                            if ui
-                                .add_enabled(
-                                    !self.benchmark_exporting,
-                                    egui::Button::new("Сохранить картинкой"),
-                                )
-                                .on_hover_text(
-                                    "Файл .png на рабочий стол — можно отправить в чат как обычную картинку",
-                                )
-                                .clicked()
-                            {
-                                export_request = Some(vec!["png"]);
-                            }
-                            if self.benchmark_exporting {
-                                ui.spinner();
-                            }
-                        });
-                        match &self.benchmark_export {
-                            Some(Ok(paths)) => {
-                                for path in paths {
-                                    ui.colored_label(success, format!("Сохранено: {path}"));
-                                }
-                            }
-                            Some(Err(error)) => {
-                                ui.colored_label(
-                                    self.theme.warning_color(),
-                                    format!("Не удалось сохранить: {error}"),
-                                );
-                            }
-                            None => {}
+                        if let Some(line) = view.difference_line() {
+                            ui.strong(line);
                         }
                     });
-
-                    if let Some(formats) = export_request {
-                        self.start_benchmark_export(formats);
-                    }
                 }
                 SelectedTab::Proxies => {
                     ui.label("Прокси для запросов к моделям: http://, https://, socks5://.")

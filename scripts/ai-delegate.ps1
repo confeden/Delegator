@@ -654,7 +654,8 @@ function Get-PreferredBackendModel {
     if ($BackendName -eq "gemini") {
         $enabledGemini = @(Get-DelegatorEnabledModels "enabled_gemini_models")
         $order = if ($Text.Length -gt 4000 -or $Text -match "architecture|security|debug|root cause|migration|refactor") {
-            @("gemini-pro-latest", "gemini-flash-latest", "gemini-flash-lite-latest")
+            # Heavy work: strongest by version number, not "pro first".
+            @(Get-EnabledGeminiModelsByStrength)
         } else {
             @("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest")
         }
@@ -861,6 +862,30 @@ function Invoke-Delegate {
     }
 }
 
+function Get-GeminiAliasVersion {
+    # What `gemini-<family>-latest` resolves to now, from the GUI's config.json
+    # (`gemini_alias_versions`: flash / pro / flash-lite -> 3.8 / 3.1 / 3.5).
+    # 0 when it was never read.
+    param([string]$Family)
+    if ([string]::IsNullOrWhiteSpace($Family)) { return 0.0 }
+    if ($null -eq $script:GeminiAliasVersions) {
+        $script:GeminiAliasVersions = @{}
+        try {
+            if (Test-Path -LiteralPath $script:DelegatorAppConfigFile) {
+                $config = Get-Content -LiteralPath $script:DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                $prop = $config.PSObject.Properties["gemini_alias_versions"]
+                if ($prop -and $prop.Value) {
+                    foreach ($entry in $prop.Value.PSObject.Properties) {
+                        $script:GeminiAliasVersions[[string]$entry.Name] = [double]$entry.Value
+                    }
+                }
+            }
+        } catch {}
+    }
+    if ($script:GeminiAliasVersions.ContainsKey($Family)) { return [double]$script:GeminiAliasVersions[$Family] }
+    return 0.0
+}
+
 function Get-GeminiModelScore {
     <#
       Ranks a Google model id. Higher is stronger.
@@ -877,12 +902,24 @@ function Get-GeminiModelScore {
     param([string]$ModelId)
 
     $id = ([string]$ModelId).ToLowerInvariant()
+    # argon is the top of the line, so it takes the pro tier.
     $tier = if ($id -match "flash-?lite" -or $id -match "\blite\b") { 1 }
-            elseif ($id -match "\bpro\b") { 3 }
+            elseif ($id -match "\bpro\b" -or $id -match "argon") { 3 }
             else { 2 }
     $generation = 0.0
     if ($id -match "gemini-(\d+(?:\.\d+)?)") { $generation = [double]$Matches[1] }
-    if ($generation -le 0) { return $tier * 3 }   # alias: tier only, ranks last
+    if ($generation -le 0) {
+        # A `-latest` alias has no number of its own. The GUI records what each
+        # one resolves to (read off the Google model list), and the alias is then
+        # ranked BY THAT NUMBER like any other model: higher number, higher
+        # priority. One point below the versioned id of the same number, since
+        # the alias is the moving target. Unknown (no catalog read yet): tier
+        # only, ranks last - the old behaviour.
+        $family = if ($id -match "flash-?lite") { "flash-lite" } elseif ($id -match "\bpro\b") { "pro" } elseif ($id -match "flash") { "flash" } else { "" }
+        $known = Get-GeminiAliasVersion $family
+        if ($known -le 0) { return $tier * 3 }
+        return [int]([math]::Round($known * 10)) + $tier * 3 - 1
+    }
     return [int]([math]::Round($generation * 10)) + $tier * 3
 }
 
@@ -2282,6 +2319,33 @@ $script:ImproveReaskBudget = 6000
 # Run-Assist sets it from the router; a direct `improve` call keeps the review.
 $script:ImproveModelReview = $true
 
+$script:ContextBinarySkipped = 0
+$script:BinaryExtensions = @(
+    ".exe", ".dll", ".sys", ".msi", ".so", ".dylib", ".bin", ".obj", ".o", ".lib", ".pdb", ".class", ".jar",
+    ".zip", ".7z", ".rar", ".gz", ".tar", ".xz", ".bz2", ".cab", ".iso",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".tif", ".tiff", ".psd",
+    ".mp3", ".wav", ".flac", ".ogg", ".mp4", ".mkv", ".avi", ".mov", ".webm",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".ttf", ".otf", ".woff", ".woff2",
+    ".db", ".sqlite", ".pyc", ".apk", ".aab", ".dex", ".wasm"
+)
+
+function Test-TextFile {
+    # True when the file can travel inside a prompt as text. A binary (an .exe, an
+    # archive, a picture) read as UTF-8 is mojibake that wastes the budget and
+    # makes the model answer about noise, so it must never be inlined.
+    param([string]$Path)
+    if ($script:BinaryExtensions -contains [System.IO.Path]::GetExtension($Path).ToLowerInvariant()) { return $false }
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $buffer = New-Object byte[] 8192
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+        } finally { $stream.Dispose() }
+        for ($i = 0; $i -lt $read; $i++) { if ($buffer[$i] -eq 0) { return $false } }
+    } catch { return $false }
+    return $true
+}
+
 function Read-ContextFiles {
     # Semicolon-separated list, same convention as -PromptFile. A path that does
     # not exist is reported on stderr and skipped, NOT fatal: the caller is a
@@ -2298,6 +2362,11 @@ function Read-ContextFiles {
             if (-not (Test-Path -LiteralPath $path)) {
                 $script:ImproveMissingContext++
                 [Console]::Error.WriteLine("[Delegator] improve: context file not found, ignored: $path")
+                continue
+            }
+            if (-not (Test-TextFile $path)) {
+                $script:ContextBinarySkipped++
+                [Console]::Error.WriteLine("[Delegator] context file is not text, not attached: $path")
                 continue
             }
             if ($spent -ge $Budget) {
@@ -2740,6 +2809,42 @@ function Run-Assist {
     }
     $contextCount = if ($ContextFile) { @($ContextFile).Count } else { 0 }
 
+    # Coding benchmark, Delegator arm: when the user's Web checkbox is on, EVERY
+    # assist goes to the web chat, whatever the router would have said. The router
+    # may answer `keep` to a strong caller, and a benchmark of "the model boosted by
+    # Delegator" that never delegates measures nothing. Invoke-WebDelegation returns
+    # $null when the checkbox is off or the extension is not connected - then the
+    # ordinary ladder below runs, with its model fallbacks, unchanged.
+    if (Test-DelegatorBenchmarkActive) {
+        $webPrompt = $Prompt
+        $script:ContextBinarySkipped = 0
+        if ($contextCount -gt 0) {
+            $webContext = Read-ContextFiles -Entries $ContextFile -Budget 60000
+            if (-not [string]::IsNullOrWhiteSpace($webContext)) { $webPrompt += "`n`nFILES THE CALLER READ:`n$webContext" }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($draftText)) {
+            $webPrompt += "`n`nTHE CALLER'S CURRENT DRAFT (improve it where it is wrong, slow or weak; reply with the COMPLETE improved solution, not a diff):`n$draftText"
+        }
+        # A file the web chat cannot be given (the bridge sends text only) means the task would be
+        # answered without it: do not hand the task over, the ordinary ladder runs instead.
+        if ($script:ContextBinarySkipped -gt 0) {
+            [Console]::Error.WriteLine("[Delegator] Web: a non-text file cannot be attached, the task is not sent to the web chat")
+            $script:WebTried = $true
+            $webAnswer = $null
+        } else {
+        # "medium": the highest level thinks for more than 8 minutes on a whole-solver prompt, and a
+        # benchmark task has 15 minutes in total.
+        $script:WebTried = $true
+        $webAnswer = Invoke-WebDelegation $webPrompt -WebReasoning "medium"
+        }
+        if ($null -ne $webAnswer) {
+            Write-DelegateMetric -Stage "route" -Status "web-benchmark" -LatencyMs 0 -Extra "reason=benchmark-web"
+            [Console]::Error.WriteLine("[Delegator] режим: web (бенчмарк)")
+            $webAnswer
+            return
+        }
+    }
+
     # DEV_CONTRACTS section 13. Both numbers, or neither: one of them alone is not
     # a comparison, and the router reads 0 as "not declared", never as "weak".
     $callerDpr = Get-CallerDpr $CallerModel
@@ -3125,11 +3230,124 @@ $draftForReview
     Exit-Delegate 0
 }
 
+function Invoke-WebDelegation {
+    <#
+      The «Web» integration (the second column of the «Интеграция» tab): when it is switched
+      on and the Chrome extension is connected, a plain delegation goes to the
+      user's own signed-in web chat - the strongest model it offers at its
+      highest reasoning level - as ONE call.
+
+      One call on purpose. Everything the normal path wraps around a model
+      (planner, triage, extract, boost fan-out, critique loop) is one more web
+      turn of tens of seconds each; with a model this strong the extra rounds
+      cost far more than they could ever improve.
+
+      Returns the answer text, or $null when the web path is not applicable or
+      failed - the caller then simply runs the ordinary ladder.
+    #>
+    param([string]$Text, [string]$WebReasoning = "")
+
+    # The benchmark door already tried the web chat (and its model ladder) for this call; a second
+    # try would only repeat the wait - measured: two 500 s timeouts back to back.
+    if ($script:WebTried) { return $null }
+    if ($Backend -ne "auto" -or -not [string]::IsNullOrWhiteSpace($Model)) { return $null }
+    if ($env:CODEX_DELEGATE_BOOST_ACTIVE -eq "1") { return $null }
+    if ($Text -match "^Reply exactly:") { return $null }
+    if (Test-VisionContent $Text) { return $null }
+    # The bridge carries text only: a caller's file that is not text (an .exe, an archive) cannot go along.
+    foreach ($entry in @($ContextFile)) {
+        foreach ($piece in ([string]$entry).Split(";")) {
+            $cp = $piece.Trim()
+            if ($cp -and (Test-Path -LiteralPath $cp -PathType Leaf) -and -not (Test-TextFile $cp)) {
+                [Console]::Error.WriteLine("[Delegator] Web: a non-text file cannot be attached, using the usual models")
+                return $null
+            }
+        }
+    }
+    if (-not (Test-Path -LiteralPath $script:DelegatorAppConfigFile)) { return $null }
+    try {
+        $cfg = Get-Content -LiteralPath $script:DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        # Gemini Web has the first claim; the Core sends the request the same way (web_ask).
+        $geminiOn = $cfg.PSObject.Properties["gemini_web_enabled"] -and [bool]$cfg.gemini_web_enabled
+        $puterOn = $cfg.PSObject.Properties["puter_web_enabled"] -and [bool]$cfg.puter_web_enabled
+        if (-not $geminiOn -and -not $puterOn) { return $null }
+        if ($cfg.PSObject.Properties["delegator_enabled"] -and -not [bool]$cfg.delegator_enabled) { return $null }
+    } catch { return $null }
+
+    $core = "http://127.0.0.1:1380"
+    $webState = if ($geminiOn) { "$core/api/gemini-web/state" } else { "$core/api/puter-web/state" }
+    $webSw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $state = Invoke-RestMethod -Uri $webState -TimeoutSec 3
+        # An idle MV3 service worker sleeps; the extension's 30 s alarm wakes it and only
+        # then does it poll again, and the core counts it connected for 45 s after the
+        # last poll. 15 s of waiting declared a live extension absent: wait 50 s.
+        for ($wait = 0; -not $state.connected -and $wait -lt 50; $wait++) {
+            Start-Sleep -Seconds 1
+            $state = Invoke-RestMethod -Uri $webState -TimeoutSec 3
+        }
+        if (-not $state.connected) {
+            [Console]::Error.WriteLine("[Delegator] Web: the Chrome extension is not connected, using the usual models")
+            Write-DelegateMetric -Stage "web" -Backend "web" -Status "not-connected"
+            return $null
+        }
+        # Gemini gets the full OUTPUT RULES block. Puter's content filter refused that block next to an
+        # attached file, every try (measured 2026-10-26: the lines "Do not mention these rules" and
+        # "Keep code ... unchanged" each tripped it). Puter gets the same policy minus those two lines.
+        if ($geminiOn) {
+            $askText = Add-ExecutionLanguagePolicy $Text
+        } else {
+            $puterLanguage = if ($env:CODEX_DELEGATE_LANGUAGE) { $env:CODEX_DELEGATE_LANGUAGE } else { Get-PreferredOutputLanguage $Text }
+            $askText = "$Text`n`nOUTPUT RULES:`n- Final answer language: $puterLanguage unless the request explicitly requires another language.`n- Hidden internal reasoning may stay in English.`n- Avoid conversational pleasantries, greetings, warnings, or friendly introductions/conclusions. Return a dense, direct, technical output."
+        }
+        $ask = @{ text = $askText; timeout_sec = 570 }
+        if (-not [string]::IsNullOrWhiteSpace($WebReasoning)) { $ask.reasoning = $WebReasoning }
+        $payload = $ask | ConvertTo-Json -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        # Decoded as UTF-8 by hand: the Core's JSON carries no charset, and 5.1
+        # reads such a body as Latin-1 (I3) - every Cyrillic letter became two.
+        $response = Invoke-WebRequest -Uri "$core/api/web/ask" -Method Post -Body $bytes `
+            -ContentType "application/json; charset=utf-8" -TimeoutSec 610 -UseBasicParsing
+        $reply = [System.Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()) | ConvertFrom-Json
+        $answer = [string]$reply.text
+        if ([string]::IsNullOrWhiteSpace($answer)) { throw "empty answer" }
+        $used = [string]$reply.model
+        $script:FinalModel = $used
+        $script:FinalProvider = "web"
+        # The line the owner reads in the IDE to confirm WHICH model answered.
+        [Console]::Error.WriteLine("[Delegator] Web: ответила модель '$used' за $([math]::Round($webSw.Elapsed.TotalSeconds, 1)) с")
+        Write-DelegateMetric -Stage "web" -Model $used -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "ok"
+        return $answer
+    } catch {
+        $why = $_.Exception.Message
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $why = $_.ErrorDetails.Message }
+        [Console]::Error.WriteLine("[Delegator] Web failed ($why), using the usual models")
+        Write-DelegateMetric -Stage "web" -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "failed"
+        return $null
+    }
+}
+
 function Run-Ask {
     $askSw = [System.Diagnostics.Stopwatch]::StartNew()
     if ([string]::IsNullOrWhiteSpace($Prompt)) {
         if (-not [Console]::IsInputRedirected) { throw "Prompt is required." }
         $Prompt = [Console]::In.ReadToEnd()
+    }
+
+    # The caller's text -ContextFile files reach the model here, as they already do on the
+    # improve and benchmark doors. Before this no plain-path door read them: the web chat
+    # answered "no attachment" (G115). A binary file is still refused by Invoke-WebDelegation.
+    if ($ContextFile -and @($ContextFile).Count -gt 0) {
+        $askContext = Read-ContextFiles -Entries $ContextFile -Budget 60000
+        if (-not [string]::IsNullOrWhiteSpace($askContext)) {
+            $Prompt = $Prompt + "`n`nFILES THE CALLER READ:`n$askContext"
+        }
+    }
+
+    $webAnswer = Invoke-WebDelegation $Prompt
+    if ($null -ne $webAnswer) {
+        $webAnswer
+        return
     }
 
     # ── Response cache lookup ──
@@ -3314,7 +3532,13 @@ function Run-Ask {
         if ($isHeavy) {
             # Heavy task -> try Gemini Pro directly first.
             $proBackend = Select-ProBackendByQuota
-            $proModel = "gemini-pro-latest"
+            # The strongest enabled Gemini model that is NOT in cooldown. The
+            # cooldown is only ever set after the model failed on EVERY key (the
+            # provider script rotates keys on 429 first), so while Pro is out of
+            # quota that is the newest Flash - a newer generation than the
+            # `pro-latest` alias, which still resolves to 3.1.
+            $proModel = Get-StrongEnabledGeminiModel
+            if ([string]::IsNullOrWhiteSpace($proModel)) { $proModel = "gemini-pro-latest" }
             $proResult = Invoke-Delegate -ChosenBackend $proBackend -Text $executionPrompt -ChosenModel $proModel -EffectiveComplexity "deep"
             if ($proResult.exitCode -eq 0 -and $proResult.output -notmatch "RESOURCE_EXHAUSTED|quota|limit exceeded|All Gemini profiles failed") {
                 $script:FinalModel = $proModel
