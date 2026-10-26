@@ -1,5 +1,5 @@
 #define MyAppName "Delegator"
-#define MyAppVersion "0.9.17"
+#define MyAppVersion "0.9.20"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 

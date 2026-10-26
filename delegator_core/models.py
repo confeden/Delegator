@@ -77,10 +77,19 @@ class GeminiWebPhaseRequest(BaseModel):
     phase: str = Field(min_length=1, max_length=300)
 
 
+class WebFile(BaseModel):
+    """A file the Gemini upload accepts, carried as base64 (the page attaches it, the bridge never reads it)."""
+
+    name: str = Field(min_length=1, max_length=255)
+    mime: str = Field(default="application/octet-stream", max_length=200)
+    data_base64: str = Field(min_length=1, max_length=17_000_000)
+
+
 class WebAskRequest(BaseModel):
     """One delegated turn for the web integration (the IDE runtime's door)."""
 
     text: str = Field(min_length=1, max_length=500_000)
+    files: list[WebFile] = Field(default_factory=list, max_length=10)
     # Empty = whatever «Интеграция → Web» says; otherwise "gemini-web/<id>".
     model: str | None = Field(default=None, max_length=200)
     reasoning: str | None = Field(default=None, max_length=40)

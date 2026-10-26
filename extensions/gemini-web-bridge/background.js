@@ -393,9 +393,14 @@ async function syncPuter() {
     if (wanted && !tab) {
       const created = await chrome.tabs.create({ url: PUTER_URL, active: false });
       puterTabId = created.id ?? null;
-      if (puterTabId != null) startPuterPolling();
+      // Every tab Delegator opens goes into the «Delegator» group, the Puter one too.
+      if (puterTabId != null) {
+        await groupBridgeTab(created);
+        startPuterPolling();
+      }
     } else if (wanted && tab) {
       puterTabId = tab.id;
+      if (tab.groupId === -1) await groupBridgeTab(tab);
       startPuterPolling();
     } else if (!wanted && tab) {
       puterTabId = null;

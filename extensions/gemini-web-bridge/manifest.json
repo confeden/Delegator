@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Delegator Gemini Bridge",
-  "version": "0.17.0",
+  "version": "0.18.2",
   "description": "Sends selected Delegator chat requests to a dedicated signed-in Gemini Web tab or Puter tab.",
   "permissions": [
     "alarms",

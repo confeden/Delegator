@@ -3230,6 +3230,22 @@ $draftForReview
     Exit-Delegate 0
 }
 
+function Get-AttachmentMime {
+    # Gemini's upload decides by the page's accept list; the mime only labels the File the page receives.
+    param([string]$Path)
+    switch ([System.IO.Path]::GetExtension($Path).ToLowerInvariant()) {
+        ".png" { return "image/png" }
+        ".jpg" { return "image/jpeg" }
+        ".jpeg" { return "image/jpeg" }
+        ".webp" { return "image/webp" }
+        ".gif" { return "image/gif" }
+        ".heic" { return "image/heic" }
+        ".heif" { return "image/heif" }
+        ".pdf" { return "application/pdf" }
+        default { return "application/octet-stream" }
+    }
+}
+
 function Invoke-WebDelegation {
     <#
       The «Web» integration (the second column of the «Интеграция» tab): when it is switched
@@ -3254,14 +3270,12 @@ function Invoke-WebDelegation {
     if ($env:CODEX_DELEGATE_BOOST_ACTIVE -eq "1") { return $null }
     if ($Text -match "^Reply exactly:") { return $null }
     if (Test-VisionContent $Text) { return $null }
-    # The bridge carries text only: a caller's file that is not text (an .exe, an archive) cannot go along.
+    # Text files are already inside $Text (Run-Ask). The other files go to Gemini as attachments; Puter carries text only.
+    $binaryFiles = @()
     foreach ($entry in @($ContextFile)) {
         foreach ($piece in ([string]$entry).Split(";")) {
             $cp = $piece.Trim()
-            if ($cp -and (Test-Path -LiteralPath $cp -PathType Leaf) -and -not (Test-TextFile $cp)) {
-                [Console]::Error.WriteLine("[Delegator] Web: a non-text file cannot be attached, using the usual models")
-                return $null
-            }
+            if ($cp -and (Test-Path -LiteralPath $cp -PathType Leaf) -and -not (Test-TextFile $cp)) { $binaryFiles += $cp }
         }
     }
     if (-not (Test-Path -LiteralPath $script:DelegatorAppConfigFile)) { return $null }
@@ -3274,33 +3288,61 @@ function Invoke-WebDelegation {
         if ($cfg.PSObject.Properties["delegator_enabled"] -and -not [bool]$cfg.delegator_enabled) { return $null }
     } catch { return $null }
 
+    # Attachments for Gemini (name, mime, base64). Without Gemini a binary file cannot go along: the usual models answer.
+    $fileList = @()
+    if ($binaryFiles.Count -gt 0) {
+        if (-not $geminiOn) {
+            [Console]::Error.WriteLine("[Delegator] Web: a non-text file needs Gemini Web for attachment, using the usual models")
+            return $null
+        }
+        $attachedBytes = 0
+        foreach ($cp in $binaryFiles) { $attachedBytes += (Get-Item -LiteralPath $cp).Length }
+        if ($attachedBytes -gt 12MB) {
+            [Console]::Error.WriteLine("[Delegator] Web: attachments are over 12 MB, using the usual models")
+            return $null
+        }
+        foreach ($cp in $binaryFiles) {
+            $fileList += @{
+                name = [System.IO.Path]::GetFileName($cp)
+                mime = Get-AttachmentMime $cp
+                data_base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($cp))
+            }
+        }
+    }
+
     $core = "http://127.0.0.1:1380"
-    $webState = if ($geminiOn) { "$core/api/gemini-web/state" } else { "$core/api/puter-web/state" }
+    # The core asks Gemini Web first and fails over to Puter, so the web door is up when either enabled bridge is connected.
+    $webStates = @()
+    if ($geminiOn) { $webStates += "$core/api/gemini-web/state" }
+    if ($puterOn) { $webStates += "$core/api/puter-web/state" }
     $webSw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $state = Invoke-RestMethod -Uri $webState -TimeoutSec 3
+        $webConnected = $false
         # An idle MV3 service worker sleeps; the extension's 30 s alarm wakes it and only
         # then does it poll again, and the core counts it connected for 45 s after the
         # last poll. 15 s of waiting declared a live extension absent: wait 50 s.
-        for ($wait = 0; -not $state.connected -and $wait -lt 50; $wait++) {
-            Start-Sleep -Seconds 1
-            $state = Invoke-RestMethod -Uri $webState -TimeoutSec 3
+        for ($wait = 0; -not $webConnected -and $wait -le 50; $wait++) {
+            foreach ($url in $webStates) {
+                try { if ((Invoke-RestMethod -Uri $url -TimeoutSec 3).connected) { $webConnected = $true; break } } catch {}
+            }
+            if (-not $webConnected) { Start-Sleep -Seconds 1 }
         }
-        if (-not $state.connected) {
+        if (-not $webConnected) {
             [Console]::Error.WriteLine("[Delegator] Web: the Chrome extension is not connected, using the usual models")
             Write-DelegateMetric -Stage "web" -Backend "web" -Status "not-connected"
             return $null
         }
-        # Gemini gets the full OUTPUT RULES block. Puter's content filter refused that block next to an
-        # attached file, every try (measured 2026-10-26: the lines "Do not mention these rules" and
-        # "Keep code ... unchanged" each tripped it). Puter gets the same policy minus those two lines.
-        if ($geminiOn) {
+        # Full OUTPUT RULES block only when Gemini is the only web door. Puter's content filter refused that
+        # block next to an attached file, every try (measured 2026-10-26: "Do not mention these rules" and
+        # "Keep code ... unchanged" each tripped it). With Puter on, a Gemini failure falls over to Puter,
+        # so both get the condensed block.
+        if ($geminiOn -and -not $puterOn) {
             $askText = Add-ExecutionLanguagePolicy $Text
         } else {
             $puterLanguage = if ($env:CODEX_DELEGATE_LANGUAGE) { $env:CODEX_DELEGATE_LANGUAGE } else { Get-PreferredOutputLanguage $Text }
             $askText = "$Text`n`nOUTPUT RULES:`n- Final answer language: $puterLanguage unless the request explicitly requires another language.`n- Hidden internal reasoning may stay in English.`n- Avoid conversational pleasantries, greetings, warnings, or friendly introductions/conclusions. Return a dense, direct, technical output."
         }
-        $ask = @{ text = $askText; timeout_sec = 570 }
+        $ask = @{ text = $askText; timeout_sec = 570; files = $fileList }
         if (-not [string]::IsNullOrWhiteSpace($WebReasoning)) { $ask.reasoning = $WebReasoning }
         $payload = $ask | ConvertTo-Json -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)

@@ -58,7 +58,7 @@ def _bridge_with(script):
     bridge = gw.GeminiWebBridge()
     asked = []
 
-    async def once(*, text, model, reasoning, mode, timeout_sec=300):
+    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None):
         asked.append(model)
         outcome = script[model.split("/", 1)[1]]
         if isinstance(outcome, Exception):
@@ -142,7 +142,7 @@ def test_a_frozen_model_that_recovers_on_the_retry_is_not_demoted():
 
     bridge = gw.GeminiWebBridge()
 
-    async def once(*, text, model, reasoning, mode, timeout_sec=300):
+    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None):
         state["n"] += 1
         if state["n"] == 1:
             raise RuntimeError("SLOW[Argon]: без признаков работы 120 с")
@@ -178,3 +178,70 @@ def test_tab_demand_follows_requests_and_lingers():
     assert bridge.has_demand()
     bridge._busy_until = 0.0
     assert not bridge.has_demand()
+
+
+def test_fallback_order_puts_pro_only_below_flash(tmp_path, monkeypatch):
+    from delegator_core.providers.gemini_web import web_fallback_order
+
+    cfg = tmp_path / "config.json"
+    monkeypatch.setenv("DELEGATOR_CONFIG_FILE", str(cfg))
+    # no stored versions: the shipped numbers (flash 3.8 > pro 3.1) keep Pro in the ladder
+    assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+    cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": 3.8, "pro": 3.1, "flash-lite": 3.5}}), encoding="utf-8")
+    assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+    # a Pro newer than Flash is not a fallback for Flash
+    cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": 3.8, "pro": 4.0}}), encoding="utf-8")
+    assert web_fallback_order() == ("argon", "3.8-flash", "3.5-flash-lite")
+    # a garbage number falls back to the shipped one, never breaks the ladder
+    cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": "x", "pro": None}}), encoding="utf-8")
+    assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+
+
+def test_ladder_after_argon_skips_pro_when_newer(tmp_path, monkeypatch):
+    import asyncio
+
+    from delegator_core.providers import gemini_web
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
+    cfg = tmp_path / "config.json"
+    monkeypatch.setenv("DELEGATOR_CONFIG_FILE", str(cfg))
+    cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": 3.8, "pro": 4.0}}), encoding="utf-8")
+    seen = []
+    bridge = GeminiWebBridge()
+
+    async def fake_once(self_or_none=None, **kwargs):
+        seen.append(kwargs["model"])
+        raise RuntimeError("QUOTA[Argon · Высокая] квота исчерпана")
+
+    monkeypatch.setattr(bridge, "_request_once", lambda **kw: fake_once(**kw))
+    try:
+        asyncio.run(bridge.request(text="x", model="gemini-web/argon", reasoning="high", mode="delegate", timeout_sec=60))
+    except RuntimeError:
+        pass
+    assert "gemini-web/3.1-pro" not in seen and "gemini-web/3.5-flash-lite" in seen
+    assert seen[0] == "gemini-web/argon" and seen[1] == "gemini-web/3.8-flash"
+
+
+def test_attachments_travel_with_the_task(monkeypatch):
+    import asyncio
+    import time
+
+    from delegator_core.providers import gemini_web
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
+    monkeypatch.setattr(gemini_web, "gemini_web_flags", lambda: (True, True))
+    bridge = GeminiWebBridge()
+    bridge._last_seen = time.monotonic()
+    files = [{"name": "scan.pdf", "mime": "application/pdf", "data_base64": "JVBERi0="}]
+
+    async def scenario():
+        task = asyncio.create_task(bridge.request(
+            text="посмотри файл", model="gemini-web/argon", reasoning="high", mode="delegate",
+            timeout_sec=60, files=files,
+        ))
+        job = await bridge.next_request(timeout_sec=2)
+        assert job["files"] == files
+        bridge.resolve(job["request_id"], text="ок", used="Argon")
+        assert (await task).text == "ок"
+
+    asyncio.run(scenario())

@@ -1290,11 +1290,47 @@ def create_app() -> FastAPI:
     async def web_ask(payload: WebAskRequest) -> dict:
         """The IDE runtime's door to the web integration: one turn, one answer.
 
-        Model and reasoning default to the user's choice on «Интеграция → Web».
+        Gemini Web (when on) is asked first, with its model ladder inside. When it fails and
+        Puter is on, the Puter tab gets the same turn. Model and reasoning default to the
+        user's choice on «Интеграция → Web».
         """
         core: AppState = app.state.core
-        # Gemini Web has the first claim; with it off, the Puter tab answers the same door.
-        if not gemini_web_flags()[0] and puter_web_flags()[0]:
+        gemini_on, puter_on = gemini_web_flags()[0], puter_web_flags()[0]
+        files = [entry.model_dump() for entry in payload.files]
+        if sum(len(entry["data_base64"]) for entry in files) > 16_000_000:
+            raise HTTPException(status_code=413, detail="Вложения больше 12 МБ вместе: уменьшите файлы.")
+        if files and not gemini_on:
+            raise HTTPException(
+                status_code=503,
+                detail="Вложения передаются только в Gemini Web: включите его на вкладке «Интеграция».",
+            )
+        errors: list[str] = []
+        if gemini_on:
+            chosen_model, chosen_reasoning = gemini_web_choice()
+            # With Puter as the fallback, Gemini leaves it a minute, so the caller's wait covers both.
+            gemini_budget = max(payload.timeout_sec - 60, 10) if puter_on else payload.timeout_sec
+            try:
+                result = await core.gemini_web.request(
+                    mode="delegate",
+                    text=payload.text,
+                    model=payload.model or chosen_model,
+                    reasoning=payload.reasoning or chosen_reasoning,
+                    timeout_sec=gemini_budget,
+                    files=files,
+                )
+            except RuntimeError as exc:
+                errors.append(f"Gemini Web: {exc}")
+                # Puter cannot take a file: an answer without the attachment would be a wrong answer.
+                if files:
+                    raise HTTPException(status_code=503, detail=errors[-1]) from exc
+            else:
+                return {
+                    "text": result.text,
+                    "model": result.usage.model if result.usage else "",
+                    "provider": "Gemini Web",
+                    "seconds": core.gemini_web.last.get("seconds"),
+                }
+        if puter_on:
             try:
                 result = await core.puter_web.request(
                     mode="delegate",
@@ -1303,30 +1339,18 @@ def create_app() -> FastAPI:
                     timeout_sec=payload.timeout_sec,
                 )
             except RuntimeError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            return {
-                "text": result.text,
-                "model": result.usage.model if result.usage else "",
-                "provider": "Puter Web",
-                "seconds": core.puter_web.last.get("seconds"),
-            }
-        chosen_model, chosen_reasoning = gemini_web_choice()
-        try:
-            result = await core.gemini_web.request(
-                mode="delegate",
-                text=payload.text,
-                model=payload.model or chosen_model,
-                reasoning=payload.reasoning or chosen_reasoning,
-                timeout_sec=payload.timeout_sec,
-            )
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {
-            "text": result.text,
-            "model": result.usage.model if result.usage else "",
-            "provider": "Gemini Web",
-            "seconds": core.gemini_web.last.get("seconds"),
-        }
+                errors.append(f"Puter Web: {exc}")
+            else:
+                return {
+                    "text": result.text,
+                    "model": result.usage.model if result.usage else "",
+                    "provider": "Puter Web",
+                    "seconds": core.puter_web.last.get("seconds"),
+                }
+        raise HTTPException(
+            status_code=503,
+            detail=" | ".join(errors) or "Web выключен: включите Gemini Web или Puter Web на вкладке «Интеграция».",
+        )
 
     @app.get("/api/gemini-web/next")
     async def gemini_web_next():

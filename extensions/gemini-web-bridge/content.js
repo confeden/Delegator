@@ -373,7 +373,58 @@
     ));
   }
 
-  async function sendPrompt(text, maxWaitMs) {
+  // A file goes in the way the page's own «Загрузить файлы» item does: its upload input gets the file
+  // through a DataTransfer and a change event. Only the types that input's accept list names are sent.
+  function acceptsFile(accept, name, mime) {
+    const lower = name.toLowerCase();
+    return accept.split(",").map((token) => token.trim().toLowerCase()).filter(Boolean).some((token) => {
+      if (token.startsWith(".")) return lower.endsWith(token);
+      if (token.endsWith("/*")) return mime.startsWith(token.slice(0, -1));
+      return token === mime;
+    });
+  }
+
+  function uploadInputs() {
+    return [...document.querySelectorAll('input[type=file]')];
+  }
+
+  // The page can rename an upload: an image comes back as «blue_5c7c23.png», so the chip is matched
+  // on the name's stem and extension with an optional «_hash» between them.
+  function attachmentShown(name) {
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot + 1) : "";
+    const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const chip = new RegExp(`^${escape(stem)}(_[0-9a-f]+)?${ext ? `\\.${escape(ext)}` : ""}$`, "i");
+    return [...document.querySelectorAll("div,span")]
+      .some((element) => element.children.length === 0 && chip.test((element.textContent || "").trim()));
+  }
+
+  async function attachFiles(files) {
+    for (const file of files) {
+      if (!uploadInputs().length) {
+        const trigger = [...document.querySelectorAll("button")]
+          .find((button) => /Загрузка и инструменты|Upload and tools/i.test(button.getAttribute("aria-label") || ""));
+        if (!trigger) throw new Error("В Gemini не найдено меню загрузки файлов.");
+        trigger.click();
+        const until = Date.now() + 3000;
+        while (!uploadInputs().length && Date.now() < until) await sleep(100);
+      }
+      const input = uploadInputs().find((element) => acceptsFile(element.getAttribute("accept") || "", file.name, file.mime || ""));
+      if (!input) throw new Error(`Gemini не принимает файл ${file.name}: такого типа нет в его списке загрузки.`);
+      const bytes = Uint8Array.from(atob(file.data_base64), (char) => char.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], file.name, { type: file.mime || "application/octet-stream" }));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      void phase(`файл ${file.name}: загрузка`);
+      const until = Date.now() + 60000;
+      while (Date.now() < until && !attachmentShown(file.name)) await sleep(200);
+      if (!attachmentShown(file.name)) throw new Error(`Gemini не принял файл ${file.name}.`);
+    }
+  }
+
+  async function sendPrompt(text, maxWaitMs, files = []) {
     const composer = findComposer();
     if (!composer) throw new Error("Не найдено поле запроса. Убедитесь, что Gemini открыт и вы вошли в аккаунт.");
     composer.focus();
@@ -381,6 +432,7 @@
     document.execCommand("selectAll", false);
     document.execCommand("delete", false);
     await debuggerInput("text", { text });
+    if (files.length) await attachFiles(files);
 
     // Gemini enables and inserts the send control only after its composer state
     // has processed the input event. Looking for it synchronously can race the
@@ -570,7 +622,7 @@
       void phase(`ввод запроса; ${pickerLabel()} · ${usedReasoning}`);
       // What the page itself shows is what answers; report it, not what was asked for.
       const used = [pickerLabel(), usedReasoning].filter(Boolean).join(" · ");
-      const text = await sendPrompt(task.text, task.max_wait_ms);
+      const text = await sendPrompt(task.text, task.max_wait_ms, task.files || []);
       return { text, used };
     } finally {
       if (debuggerInputActive) {

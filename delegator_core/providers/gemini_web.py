@@ -45,6 +45,27 @@ _REASONING_IDS = {"best", "high", "medium", "low", "auto"}
 # strongest first (Argon, then Flash 3.8, then Pro 3.1, then Flash-Lite). "best"
 # comes first and stands for whatever the page's own menu ranks highest.
 FALLBACK_ORDER = ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+
+
+def _alias_version(name: str, default: float) -> float:
+    """The version number of a Gemini alias (`flash`, `pro`, `flash-lite`) as the GUI last read it."""
+    aliases = _config_payload().get("gemini_alias_versions")
+    try:
+        return float((aliases or {}).get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def web_fallback_order() -> tuple[str, ...]:
+    """The ladder after Argon: the newest Flash, then Pro only while its number is below Flash's,
+    then Flash-Lite. The numbers come from `gemini_alias_versions`, so a new release moves the order."""
+    flash = _alias_version("flash", 3.8)
+    pro = _alias_version("pro", 3.1)
+    order = ["argon", "3.8-flash"]
+    if pro < flash:
+        order.append("3.1-pro")
+    order.append("3.5-flash-lite")
+    return tuple(order)
 MAX_ALIVE_WAIT_SEC = 360  # ceiling for a model that keeps showing signs of life
 QUOTA_COOLDOWN_SEC = 3 * 3600  # a spent quota resets on a daily scale; retry the strong model after this
 SLOW_COOLDOWN_SEC = 20 * 60  # a model that stalled on one prompt is not asked again straight away
@@ -142,19 +163,21 @@ class GeminiWebBridge:
         reasoning: str | None,
         mode: str,
         timeout_sec: float = 300,
+        files: list[dict[str, str]] | None = None,
     ) -> ProviderResult:
         """One turn, with a way down the model ladder when a model's quota is spent.
 
         The requested model goes first; when the page reports its quota (or the model
-        is not offered any more) the next one of FALLBACK_ORDER is tried, and the
+        is not offered any more) the next one of web_fallback_order() is tried, and the
         spent one rests for a while so the following requests do not pay for the
         same refusal again. Any other failure is raised as it is.
         """
         wanted = model.split("/", 1)[1] if model.startswith("gemini-web/") else model
+        order = web_fallback_order()
         if wanted == "best":
-            ladder = ["best", *FALLBACK_ORDER]
-        elif wanted in FALLBACK_ORDER:
-            ladder = list(FALLBACK_ORDER[FALLBACK_ORDER.index(wanted):])
+            ladder = ["best", *order]
+        elif wanted in order:
+            ladder = list(order[order.index(wanted):])
         else:
             ladder = [wanted]
         now = time.monotonic()
@@ -176,7 +199,7 @@ class GeminiWebBridge:
                 try:
                     result = await self._request_once(
                         text=text, model=f"gemini-web/{entry}", reasoning=reasoning, mode=mode,
-                        timeout_sec=remaining,
+                        timeout_sec=remaining, files=files,
                     )
                 except RuntimeError as exc:
                     kind = classify_failure(str(exc))
@@ -208,6 +231,7 @@ class GeminiWebBridge:
         reasoning: str | None,
         mode: str,
         timeout_sec: float = 300,
+        files: list[dict[str, str]] | None = None,
     ) -> ProviderResult:
         if not gemini_web_flags()[0]:
             raise RuntimeError(
@@ -229,6 +253,8 @@ class GeminiWebBridge:
             "text": text,
             "model": model,
             "reasoning": reasoning or "auto",
+            # Files the page attaches before the text (name, mime, data_base64).
+            "files": files or [],
             # How long the extension may keep waiting for a model that is still alive.
             "max_wait_ms": int(min(timeout_sec, MAX_ALIVE_WAIT_SEC) * 1000),
         })
