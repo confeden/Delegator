@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 # UI and System Tray
-eframe = "0.29.1"
+eframe = "0.36.1"
 # Same version eframe already depends on: needed to read the HWND.
 raw-window-handle = "0.6"
 egui = "0.29.1"
