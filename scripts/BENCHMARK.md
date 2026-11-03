@@ -1,4 +1,4 @@
-# Delegator coding benchmark v1.5 — protocol for the IDE agent
+# Delegator coding benchmark v1.7 — protocol for the IDE agent
 
 ## RUN THIS YOURSELF. DO NOT EXPLAIN IT TO THE USER.
 
@@ -43,19 +43,34 @@ PY "<RUNTIME>\coding-bench\start.py" --mode native|delegator "<your model name>"
    Each is scored on a continuous scale by hidden data — there is no "done", only better or worse. For each task:
    - `PY bench.py begin <task>` (starts its clock), read its `README.md` and the stub;
    - get a **correct, valid** solution first, then improve it;
-   - self-check with `PY bench.py check <task>`;
+   - self-check with `PY bench.py check <task>` (it also runs the static code rules from the task's README: a
+     violation there scores 0 for the whole task, so fix it before anything else);
    - **hard limit: 15 minutes per task** (delegation time counts). `PY bench.py status` shows the clock. At 15
      minutes keep the best working version and move on — a valid simple solution for every task beats one
      brilliant task and two missing ones.
 3. Keep the folder clean: experiments inside the task folder, at most a few helper scripts.
 4. Fill in `REPORT.md` (short, honest; the confidence numbers are scored for calibration).
-5. Run `PY bench.py finish` in the run folder. It grades your work (5-10 minutes): wait until it prints "Grading
-   finished" (if your tool times out, run it again with a longer timeout). Then print the path of the grade file it
+5. Run `PY bench.py finish` in the run folder. It grades your work (about 20-25 minutes: routing and sat are scored
+   three times each, on a quiet machine): wait until it prints "Grading finished" (give the command the longest
+   timeout your tool allows; if the tool times out anyway, run it again — that is safe; a grading that is already running is not started twice). Then print the path of the grade file it
    names, say in one sentence that the result is final, and stop. Do not comment on whether the score is good, and
    never invent or estimate a result.
 
 Be economical: do not print large files or long outputs; read only what you need. In the native arm state in
 REPORT.md that you worked alone.
+
+## Hard limits on commands and loops (a hung command has ended runs before)
+
+- Run every experiment, timing test or solver run with a hard limit: `PY bench.py run <seconds> <command...>`
+  (for example `PY bench.py run 60 python solver_test.py`). It kills the whole command when the time is up and
+  prints `RUN TIMEOUT`. Never run a long computation as a bare command in your shell.
+- `PY bench.py check <task>` has its own 120-second limit; a check that times out is a failure, not a reason to
+  wait.
+- Every loop you write must end on its own: a `while` loop needs a hard iteration cap or a deadline
+  (`time.monotonic() > deadline` -> break), and its exit condition must depend on values the loop body actually
+  changes. Do not write a loop that only waits for a state nothing in it updates.
+- If a command or a loop runs past its limit, stop it, fix the code or keep the previous working version, and go
+  on. Do not re-run the same command unchanged.
 
 ## Delegator arm only
 
@@ -74,6 +89,11 @@ conversation: paste the task's README text and the stub signature, attach files 
 Result: exit 0 and the first stdout line is `##DELEGATOR_IMPROVE## {...}` — the rest is your draft corrected; exit 0
 without the marker — stdout is the answer to your prompt; exit 3 — keep your own answer; any other exit code —
 Delegator could not help, continue alone.
+**Delegate early, not after thinking.** For each task, your FIRST `assist` call comes right after you have read
+that task's `README.md`: send the README text as the prompt (plus the stub signature) before you read other files,
+draft your own design, or reason at length about the approach. Delegator is the first source of a solution; your own
+reasoning comes after its answer, to check and improve it, not to replace it.
+
 **Make at least one `assist` call for EVERY task** (a task with none is a protocol failure of this arm; if Delegator fails, say so in REPORT.md and continue alone). If a call returns nothing useful after a few minutes, stop waiting for it: the 15 minutes per task still apply. A good use inside the 15 minutes: (a) ask for a strong first implementation or algorithm choice, put it into the
 task files, run `check`; (b) pass your working version as `-DraftFile` with the `check` output to get an improved
 one; (c) keep only what passes `check` and beats the previous version. Two or three calls per task. A call can take several minutes when Delegator uses the web chat (a whole solver may need several minutes): ask for ONE focused piece (the core algorithm or the next improvement, with the interface it must fit), not the whole task at once, and never start a second call before the first returned. If an answer

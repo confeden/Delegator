@@ -5,11 +5,21 @@ const GROUP_TITLE = "Delegator";
 const BRIDGE_URL = "https://gemini.google.com/app?delegator_bridge=1";
 const activatingTabs = new Set();
 const debuggerTabs = new Set();
-// Puter Web: its own tab (builder.puter.com), its own queue loop. See the Puter section at the end.
-const PUTER_URL = "https://builder.puter.com/?delegator_bridge=1";
-let puterTabId = null;
-let puterPollRunning = false;
-let puterSyncing = false;
+// The other web doors share one mechanism: see the section at the end of this file.
+const DOORS = {
+  gemini: { label: "Gemini", url: "https://gemini.google.com/app", hosts: ["gemini.google.com"] },
+  aistudio: { label: "AI Studio", url: "https://aistudio.google.com/prompts/new_chat", hosts: ["aistudio.google.com"], driven: true },
+  kimi: { label: "Kimi", url: "https://www.kimi.ai/", hosts: ["www.kimi.ai", "kimi.ai"], driven: true },
+  zai: { label: "Z.ai", url: "https://chat.z.ai/", hosts: ["chat.z.ai"], driven: true },
+  qwen: { label: "Qwen", url: "https://chat.qwen.ai/", hosts: ["chat.qwen.ai"], driven: true },
+  deepseek: { label: "DeepSeek", url: "https://chat.deepseek.com/", hosts: ["chat.deepseek.com"], driven: true },
+  tencent: { label: "Tencent Hy", url: "https://aistudio.tencent.ai/", hosts: ["aistudio.tencent.ai"], driven: true },
+  rudder: { label: "Rudder", url: "https://rudder.chat/chat", hosts: ["rudder.chat"], driven: true },
+};
+const doorTabs = new Map();
+const doorQueues = new Map();
+const doorsRunning = new Set();
+let doorsSyncing = false;
 
 function isBridgeTab(tab) {
   if (!tab?.url) return false;
@@ -133,12 +143,12 @@ chrome.alarms.create("delegator-sync", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "delegator-sync") {
     void syncBridge();
-    void syncPuter();
+    void syncDoors();
   }
 });
 chrome.runtime.onStartup.addListener(() => {
   void syncBridge();
-  void syncPuter();
+  void syncDoors();
 });
 // A page opened before this version has none of visible.js: reload it once so
 // the new scripts apply (the window stays where it is, minimized).
@@ -162,10 +172,11 @@ async function setBridgeWindowVisible(visible, focus = false) {
     : { state: "minimized" });
 }
 
-async function handleDebuggerInput(message, sender) {
+async function handleDebuggerInput(message, sender, door = false) {
   const tabId = sender.tab?.id;
-  if (tabId == null || !isBridgeTab(sender.tab)) {
-    throw new Error("Отладочный ввод разрешён только во вкладке Gemini Bridge.");
+  const allowed = door ? [...doorTabs.values()].includes(tabId) : isBridgeTab(sender.tab);
+  if (tabId == null || !allowed) {
+    throw new Error("Отладочный ввод разрешён только во вкладках Delegator.");
   }
 
   if (message.action === "begin") {
@@ -242,6 +253,18 @@ async function handleDebuggerInput(message, sender) {
 chrome.debugger.onDetach.addListener(({ tabId }) => debuggerTabs.delete(tabId));
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "DELEGATOR_DOOR_PHASE") {
+    reportDoorPhase(message.door, message.phase);
+    return;
+  }
+
+  if (message?.type === "DELEGATOR_DOOR_DEBUGGER") {
+    void handleDebuggerInput(message, sender, true)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   if (message?.type === "DELEGATOR_GEMINI_DEBUGGER") {
     void handleDebuggerInput(message, sender)
       .then(sendResponse)
@@ -288,9 +311,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     geminiTabId = null;
     void syncBridge();
   }
-  if (tabId === puterTabId) {
-    puterTabId = null;
-    void syncPuter();
+  for (const [door, id] of doorTabs) {
+    if (id === tabId) {
+      doorTabs.delete(door);
+      void syncDoors();
+    }
   }
 });
 
@@ -305,8 +330,8 @@ function startPolling() {
 
 void syncBridge();
 void watchDemand();
-void syncPuter();
-void watchPuterDemand();
+void syncDoors();
+void watchDoors();
 
 async function pollQueue() {
   while (geminiTabId != null) {
@@ -319,10 +344,19 @@ async function pollQueue() {
 
       const tabId = geminiTabId;
       if (tabId == null) throw new Error("Вкладка Gemini закрыта.");
+      // Another door may win while Gemini still thinks: stop rather than spend its quota on a dead turn.
+      const liveness = setInterval(() => {
+        fetch(`${CORE}/api/web-door/gemini/live?id=${encodeURIComponent(task.request_id)}`, { cache: "no-store" })
+          .then((response) => response.json())
+          .then(({ live }) => {
+            if (!live) chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_GEMINI_ABORT" }).catch(() => {});
+          })
+          .catch(() => {});
+      }, 3000);
       const result = await chrome.tabs.sendMessage(tabId, {
         type: "DELEGATOR_GEMINI_RUN",
         task,
-      });
+      }).finally(() => clearInterval(liveness));
       await fetch(`${CORE}/api/gemini-web/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -354,183 +388,327 @@ async function pollQueue() {
   }
 }
 
-// ---- Puter Web ---------------------------------------------------------------
-// The same tab-and-queue idea as Gemini, without any DOM work: the builder.puter.com
-// page owns a signed-in puter.js, and `puter.ai.chat` runs inside that page (MAIN
-// world). The tab is open only while Delegator has Puter work, like the Gemini tab.
+// ---- Web doors ---------------------------------------------------------------
+// One background tab per enabled site, open only while Delegator has work for it (like the Gemini
+// tab), and a queue loop per tab. door.js does the page work. Every turn starts from the site's
+// front page, so no earlier conversation leaks into it.
 
-function isPuterBridgeTab(tab) {
-  if (!tab?.url) return false;
+function hostOf(tab) {
   try {
-    const url = new URL(tab.url);
-    return url.origin === "https://builder.puter.com" && url.searchParams.get("delegator_bridge") === "1";
+    return new URL(tab.url).hostname;
   } catch {
-    return false;
+    return "";
   }
 }
 
-async function findPuterTab() {
-  const tabs = await chrome.tabs.query({ url: "https://builder.puter.com/*" });
-  return tabs.find(isPuterBridgeTab) || null;
+function doorPatterns(door) {
+  return DOORS[door].hosts.map((host) => `https://${host}/*`);
 }
 
-async function coreWantsPuter() {
-  try {
-    const response = await fetch(`${CORE}/api/puter-web/state`, { cache: "no-store" });
-    if (!response.ok) return false;
-    return Boolean((await response.json()).wanted);
-  } catch {
-    return false;
+// A bridge tab marks itself in sessionStorage (visible.js), which outlives a service worker restart
+// and a site's own redirects, where a URL parameter does not.
+async function findDoorTab(door) {
+  const known = doorTabs.get(door);
+  if (known != null) {
+    const tab = await chrome.tabs.get(known).catch(() => null);
+    if (tab) return tab;
+    doorTabs.delete(door);
   }
+  for (const tab of await chrome.tabs.query({ url: doorPatterns(door) })) {
+    const [probe] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => sessionStorage.getItem("delegatorBridge"),
+    }).catch(() => [null]);
+    if (probe?.result === "1") return tab;
+  }
+  return null;
 }
 
-async function syncPuter() {
-  if (puterSyncing) return;
-  puterSyncing = true;
+async function syncDoors(wanted = null) {
+  if (doorsSyncing) return;
+  doorsSyncing = true;
   try {
-    const wanted = await coreWantsPuter();
-    const tab = await findPuterTab();
-    if (wanted && !tab) {
-      const created = await chrome.tabs.create({ url: PUTER_URL, active: false });
-      puterTabId = created.id ?? null;
-      // Every tab Delegator opens goes into the «Delegator» group, the Puter one too.
-      if (puterTabId != null) {
-        await groupBridgeTab(created);
-        startPuterPolling();
+    const list = wanted ?? await coreWantedDoors();
+    for (const door of Object.keys(DOORS).filter((id) => DOORS[id].driven)) {
+      const tab = await findDoorTab(door);
+      // Opening is the turn's job (ensureDoorTab): this only closes what nothing wants any more.
+      if (list.includes(door) && tab) {
+        doorTabs.set(door, tab.id);
+      } else if (!list.includes(door) && tab && !doorsRunning.has(door) && !doorQueues.get(door)?.length) {
+        doorTabs.delete(door);
+        await chrome.tabs.remove(tab.id).catch(() => {});
       }
-    } else if (wanted && tab) {
-      puterTabId = tab.id;
-      if (tab.groupId === -1) await groupBridgeTab(tab);
-      startPuterPolling();
-    } else if (!wanted && tab) {
-      puterTabId = null;
-      await chrome.tabs.remove(tab.id);
     }
   } catch (error) {
-    console.warn("Не удалось синхронизировать вкладку Puter:", error);
+    console.warn("Не удалось синхронизировать вкладки Web:", error);
   } finally {
-    puterSyncing = false;
+    doorsSyncing = false;
   }
 }
 
-async function waitTabComplete(tabId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    if (!tab) throw new Error("Вкладка Puter закрыта.");
-    if (tab.status === "complete") return;
-    if (Date.now() > deadline) throw new Error("Страница Puter не загрузилась.");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
+function bridgeUrl(door) {
+  const url = new URL(DOORS[door].url);
+  url.searchParams.set("delegator_bridge", "1");
+  return url.href;
 }
 
-// Runs INSIDE the Puter page (MAIN world), so `puter` is that page's own signed-in SDK.
-// chrome.scripting ships only this function's source: it must not use anything from this file.
-async function askPuterInPage(text, model, maxWaitMs) {
-  const fail = (error) => ({ error });
-  const textOf = (value) => {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value)) return value.map((part) => textOf(part?.text ?? part)).join("");
-    return "";
-  };
-  let timer;
-  const ceiling = new Promise((resolve) => {
-    timer = setTimeout(() => resolve(fail(`Puter не ответил за ${Math.round(maxWaitMs / 1000)} с.`)), maxWaitMs);
-  });
-  const call = (async () => {
-    try {
-      if (typeof puter === "undefined" || typeof puter.ai?.chat !== "function") {
-        return fail("Страница Puter не загрузила puter.js.");
-      }
-      if (typeof puter.auth?.isSignedIn === "function" && !(await puter.auth.isSignedIn())) {
-        return fail("Вы не вошли в Puter в этом Chrome: войдите на builder.puter.com.");
-      }
-      const response = await puter.ai.chat(text, { model });
-      const reply = typeof response === "string"
-        ? response
-        : textOf(response?.message?.content) || textOf(response?.text);
-      return reply.trim() ? { text: reply } : fail("Puter вернул пустой ответ.");
-    } catch (error) {
-      return fail(`Puter: ${error?.message || String(error)}`);
-    }
-  })();
+async function coreWantedDoors() {
   try {
-    return await Promise.race([call, ceiling]);
-  } finally {
-    clearTimeout(timer);
+    const response = await fetch(`${CORE}/api/web/doors`, { cache: "no-store" });
+    if (!response.ok) return [];
+    return (await response.json()).wanted || [];
+  } catch {
+    return [];
   }
 }
 
-async function runPuterTask(task) {
-  const tabId = puterTabId;
-  if (tabId == null) throw new Error("Вкладка Puter закрыта.");
-  await waitTabComplete(tabId, 60000);
-  const [injection] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    func: askPuterInPage,
-    args: [task.text, task.model, Number(task.max_wait_ms) || 300000],
+function waitTabLoaded(tabId, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error("Страница не загрузилась."));
+    }, timeoutMs);
+    const finish = () => {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    const listener = (id, info) => {
+      if (id === tabId && info.status === "complete") finish();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === "complete") finish();
+    }).catch(() => {});
   });
-  const reply = injection?.result;
-  if (!reply) throw new Error("Puter не вернул результат.");
-  if (reply.error) throw new Error(reply.error);
-  return reply.text;
 }
 
-function postPuterResult(body) {
-  return fetch(`${CORE}/api/puter-web/result`, {
+function reportDoorPhase(door, phase) {
+  void fetch(`${CORE}/api/web-door/${door}/phase`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phase: String(phase || "").slice(0, 300) }),
+  }).catch(() => {});
+}
+
+// The loop's long poll outlives a closed tab: a turn can arrive just after the linger closed it, and
+// that turn must get a new tab rather than an error.
+async function ensureDoorTab(door) {
+  const known = await findDoorTab(door);
+  if (known?.id != null) {
+    doorTabs.set(door, known.id);
+    return known.id;
+  }
+  const created = await chrome.tabs.create({ url: bridgeUrl(door), active: false });
+  doorTabs.set(door, created.id);
+  await groupBridgeTab(created);
+  return created.id;
+}
+
+async function runDoorTurn(door, task) {
+  const tabId = await ensureDoorTab(door);
+  reportDoorPhase(door, "загрузка страницы");
+  await chrome.tabs.update(tabId, { url: bridgeUrl(door) });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await waitTabLoaded(tabId);
+  reportDoorPhase(door, "подключение драйвера");
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["door.js"] });
+  // Another door may win while this one still thinks: tell the page to stop rather than let a dead
+  // turn hold the tab and spend the site's quota.
+  const liveness = setInterval(() => {
+    fetch(`${CORE}/api/web-door/${door}/live?id=${encodeURIComponent(task.request_id)}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then(({ live }) => {
+        if (!live) chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_DOOR_ABORT" }).catch(() => {});
+      })
+      .catch(() => {});
+  }, 3000);
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_DOOR_RUN", door, label: DOORS[door].label, task });
+  } finally {
+    clearInterval(liveness);
+    if (debuggerTabs.has(tabId)) {
+      await chrome.debugger.detach({ tabId }).catch(() => {});
+      debuggerTabs.delete(tabId);
+    }
+  }
+}
+
+async function postDoorResult(door, body) {
+  await fetch(`${CORE}/api/web-door/${door}/result`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-function startPuterPolling() {
-  if (puterPollRunning) return;
-  puterPollRunning = true;
-  void pollPuter().finally(() => {
-    puterPollRunning = false;
-    if (puterTabId != null) startPuterPolling();
-  });
+// One turn at a time per tab; the poll hands turns over, and only short requests happen here.
+function enqueueTurn(door, task) {
+  if (!doorQueues.has(door)) doorQueues.set(door, []);
+  doorQueues.get(door).push(task);
+  void drainDoor(door);
 }
 
-async function pollPuter() {
-  while (puterTabId != null) {
-    let task = null;
-    try {
-      const response = await fetch(`${CORE}/api/puter-web/next`, { cache: "no-store" });
-      if (response.status === 204) continue;
-      if (!response.ok) throw new Error(`Delegator Core вернул HTTP ${response.status}`);
-      task = await response.json();
-      const text = await runPuterTask(task);
-      await postPuterResult({ request_id: task.request_id, text, error: null });
-    } catch (error) {
-      if (task?.request_id) {
-        await postPuterResult({
+async function drainDoor(door) {
+  if (doorsRunning.has(door)) return;
+  doorsRunning.add(door);
+  try {
+    const queue = doorQueues.get(door) || [];
+    while (queue.length) {
+      const task = queue.shift();
+      try {
+        // A turn can die waiting behind the one before it: never send it to the site then.
+        const live = await fetch(`${CORE}/api/web-door/${door}/live?id=${encodeURIComponent(task.request_id)}`, { cache: "no-store" })
+          .then((response) => response.json()).then((reply) => reply.live).catch(() => true);
+        if (!live) continue;
+        reportDoorPhase(door, "запрос получен");
+        const result = await runDoorTurn(door, task);
+        await postDoorResult(door, {
+          request_id: task.request_id,
+          text: result?.text || "",
+          error: result?.error || null,
+          used: result?.used || null,
+        });
+      } catch (error) {
+        await postDoorResult(door, {
           request_id: task.request_id,
           text: "",
           error: error instanceof Error ? error.message : String(error),
         }).catch(() => {});
       }
-      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
+  } finally {
+    doorsRunning.delete(door);
   }
 }
 
-// Wakes the extension when Delegator gets (or finishes) Puter work, even with no tab open.
-async function watchPuterDemand() {
-  let known = false;
+// ---- «Войти» -----------------------------------------------------------------
+// The GUI asks, the core passes it here: the site opens in front, the user signs in the usual way,
+// and the sign-in is confirmed by what the PAGE shows, not by the click. Nothing is read but the
+// page's own buttons, and no password, cookie or token ever passes through the extension.
+
+function probeSignIn(door) {
+  const shown = (element) => element.getClientRects().length > 0;
+  const text = (element) => (element.getAttribute("aria-label") || element.innerText || "").replace(/\s+/g, " ").trim();
+  if (/\/(sign_in|login|signin)/i.test(location.pathname)) return { state: "signed_out" };
+  const controls = [...document.querySelectorAll("a,button,[role='button']")].filter(shown);
+  if (controls.some((element) => /^(log ?in|sign ?in|sign ?up|войти|вход|登录|注册)$/i.test(text(element)))) {
+    return { state: "signed_out" };
+  }
+  const composer = [...document.querySelectorAll("textarea,[contenteditable='true'],rich-textarea")].some(shown);
+  if (!composer) return { state: "unknown" };
+  const account = door === "gemini"
+    ? (document.querySelector("a[aria-label*='@']")?.getAttribute("aria-label") || "")
+    : "";
+  return { state: "signed_in", label: account.replace(/\s+/g, " ").trim() };
+}
+
+function showSignedInToast(label) {
+  const note = document.createElement("div");
+  note.textContent = `Delegator: вход в ${label} подтверждён, вкладка сейчас закроется`;
+  note.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;"
+    + "background:#1f7a3d;color:#fff;padding:10px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.4)";
+  document.body.appendChild(note);
+}
+
+async function reportAuth(door, state, label = "") {
+  await fetch(`${CORE}/api/web/auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ door, state, label }),
+  }).catch(() => {});
+}
+
+const loginWatches = new Set();
+
+async function openLogin(door) {
+  const spec = DOORS[door];
+  if (!spec || loginWatches.has(door)) return;
+  loginWatches.add(door);
+  try {
+    const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    const host = windows.find((entry) => entry.state !== "minimized") || windows[0];
+    const tab = host
+      ? await chrome.tabs.create({ url: spec.url, active: true, windowId: host.id })
+      : (await chrome.windows.create({ url: spec.url, focused: true })).tabs[0];
+    await chrome.windows.update(tab.windowId, { focused: true, drawAttention: true }).catch(() => {});
+    await watchLogin(door, tab.id);
+  } catch (error) {
+    console.warn("Не удалось открыть страницу входа:", error);
+    await reportAuth(door, "unknown");
+  } finally {
+    loginWatches.delete(door);
+  }
+}
+
+// Ten minutes for a sign-in with a code from a phone. A sign-in page on another host (Google,
+// Apple) is simply waited out; only the site itself can say that it let the user in.
+async function watchLogin(door, tabId) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let last = "signed_out";
+  let signedInProbes = 0;
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab) {
+      await reportAuth(door, last === "signed_in" ? "signed_in" : "signed_out");
+      return;
+    }
+    if (DOORS[door].hosts.includes(hostOf(tab)) && tab.status === "complete") {
+      const [probe] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: probeSignIn,
+        args: [door],
+      }).catch(() => [null]);
+      const result = probe?.result;
+      signedInProbes = result?.state === "signed_in" ? signedInProbes + 1 : 0;
+      if (signedInProbes >= 3) {
+        await reportAuth(door, "signed_in", result.label || "");
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: showSignedInToast,
+          args: [DOORS[door].label],
+        }).catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await chrome.tabs.remove(tabId).catch(() => {});
+        return;
+      }
+      if (result?.state) last = result.state;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  await reportAuth(door, last);
+}
+
+// Chrome keeps running the old code of an unpacked extension after Delegator updates the files. One
+// reload per shipped version: when this copy is loaded from another folder its version will never
+// match, and an unconditional reload would loop forever.
+async function reloadIfOutdated(shipped) {
+  if (!shipped || shipped === chrome.runtime.getManifest().version) return;
+  const { reloadedFor } = await chrome.storage.local.get("reloadedFor");
+  if (reloadedFor === shipped) return;
+  await chrome.storage.local.set({ reloadedFor: shipped });
+  chrome.runtime.reload();
+}
+
+// Wakes the extension when Delegator gets (or finishes) work for a door, or when «Войти» is pressed.
+// Also tells the core the extension is alive, whichever doors are switched on.
+async function watchDoors() {
+  let known = [];
   for (;;) {
     try {
-      const response = await fetch(`${CORE}/api/puter-web/wait?known=${known ? 1 : 0}`, { cache: "no-store" });
+      const response = await fetch(`${CORE}/api/web-door/wait?known=${encodeURIComponent(known.join(","))}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const wanted = Boolean((await response.json()).wanted);
-      if (wanted !== known) {
+      const { wanted = [], login = [], turns = [], extension_version: shipped = "" } = await response.json();
+      for (const door of login) void openLogin(door);
+      for (const { door, ...task } of turns) enqueueTurn(door, task);
+      // Reloading drops everything held in memory, so it waits for a moment with nothing in hand.
+      if (!turns.length && !login.length && !doorsRunning.size && !loginWatches.size) await reloadIfOutdated(shipped);
+      if (wanted.join(",") !== known.join(",")) {
         known = wanted;
-        await syncPuter();
+        await syncDoors(wanted);
       }
     } catch {
-      known = false;
+      known = [];
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
   }

@@ -13,56 +13,22 @@ FORBIDDEN_BUILTINS = {'open', 'eval', 'exec', 'compile', '__import__', 'getattr'
                       'locals', 'vars', 'breakpoint', 'input', 'help'}
 FORBIDDEN_DUNDERS = {'__builtins__', '__globals__', '__subclasses__', '__class__', '__bases__', '__base__', '__mro__',
                      '__loader__', '__spec__', '__dict__', '__code__', '__closure__', '__getattribute__', '__self__'}
+# v1.6.1: operator.attrgetter/methodcaller take the attribute name as a string and bypass the AST checks above;
+# allowed stdlib modules re-export sys/os (dataclasses.sys.modules[...]) - closed by banning these attribute names.
+FORBIDDEN_ATTRS = FORBIDDEN_DUNDERS | {'attrgetter', 'methodcaller', 'sys', 'os', 'modules', 'builtins'}
 
-# v1.5: full points only at 1.3x the best r we know for each file (reference/compress_strong: a tuned
-# context-mixing codec, ~12 s per file here): code 1.373, csv 1.409, logs 1.945, mixed 1.360, prose 1.494.
-FULL_POINTS_R = {"code.py.txt": 1.79, "data.csv": 1.83, "logs.json": 2.53, "mixed.txt": 1.77, "prose.txt": 1.94}
+# v1.6: full points only at 1.3x the best r we know for each file (reference/compress_strong: a tuned
+# context-mixing codec, ~12 s per file here): code 1.373, csv 1.409, logs 1.945, mixed 1.360, prose 1.494,
+# and v1.6 additions: code2 1.391, data2 1.95, syslog2 2.095.
+FULL_POINTS_R = {"code.py.txt": 1.79, "data.csv": 1.83, "logs.json": 2.53, "mixed.txt": 1.77, "prose.txt": 1.94,
+                 "code2.py.txt": 1.81, "data2.csv": 2.53, "syslog2.txt": 2.72}
 
 
 def check_static(codec_path):
-    if not os.path.exists(codec_path):
-        return "codec.py not found"
-        
-    size = os.path.getsize(codec_path)
-    if size > 60 * 1024:
-        return f"File size {size} bytes exceeds 60 KB limit"
-        
-    with open(codec_path, "r", encoding="utf-8") as f:
-        code = f.read()
-        
-    try:
-        tree = ast.parse(code, filename="codec.py")
-    except SyntaxError as e:
-        return f"Syntax error: {e}"
-        
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                base = alias.name.split('.')[0]
-                if base not in ALLOWED_IMPORTS:
-                    return f"Forbidden import: {alias.name}"
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                base = node.module.split('.')[0]
-                if base not in ALLOWED_IMPORTS:
-                    return f"Forbidden import: {node.module}"
-        elif isinstance(node, ast.Name):
-            if node.id in FORBIDDEN_BUILTINS or node.id in FORBIDDEN_DUNDERS:
-                return f"Forbidden builtin: {node.id}"
-        elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_DUNDERS:
-            return f"Forbidden attribute: {node.attr}"
-        elif isinstance(node, ast.Call):
-            if getattr(node.func, 'id', None) == '__import__':
-                return "Forbidden builtin: __import__"
-                
-    if 'importlib' in code or '__import__' in code:
-        # Extra string check just in case
-        for name in FORBIDDEN_BUILTINS:
-            if name in code and name != "globals" and name != "getattr":
-                # Being lenient here, real check is AST
-                pass
-                
-    return None
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
+    from code_rules import check_code
+    return check_code(codec_path, "compress")
+
 
 def run_subprocess(func_name, input_file, output_file, codec_dir):
     script = f"""
@@ -76,7 +42,9 @@ with open(r'{output_file}', 'wb') as f:
 """
     t0 = time.time()
     try:
-        proc = subprocess.run([sys.executable, "-c", script], cwd=codec_dir, capture_output=True, timeout=30.0)
+        proc = subprocess.run([sys.executable, "-c", script], cwd=codec_dir, capture_output=True, timeout=30.0,
+                              env=dict(os.environ, PYTHONHASHSEED="0"),
+                              creationflags=0x00008000 if os.name == "nt" else 0)
         t1 = time.time()
         if proc.returncode != 0:
             return False, proc.stderr.decode('utf-8', 'replace').strip(), t1 - t0

@@ -8,6 +8,7 @@
   const visible = (element) => Boolean(element && element.getClientRects().length);
   const normalizedText = (element) => (element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim();
   let busy = false;
+  let aborted = false;
   // Reported to the Core so a request that hangs says WHERE it hangs.
   const phase = (name) => chrome.runtime.sendMessage({ type: "DELEGATOR_GEMINI_PHASE", phase: name }).catch(() => {});
 
@@ -117,6 +118,12 @@
     return Boolean(MODEL_MATCHERS[model]?.(label));
   }
 
+  // A guest gets a working Gemini with a weak model: a chat that answers does not prove a session.
+  function signInShown() {
+    return [...document.querySelectorAll("a,button,[role='button']")].filter(visible)
+      .some((element) => /^(войти|вход|sign in|log in)$/i.test(element.getAttribute("aria-label") || normalizedText(element)));
+  }
+
   function findModelPicker() {
     const buttons = querySelectorAllDeep('[data-test-id="bard-mode-menu-button"],button,[role="button"]')
       .filter(visible);
@@ -128,11 +135,15 @@
 
   // The picker appears a moment after the composer does, so wait for it, and
   // when it never does say what IS on the page instead of a bare "not found".
+  // Measured: a freshly opened background tab showed it after more than 8 s, and that one wait failed
+  // every first request of a session over to the next provider.
   async function requirePicker() {
-    const deadline = Date.now() + 8000;
+    if (signInShown()) throw new Error("LOGIN: Gemini просит войти в аккаунт Google.");
+    const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       const picker = findModelPicker();
       if (picker) return picker;
+      if (signInShown()) throw new Error("LOGIN: Gemini просит войти в аккаунт Google.");
       await sleep(200);
     }
     const seen = querySelectorAllDeep('button,[role="button"]').filter(visible)
@@ -333,6 +344,11 @@
     if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\s+/g, " ");
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
     const tag = node.tagName.toLowerCase();
+    // KaTeX renders a formula twice (MathML for readers, HTML for the eye): keep its TeX once.
+    if (node.classList.contains("katex")) {
+      const tex = node.querySelector("annotation[encoding='application/x-tex']")?.textContent;
+      if (tex) return `$${tex.trim()}$`;
+    }
     if (tag === "code-block" || tag === "pre") {
       const code = (node.querySelector("pre code,code") || node.querySelector("pre") || node).textContent.replace(/\n+$/, "");
       const header = node.querySelector(".code-block-decoration span,[class*='decoration'] span");
@@ -518,6 +534,7 @@
     };
     try {
       while (Date.now() < deadline) {
+        if (aborted) throw new Error("ABORTED: другая дверь ответила раньше.");
         const nodes = getAnswerNodes();
         watch(nodes.at(-1) || null);
         // textContent includes collapsed thought panels that innerText hides.
@@ -617,6 +634,11 @@
       await startFreshChat();
       void phase(`выбор модели (${task.model})`);
       await chooseModel(task.model);
+      // "best" takes the best row not spent, which may be Flash-Lite. With another door ready that is a
+      // spent quota, not an answer: report it so the door rests and the turn moves on.
+      if (task.no_lite && /lite/i.test(pickerLabel())) {
+        throw new Error(`QUOTA[${pickerLabel()}]: у сильных моделей Gemini закончилась квота.`);
+      }
       void phase(`выбор уровня (${task.reasoning}); модель: ${pickerLabel()}`);
       await chooseReasoning(task.reasoning);
       void phase(`ввод запроса; ${pickerLabel()} · ${usedReasoning}`);
@@ -633,7 +655,14 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "DELEGATOR_GEMINI_ABORT") {
+      aborted = true;
+      [...document.querySelectorAll('button[aria-label*="Stop"],button[aria-label*="Останов"],[data-test-id*="stop-generating"]')]
+        .find(visible)?.click();
+      return;
+    }
     if (message?.type !== "DELEGATOR_GEMINI_RUN") return;
+    aborted = false;
     if (busy) {
       sendResponse({ error: "Вкладка Gemini уже обрабатывает другой запрос." });
       return;

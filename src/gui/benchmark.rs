@@ -1,7 +1,7 @@
 //! «Бенчмарк» tab: the newest coding-benchmark grade per mode.
 //!
 //! The GUI never runs the benchmark — the IDE agent does, on `-benchmark` /
-//! `-benchmark delegator`, and leaves `<RT>\coding-bench\results\*__v1.5__grade.json`
+//! `-benchmark delegator`, and leaves `<RT>\coding-bench\results\*__v1.7__grade.json`
 //! behind. Here we only read those files (no network, no core) plus the
 //! `<RT>\benchmark-active.json` flag that exists while a run is in flight.
 //! Every field is optional: a malformed file must never panic the window.
@@ -64,6 +64,8 @@ pub struct Grade {
     pub total: f64,
     pub minutes: Option<f64>,
     pub calibration_error: Option<f64>,
+    /// Warnings from the grader (optional: grades written before the field existed have none).
+    pub flags: Vec<String>,
     pub graded_at: String,
     pub tasks: GradeTasks,
     pub delegation: Option<DelegationStats>,

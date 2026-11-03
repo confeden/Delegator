@@ -461,15 +461,54 @@ function Get-BestAvailableDpr {
     # Get-StrongEnabledModel makes, so the router compares the caller against the
     # model that would really answer, not against the best row in the table.
     # 0 when nothing is enabled or nothing is rated: no comparison is possible.
+    $web = Get-WebBestStrength
     $best = Get-StrongEnabledModel
-    if ([string]::IsNullOrWhiteSpace($best)) { return 0 }
+    if ([string]::IsNullOrWhiteSpace($best)) { return $web }
     $rating = Get-DelegatorModelRating $best
     if ($null -eq $rating) {
         $strengths = Get-ZenCatalogStrengthMap
-        if ($strengths -and $strengths.ContainsKey($best)) { return [int]$strengths[$best] }
-        return 0
+        if ($strengths -and $strengths.ContainsKey($best)) { return [math]::Max($web, [int]$strengths[$best]) }
+        return $web
     }
-    return [int]$rating
+    return [math]::Max($web, [int]$rating)
+}
+
+function Get-RecentHardFailedModels {
+    # Models whose LAST recorded call failed for a reason about the PROVIDER (network,
+    # auth) within the last 30 minutes, and has not succeeded since. Health ignores those
+    # classes on purpose (they say nothing about answer quality), so nothing else stopped
+    # the strength floor from picking a provider that was refusing every call.
+    $result = @{}
+    $usageFile = Join-Path $script:DelegateHome "usage.jsonl"
+    if (-not (Test-Path -LiteralPath $usageFile)) { return $result }
+    $last = @{}
+    try {
+        $lines = @([System.IO.File]::ReadAllLines($usageFile))
+        if ($lines.Count -gt 400) { $lines = @($lines[($lines.Count - 400)..($lines.Count - 1)]) }
+        foreach ($line in $lines) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $row = $null
+            try { $row = $line | ConvertFrom-Json } catch { continue }
+            $id = [string]$row.model
+            if ([string]::IsNullOrWhiteSpace($id)) { continue }
+            $last[$id] = $row
+        }
+    } catch {}
+    $cutoff = [DateTimeOffset]::UtcNow.AddMinutes(-30)
+    foreach ($id in @($last.Keys)) {
+        $row = $last[$id]
+        $isOk = $true
+        try { if ($row.PSObject.Properties["ok"] -and $null -ne $row.ok) { $isOk = [bool]$row.ok } } catch {}
+        if ($isOk) { continue }
+        $errorClass = ""
+        try { $errorClass = [string]$row.errorClass } catch {}
+        if ($errorClass -notin @("network", "auth")) { continue }
+        $when = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string]$row.ts, [ref]$when)) { continue }
+        if ($when -lt $cutoff) { continue }
+        $result[$id] = $true
+    }
+    return $result
 }
 
 function Get-StrongEnabledModel {
@@ -485,6 +524,11 @@ function Get-StrongEnabledModel {
     param([string[]]$Exclude = @())
     $enabled = @(Get-DelegatorEnabledModels "enabled_opencode_models")
     if ($Exclude.Count -gt 0) { $enabled = @($enabled | Where-Object { $Exclude -notcontains $_ }) }
+    $hardFailed = Get-RecentHardFailedModels
+    if ($hardFailed.Count -gt 0) {
+        $healthy = @($enabled | Where-Object { -not $hardFailed.ContainsKey($_) })
+        if ($healthy.Count -gt 0) { $enabled = $healthy }
+    }
     if ($enabled.Count -eq 0) { return "" }
     $strengths = Get-ZenCatalogStrengthMap
     if ($strengths.Count -gt 0) {
@@ -548,9 +592,6 @@ function Test-ModelMatchesBackend {
     }
     if ($BackendName -eq "gemini") {
         return ($ModelName -like "gemini-*")
-    }
-    if ($BackendName -eq "puter") {
-        return ($ModelName -like "moonshotai/kimi-*")
     }
     if ($BackendName -eq "capy") {
         return ($ModelName -like "capy/*")
@@ -623,7 +664,6 @@ function Get-BackendFallbackModel {
     param([string]$BackendName, [string[]]$Enabled)
     $preferred = ""
     if ($BackendName -eq "opencode") { $preferred = "opencode/deepseek-v4-flash-free" }
-    elseif ($BackendName -eq "puter") { $preferred = "moonshotai/kimi-k2.6" }
 
     $list = @(@($Enabled) |
         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
@@ -819,6 +859,17 @@ function Invoke-Delegate {
         [string]$Stage = ""
     )
 
+    # The hook tells the agent to allow 10 minutes. Rungs that each take their full timeout added up
+    # to 2 hours once (solve-fallback, measured): past the deadline the ladder stops asking.
+    $callTimeout = $TimeoutSec
+    if ($null -ne $script:AssistDeadline) {
+        $left = [int]($script:AssistDeadline - (Get-Date)).TotalSeconds
+        if ($left -lt 15) {
+            [Console]::Error.WriteLine("[Delegator] the time budget for this request is over, skipping '$ChosenModel'")
+            return [pscustomobject]@{ exitCode = 124; output = "Delegator: the time budget for this request is over." }
+        }
+        $callTimeout = [math]::Min([int]$TimeoutSec, $left)
+    }
     $cx = if (-not [string]::IsNullOrWhiteSpace($EffectiveComplexity)) { $EffectiveComplexity } else { $Complexity }
     $effectiveModel = if (-not [string]::IsNullOrWhiteSpace($ChosenModel)) { $ChosenModel } else { $Model }
     # Set for the provider child and restored afterwards: a nested call (an
@@ -826,7 +877,7 @@ function Invoke-Delegate {
     $previousStage = $env:DELEGATOR_USAGE_STAGE
     $env:DELEGATOR_USAGE_STAGE = if ([string]::IsNullOrWhiteSpace($Stage)) { $previousStage } else { $Stage }
     try {
-        $delegateParams = @{ Command = "ask"; Prompt = $Text; Complexity = $cx; TimeoutSec = $TimeoutSec }
+        $delegateParams = @{ Command = "ask"; Prompt = $Text; Complexity = $cx; TimeoutSec = $callTimeout }
         if ($Json) { $delegateParams.Json = $true }
         if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) { $delegateParams.Model = $effectiveModel }
 
@@ -888,39 +939,48 @@ function Get-GeminiAliasVersion {
 
 function Get-GeminiModelScore {
     <#
-      Ranks a Google model id. Higher is stronger.
+      Ranks a Google model id. Higher is stronger. The order is the owner's rule,
+      for the API keys and the web door alike:
 
-      Two rules, both from measurement rather than taste:
-      * GENERATION dominates tier. The owner measured `gemini-3.7-flash` as
-        stronger than what `gemini-pro-latest` resolves to today (3.1 Pro), so
-        a newer flash outranks an older pro.
-      * An explicitly VERSIONED id outranks a `-latest` alias of the same tier.
-        An alias is a moving target we cannot rank: `pro-latest` is still 3.1
-        Pro while 3.7 Flash ships as its own id, so trusting the alias to be
-        "the newest" would pick the weaker model.
+        1. Argon, when it is enabled.
+        2. Flash, but only while its number is ABOVE Pro's.
+        3. Pro.
+        4. Flash, when its number is not above Pro's (between Pro and Flash-Lite).
+        5. Flash-Lite.
+
+      Inside a tier the higher version number wins. An explicitly VERSIONED id
+      outranks a `-latest` alias of the same number, because an alias is a moving
+      target. A family whose number is unknown (no catalog read yet) takes the
+      tier alone, and Flash then counts as above Pro (the old default).
     #>
     param([string]$ModelId)
 
     $id = ([string]$ModelId).ToLowerInvariant()
-    # argon is the top of the line, so it takes the pro tier.
-    $tier = if ($id -match "flash-?lite" -or $id -match "\blite\b") { 1 }
-            elseif ($id -match "\bpro\b" -or $id -match "argon") { 3 }
-            else { 2 }
+    $family = if ($id -match "flash-?lite" -or $id -match "\blite\b") { "flash-lite" }
+              elseif ($id -match "argon") { "argon" }
+              elseif ($id -match "\bpro\b") { "pro" }
+              else { "flash" }
     $generation = 0.0
     if ($id -match "gemini-(\d+(?:\.\d+)?)") { $generation = [double]$Matches[1] }
-    if ($generation -le 0) {
-        # A `-latest` alias has no number of its own. The GUI records what each
-        # one resolves to (read off the Google model list), and the alias is then
-        # ranked BY THAT NUMBER like any other model: higher number, higher
-        # priority. One point below the versioned id of the same number, since
-        # the alias is the moving target. Unknown (no catalog read yet): tier
-        # only, ranks last - the old behaviour.
-        $family = if ($id -match "flash-?lite") { "flash-lite" } elseif ($id -match "\bpro\b") { "pro" } elseif ($id -match "flash") { "flash" } else { "" }
-        $known = Get-GeminiAliasVersion $family
-        if ($known -le 0) { return $tier * 3 }
-        return [int]([math]::Round($known * 10)) + $tier * 3 - 1
+    # A `-latest` alias has no number of its own: the GUI's catalog read supplies it.
+    $number = $generation
+    if ($number -le 0 -and $family -ne "argon") { $number = Get-GeminiAliasVersion $family }
+    $proNumber = Get-GeminiAliasVersion "pro"
+    if ($generation -gt 0 -and $family -eq "pro") { $proNumber = $generation }
+
+    $tier = switch ($family) {
+        "argon"      { 5 }
+        "flash-lite" { 1 }
+        "pro"        { 3 }
+        default      {
+            if ($proNumber -le 0 -or $number -gt $proNumber) { 4 } else { 2 }
+        }
     }
-    return [int]([math]::Round($generation * 10)) + $tier * 3
+    $base = $tier * 1000
+    if ($number -le 0) { return $base }
+    # The -latest alias is one point below the versioned id of the same number.
+    $penalty = if ($generation -gt 0) { 0 } else { 1 }
+    return $base + [int]([math]::Round($number * 10)) - $penalty
 }
 
 function Get-EnabledGeminiModelsByStrength {
@@ -948,6 +1008,19 @@ function Get-EnabledGeminiModelsByStrength {
 # it keeps answering when every metered model is out of quota. Mirrors
 # config.rs UNIVERSAL_FREE_MODEL - change both together.
 $script:UniversalFreeModel = "openrouter/openrouter/free"
+
+function Test-HeavyTaskText {
+    # The same domains the strength floor pins to the strongest model. A free route
+    # is never allowed to answer or review these (owner's rule, 2026-10-26).
+    param([string]$Text)
+    return ((Get-TaskDomain $Text) -match "architecture|security|code_debug|context_analysis|math_algo|data_consistency")
+}
+
+function Test-FreeModelId {
+    # `openrouter/openrouter/free`, `orcarouter/free`, `tencent/hy3-free`, `x:free`, ...
+    param([string]$ModelId)
+    return ([string]$ModelId -match "(?i)(^|[-/:])free$")
+}
 
 function Get-UniversalFreeModel {
     # Only if the GUI has it enabled: the allowlist is mandatory (CONTRIBUTING),
@@ -1079,7 +1152,9 @@ function Invoke-DelegateAcrossBackends {
     # independently: the owner's AgentRouter answers on gpt-5.6-sol while both
     # Claude routes return HTTP 402 (budget pool exhausted). Walk the rest of
     # their own models before leaving the provider they configured.
-    $custom = @(Get-CustomProviderModels | Where-Object { $_ -ne $ChosenModel })
+    # Only when the failed model was itself a custom one: a Gemini failure must not
+    # send the call through the AgentRouter/OpenCode routes first (run l8xb).
+    $custom = @(if ($ChosenBackend -eq "opencode") { Get-CustomProviderModels | Where-Object { $_ -ne $ChosenModel } })
     foreach ($sibling in @($custom | Select-Object -First 2)) {
         [Console]::Error.WriteLine("[Delegator] $ChosenModel failed, trying $sibling")
         Write-DelegateMetric -Stage "failover" -Model $sibling -Backend "opencode" -Status "same-provider" -Extra "was=$ChosenModel"
@@ -1093,6 +1168,9 @@ function Invoke-DelegateAcrossBackends {
     }
 
     $otherBackend = if ($ChosenBackend -eq "opencode") { "gemini" } else { "opencode" }
+    # A failed Gemini model is followed by the OTHER Gemini models first (flash-lite
+    # answered where flash was overloaded), and only then by the opencode routes.
+    $geminiNext = if ($ChosenBackend -eq "gemini") { @(Get-EnabledGeminiModelsByStrength -Exclude @($ChosenModel) | Select-Object -First 2) } else { @() }
     # Up to two models on the other side. Google meters each model separately,
     # so "pro is out of quota" must not read as "Google is out of quota".
     $candidates = if ($otherBackend -eq "gemini") {
@@ -1102,7 +1180,7 @@ function Invoke-DelegateAcrossBackends {
         $second = if ([string]::IsNullOrWhiteSpace($first)) { "" } else { Get-StrongEnabledModel -Exclude @($first) }
         @(@($first, $second) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     }
-    if ($candidates.Count -eq 0) {
+    if ($candidates.Count -eq 0 -and $geminiNext.Count -eq 0) {
         return [pscustomobject]@{
             exitCode = $result.exitCode; output = $result.output; backend = $ChosenBackend
             model = $ChosenModel; fellBack = $false
@@ -1112,15 +1190,19 @@ function Invoke-DelegateAcrossBackends {
     # Last rung: the universal free route, whichever side we ended up on. When
     # both providers are rate-limited this is the only thing left that answers.
     $universal = Get-UniversalFreeModel
+    if ((Test-HeavyTaskText $Text)) { $universal = "" }
     if (-not [string]::IsNullOrWhiteSpace($universal) -and $candidates -notcontains $universal) {
         $candidates = @($candidates) + $universal
     }
 
     $lastRetry = $null
-    foreach ($otherModel in $candidates) {
-        # `openrouter/*` is served by the opencode side regardless of which
-        # backend we failed over FROM.
-        $useBackend = if ($otherModel -like "openrouter/*") { "opencode" } else { $otherBackend }
+    # `openrouter/*` is served by the opencode side regardless of which backend we
+    # failed over FROM; the Gemini-next models always stay on Gemini.
+    $plan = @($geminiNext | ForEach-Object { [pscustomobject]@{ model = $_; backend = "gemini" } }) +
+        @($candidates | ForEach-Object { [pscustomobject]@{ model = $_; backend = $(if ($_ -like "openrouter/*") { "opencode" } else { $otherBackend }) } })
+    foreach ($step in $plan) {
+        $otherModel = [string]$step.model
+        $useBackend = [string]$step.backend
         [Console]::Error.WriteLine("[Delegator] $ChosenBackend failed, retrying on $useBackend ($otherModel)")
         Write-DelegateMetric -Stage "failover" -Model $otherModel -Backend $useBackend -Status "from-$ChosenBackend" -Extra "was=$ChosenModel"
         $lastRetry = Invoke-Delegate -ChosenBackend $useBackend -Text $Text -ChosenModel $otherModel -EffectiveComplexity $EffectiveComplexity -Stage $Stage
@@ -1687,6 +1769,26 @@ function Format-PingReport {
     return $lines.ToArray()
 }
 
+function Get-PingBackendModels {
+    # The first two models a backend would use for the probe, in its own preference order.
+    param([string]$BackendName, [string]$Text)
+    $picked = @()
+    $first = Get-PreferredBackendModel $BackendName $Text
+    if (-not [string]::IsNullOrWhiteSpace($first)) { $picked += $first }
+    if ($BackendName -eq "gemini") {
+        foreach ($name in @("gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest")) {
+            if ($picked.Count -ge 2) { break }
+            if ($name -ne $first -and @(Get-DelegatorEnabledModels "enabled_gemini_models") -contains $name) { $picked += $name }
+        }
+    } else {
+        foreach ($name in @(Get-DelegatorEnabledModels "enabled_opencode_models")) {
+            if ($picked.Count -ge 2) { break }
+            if ($name -ne $first -and $name -notlike "openrouter/*") { $picked += $name }
+        }
+    }
+    return ,$picked
+}
+
 function Run-Ping {
     <#
       One command a user can type in their IDE chat to see whether Delegator is
@@ -1701,9 +1803,10 @@ function Run-Ping {
     # A ping is a self-test, never work the caller receives: `ping` is not in
     # SAVED_STAGES, so its tokens are booked as spent (DEV_CONTRACTS section 3).
     $probe = "Ответь одним словом: PONG"
-    # Long enough for a cold OpenCode CLI (listing models alone takes ~13 s),
-    # and this is a PER-CALL budget: the probe below makes at most two calls.
+    # Long enough for a cold OpenCode CLI (listing models alone takes ~13 s), and a PER-CALL budget.
     $script:TimeoutSec = 60
+    # The whole walk: no new call starts after this many seconds.
+    $PingBudgetSec = 150
 
     $coreVersion = ""
     try {
@@ -1716,20 +1819,26 @@ function Run-Ping {
     $caller = $CallerModel
     if ([string]::IsNullOrWhiteSpace($caller)) { $caller = $env:DELEGATOR_CALLER_MODEL }
 
-    # AT MOST TWO CALLS, one per backend. Deliberately NOT
-    # Invoke-DelegateAcrossBackends: its ladder walks up to six models, and with
-    # a 60 s budget each that is a nine-minute "status check" - measured, on the
-    # first run through the installed runtime, at over four minutes and still
-    # going. A real task is allowed to be that patient; a status line is not.
+    # AT MOST FOUR CALLS within PingBudgetSec, two per backend. Deliberately NOT
+    # Invoke-DelegateAcrossBackends: its ladder walks up to six models with no
+    # overall cap - measured at over four minutes for a "status check". A real task
+    # is allowed to be that patient; a status line is not.
     $primary = Select-Backend $probe
     $secondary = "opencode"
     if ($primary -eq "opencode") { $secondary = "gemini" }
+    # Two models per backend, interleaved, so a 503 on one model does not read as "nobody answers":
+    # the first answer wins, and the whole walk stops at PingBudgetSec (see the loop below).
     $plan = @()
+    $perBackend = @{}
     foreach ($backend in @($primary, $secondary)) {
-        $candidate = Get-PreferredBackendModel $backend $probe
-        if ([string]::IsNullOrWhiteSpace($candidate) -and $backend -eq $primary) { $candidate = $Model }
-        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-            $plan += ,@($backend, $candidate)
+        $perBackend[$backend] = @(Get-PingBackendModels $backend $probe)
+        if ($perBackend[$backend].Count -eq 0 -and $backend -eq $primary -and -not [string]::IsNullOrWhiteSpace($Model)) {
+            $perBackend[$backend] = @($Model)
+        }
+    }
+    for ($rung = 0; $rung -lt 2; $rung++) {
+        foreach ($backend in @($primary, $secondary)) {
+            if ($perBackend[$backend].Count -gt $rung) { $plan += ,@($backend, [string]$perBackend[$backend][$rung]) }
         }
     }
 
@@ -1738,8 +1847,19 @@ function Run-Ping {
     $answered = ""
     $tried = @()
     $code = 1
+    # A model in cooldown is not called (its provider already failed it, and a status line should not
+    # spend the budget on it). The report says so, with the time the cooldown ends, instead of "no answer".
+    $cooldownData = Get-DelegateCooldowns
+    $skippedReason = @{}
     foreach ($step in $plan) {
+        if ($watch.Elapsed.TotalSeconds -ge $PingBudgetSec) { break }
         $tried += [string]$step[1]
+        if (Test-ModelCoolingDown -ModelName ([string]$step[1]) -Cooldowns $cooldownData) {
+            $row = $cooldownData.models.PSObject.Properties[[string]$step[1]].Value
+            $until = [datetime]::Parse([string]$row.until, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal).ToLocalTime()
+            $skippedReason[[string]$step[1]] = "в cooldown до {0} ({1}), не вызывался" -f $until.ToString("HH:mm"), [string]$row.reason
+            continue
+        }
         $result = $null
         try {
             $result = Invoke-Delegate -ChosenBackend $step[0] -Text $probe -ChosenModel $step[1] -EffectiveComplexity "fast" -Stage "ping"
@@ -1767,6 +1887,10 @@ function Run-Ping {
     $classes = @()
     if ([string]::IsNullOrWhiteSpace($answered)) {
         foreach ($model in $tried) {
+            if ($skippedReason.ContainsKey([string]$model)) {
+                $reasons += [string]$skippedReason[[string]$model]
+                continue
+            }
             $failure = Get-PingFailureReason -ModelName $model -Since $probeStarted
             $reasons += [string]$failure.reason
             if (-not [string]::IsNullOrWhiteSpace([string]$failure.class)) {
@@ -1788,7 +1912,26 @@ function Run-Ping {
         -Seconds $watch.Elapsed.TotalSeconds `
         -ExitCode $code
     foreach ($line in $report) { Write-Output $line }
+    $webLine = Format-WebDoorsLine (Get-WebDoorsState)
+    if (-not [string]::IsNullOrWhiteSpace($webLine)) { Write-Output $webLine }
     Exit-Delegate 0
+}
+
+function Format-WebDoorsLine {
+    # One line for -ping: which web doors are on and what is in their way. Empty when none is on.
+    param($State)
+    if ($null -eq $State) { return "" }
+    $parts = @()
+    foreach ($door in @($State.doors | Where-Object { $_.enabled })) {
+        $note = if (-not $State.connected) { "нет расширения" }
+                elseif ($door.auth -eq "signed_out") { "нужен вход" }
+                elseif ([int]$door.resting_sec -gt 0) { "пауза $([math]::Ceiling([int]$door.resting_sec / 60)) мин" }
+                elseif ($door.auth -eq "signed_in") { "готов" }
+                else { "вход не проверен" }
+        $parts += "$($door.label): $note"
+    }
+    if ($parts.Count -eq 0) { return "" }
+    return "Web: " + ($parts -join ", ")
 }
 
 function Run-Policy {
@@ -2308,6 +2451,8 @@ function Get-CacheVariant {
 # Cost: one model call when the draft is fine, two when it is not.
 
 $script:ImproveTaskBudget = 8000
+$script:AssistBudgetSec = 540   # the hook tells the agent to allow 10 minutes per call
+$script:ImproveBudgetSec = 240  # the caller already has an answer; a review is worth only so much wait
 $script:ImproveDraftBudget = 24000
 $script:ImproveContextBudget = 12000
 # The re-ask carries the reviewer's OWN unreadable reply back to it. A review is
@@ -2658,6 +2803,20 @@ function Get-RouterDecision {
         complexity = "auto"; escalate = $false; tier = "fallback"; routerVersion = "0"
         callerTier = "unknown"; callerDpr = $CallerDpr; bestDpr = $BestDpr; modelReview = $true
     }
+    # The running core answers in milliseconds; spawning the frozen exe costs 1.4 s (measured). The exe
+    # stays for the agents that call us while the GUI, and so the core, is not up.
+    try {
+        $body = @{
+            task = [string]$Task; draft = [string]$Draft; contextFiles = $ContextFiles
+            callerDpr = $CallerDpr; bestDpr = $BestDpr
+            callerConfidence = [string]$CallerConfidence; bestConfidence = [string]$BestConfidence
+        } | ConvertTo-Json -Depth 4 -Compress
+        $reply = Invoke-WebRequest -Uri "http://127.0.0.1:1380/api/route" -Method Post -TimeoutSec 2 -UseBasicParsing `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json; charset=utf-8"
+        $decision = [System.Text.Encoding]::UTF8.GetString($reply.RawContentStream.ToArray()) | ConvertFrom-Json
+        if ($decision -and -not [string]::IsNullOrWhiteSpace([string]$decision.mode)) { return $decision }
+    } catch {}
+
     $core = Get-CoreExecutable
     if ([string]::IsNullOrWhiteSpace($core)) { return $fallback }
 
@@ -2802,6 +2961,11 @@ function Run-Assist {
         [Console]::Error.WriteLine("[Delegator] assist requires the task text: -PromptFile <file>")
         Exit-Delegate 2
     }
+    $script:AssistDeadline = (Get-Date).AddSeconds($script:AssistBudgetSec)
+    # The router already decided what this request is. The planner and triage behind it would each spend
+    # a call on the weakest enabled model to decide it again, and the extract stage would summarise the
+    # task with that same model before the strong one sees it.
+    $script:NoPlanner = $true
 
     $draftText = ""
     if (-not [string]::IsNullOrWhiteSpace($DraftFile) -and (Test-Path -LiteralPath $DraftFile)) {
@@ -2825,17 +2989,22 @@ function Run-Assist {
         if (-not [string]::IsNullOrWhiteSpace($draftText)) {
             $webPrompt += "`n`nTHE CALLER'S CURRENT DRAFT (improve it where it is wrong, slow or weak; reply with the COMPLETE improved solution, not a diff):`n$draftText"
         }
-        # A file the web chat cannot be given (the bridge sends text only) means the task would be
-        # answered without it: do not hand the task over, the ordinary ladder runs instead.
-        if ($script:ContextBinarySkipped -gt 0) {
-            [Console]::Error.WriteLine("[Delegator] Web: a non-text file cannot be attached, the task is not sent to the web chat")
+        # A binary file goes to Gemini Web as an attachment (Invoke-WebDelegation). Only without Gemini Web
+        # (the other doors take text only) would the task be answered without the file: then the ordinary
+        # ladder runs instead of the web chat.
+        $geminiWebOn = $false
+        try { $geminiWebOn = [bool]((Get-Content -LiteralPath $script:DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json).gemini_web_enabled) } catch {}
+        if ($script:ContextBinarySkipped -gt 0 -and -not $geminiWebOn) {
+            [Console]::Error.WriteLine("[Delegator] Web: a non-text file needs Gemini Web for attachment, the task is not sent to the web chat")
             $script:WebTried = $true
             $webAnswer = $null
         } else {
         # "medium": the highest level thinks for more than 8 minutes on a whole-solver prompt, and a
         # benchmark task has 15 minutes in total.
+        # Set AFTER the call: Invoke-WebDelegation returns at once when WebTried is already set, so setting
+        # it first made this door switch itself off (found 2026-10-27: no web call in any benchmark run).
+        $webAnswer = Invoke-WebDelegation $webPrompt -WebReasoning "medium" -WebTimeout 570
         $script:WebTried = $true
-        $webAnswer = Invoke-WebDelegation $webPrompt -WebReasoning "medium"
         }
         if ($null -ne $webAnswer) {
             Write-DelegateMetric -Stage "route" -Status "web-benchmark" -LatencyMs 0 -Extra "reason=benchmark-web"
@@ -2877,7 +3046,9 @@ function Run-Assist {
     # is calling: letting it overrule the quality guard would undo the one promise
     # section 13 makes to a strong caller.
     if ($callerTier -eq "guard") { $decision.escalate = $false }
-    if ($decision.escalate -and $decision.tier -eq "rules") {
+    # With a web door up the fast model has nothing to decide: every mode it could pick ends in the same
+    # web chat, and it would spend up to 20 s of the caller's wait first.
+    if ($decision.escalate -and $decision.tier -eq "rules" -and -not (Test-WebDoorsUp)) {
         # The rules are unsure: let one fast model have the last word.
         $escalated = Get-EscalatedMode -Task $Prompt -HasDraft (-not [string]::IsNullOrWhiteSpace($draftText)) -Fallback $mode
         if ($escalated -ne $mode) {
@@ -2906,10 +3077,34 @@ function Run-Assist {
         [Console]::Error.WriteLine("[Delegator] $callerNote")
     }
 
+    # Owner's rule, 2026-10-26: a caller that NAMED itself but has no usable rating
+    # cannot be compared with any delegate, so a delegate can only make its answer
+    # worse. Keep it. `improve` stays: it checks the draft and does not replace it.
+    if ($mode -ne "improve" -and -not [string]::IsNullOrWhiteSpace($CallerModel) -and $callerDpr -le 0) {
+        # The router's judgement about the TASK still holds: a design question is worth two opinions
+        # whoever asks. Only the comparison with the caller is off the table.
+        if ($mode -eq "boost") { $script:Boost = $true }
+        $mode = "keep"
+    }
+
     switch ($mode) {
         "improve" { Run-Improve }
         "boost" { $script:Boost = $true; Run-Ask }
         "keep" {
+            # The web chat costs the caller no tokens and no API quota, and it is the strongest model it offers.
+            # Before keeping the caller's own answer, try it - web only, no ladder. Nothing answered: keep.
+            $keepPrompt = $Prompt
+            if ($ContextFile -and @($ContextFile).Count -gt 0) {
+                $keepContext = Read-ContextFiles -Entries $ContextFile -Budget 60000
+                if (-not [string]::IsNullOrWhiteSpace($keepContext)) { $keepPrompt += "`n`nFILES THE CALLER READ:`n$keepContext" }
+            }
+            $keepWeb = Get-WebOrCachedAnswer -Text $keepPrompt -Started ([System.Diagnostics.Stopwatch]::StartNew())
+            if ($null -ne $keepWeb) {
+                Write-DelegateMetric -Stage "route" -Status "web-keep" -LatencyMs 0 -Extra "reason=keep-web-first"
+                [Console]::Error.WriteLine("[Delegator] режим: web (вместо keep)")
+                $keepWeb
+                Exit-Delegate 0
+            }
             # Nothing to do that would not cost more than it returns. Exit 3 is
             # the same "keep your own answer" the improve contract already uses,
             # so an agent needs no new branch.
@@ -2919,9 +3114,28 @@ function Run-Assist {
     }
 }
 
+function Invoke-ImproveCall {
+    # One review or rewrite call: the web chat when it is up (the strongest model, no API quota), and the
+    # usual failover ladder when it is not or it fails. Same shape as Invoke-DelegateAcrossBackends.
+    param([string]$Text, [string]$ApiBackend, [string]$ApiModel, [string]$Cx, [string]$CallStage, [string]$Reasoning = "")
+    if (Test-WebDoorsUp) {
+        $answer = Invoke-WebTurn -Text $Text -Reasoning $Reasoning -Timeout 180
+        if ($null -ne $answer) {
+            $script:ImproveWebModel = [string]$script:FinalModel
+            return [pscustomobject]@{ exitCode = 0; output = $answer; backend = $ApiBackend; model = $ApiModel; fellBack = $false }
+        }
+    }
+    return Invoke-DelegateAcrossBackends -ChosenBackend $ApiBackend -Text $Text -ChosenModel $ApiModel -EffectiveComplexity $Cx -Stage $CallStage
+}
+
 function Run-Improve {
     $improveSw = [System.Diagnostics.Stopwatch]::StartNew()
     $script:ImproveMissingContext = 0
+    $script:ImproveWebModel = ""
+    # The caller already holds a usable answer, so a review is worth only so much of its wait. Measured:
+    # 158-734 s. Past this budget the calls stop, and the caller keeps its draft.
+    $improveDeadline = (Get-Date).AddSeconds($script:ImproveBudgetSec)
+    if ($null -eq $script:AssistDeadline -or $improveDeadline -lt $script:AssistDeadline) { $script:AssistDeadline = $improveDeadline }
     # $ErrorActionPreference is "Stop" for this script, so Write-Error would be a
     # TERMINATING error and the exit code below would never run: the caller got
     # a PowerShell stack trace and exit 1 where the contract promises exit 2.
@@ -2968,6 +3182,17 @@ function Run-Improve {
     # in code it cannot follow, and the rewrite then makes things worse.
     # Strongest across BOTH providers, not just the Zen list (see the function).
     $reviewer = Get-StrongestReviewer
+    # A draft that carries code is reviewed by a free route only at the cost of a
+    # wrong verdict: the 2026-10-26 benchmark lost 146 s to an empty openrouter/free
+    # reply on a «refactoring» review. Any code draft counts as heavy here, whatever
+    # domain the task was classified into.
+    $draftCarriesCode = [bool]($draftForReview -match '```|\bdef\s|\bclass\s|\bfunction\s|#include|\bpublic\s+static\b')
+    $improveViaWeb = Test-WebDoorsUp
+    if (-not $improveViaWeb -and [string]::IsNullOrWhiteSpace($Model) -and (Test-FreeModelId $reviewer.model) -and ((Test-HeavyTaskText $task) -or $draftCarriesCode)) {
+        # A free route reviewing a heavy task only rewrites the draft for the worse
+        # (benchmark 2026-10-26: check-failed on openrouter/free). Keep the draft.
+        Exit-Delegate 3
+    }
     $reviewModel = if (-not [string]::IsNullOrWhiteSpace($Model)) { $Model } else { $reviewer.model }
     if ([string]::IsNullOrWhiteSpace($reviewModel)) { $reviewModel = "gemini-pro-latest" }
     $reviewBackend = Select-Backend -Text $task -ChosenModel $reviewModel
@@ -3056,7 +3281,18 @@ $draftForReview
     # nothing the caller ever sees - only the rewrite does - so booking its output
     # as a saving credited Delegator with work nobody received. Internal stages
     # are spent, never saved.
-    $checkResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $checkPrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "review"
+    # Through the web the review and the rewrite are one turn: a second turn would repeat all of the
+    # context and the wait, for an answer the reviewer has already worked out.
+    $webCorrected = ""
+    $reviewPrompt = $checkPrompt
+    if ($improveViaWeb) {
+        $reviewPrompt = $checkPrompt.Replace("Do not rewrite the answer here.", "Do not rewrite the answer inside the JSON.") + @"
+
+
+If and only if your verdict is major or wrong: after the JSON object write a line containing exactly @@CORRECTED@@ and then the complete corrected answer, fixing every defect you listed, keeping everything that was already correct, the same structure and level of detail, with no preamble and no review notes.
+"@
+    }
+    $checkResult = Invoke-ImproveCall -Text $reviewPrompt -ApiBackend $reviewBackend -ApiModel $reviewModel -Cx "deep" -CallStage "review"
     if ($checkResult.fellBack) {
         $reviewBackend = $checkResult.backend
         $reviewModel = $checkResult.model
@@ -3064,8 +3300,13 @@ $draftForReview
         $script:FinalProvider = Get-UsageProviderName $reviewBackend
     }
     $checkText = (($checkResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    $correctedAt = $checkText.IndexOf("@@CORRECTED@@")
+    if ($correctedAt -ge 0) {
+        $webCorrected = $checkText.Substring($correctedAt + "@@CORRECTED@@".Length).Trim()
+        $checkText = $checkText.Substring(0, $correctedAt).Trim()
+    }
     if ($checkResult.exitCode -ne 0) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "check-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
+        Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "check-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain
         [Console]::Error.WriteLine("[Delegator] improve: every backend failed, keeping your draft")
         Exit-Delegate 1
     }
@@ -3103,7 +3344,7 @@ If your review did not actually find a defect, use verdict ok and an empty defec
 YOUR PREVIOUS REPLY:
 $reviewNote
 "@
-        $reaskResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $reaskPrompt -ChosenModel $reviewModel -EffectiveComplexity "fast" -Stage "review"
+        $reaskResult = Invoke-ImproveCall -Text $reaskPrompt -ApiBackend $reviewBackend -ApiModel $reviewModel -Cx "fast" -CallStage "review" -Reasoning "low"
         $reviewCalls++
         $reasked = 1
         if ($reaskResult.fellBack) {
@@ -3137,7 +3378,7 @@ $reviewNote
         # An unparsable verdict is not evidence of a defect - unless the compiler
         # already found one, and then the reviewer's opinion is not needed.
         if ($mechanical.Count -eq 0) {
-            Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "verdict-unparsable" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "calls=$reviewCalls,reask=$reasked,ctxmissing=$($script:ImproveMissingContext)"
+            Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "verdict-unparsable" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "calls=$reviewCalls,reask=$reasked,ctxmissing=$($script:ImproveMissingContext)"
             Exit-Delegate 3
         }
         $verdict = "major"
@@ -3149,7 +3390,7 @@ $reviewNote
     if ($verdict -in @("ok", "minor") -or $defects.Count -eq 0) {
         # `unsupported` is the tuning signal: how often the reviewer claimed a
         # defect it could not demonstrate. Watch it in delegate-metrics.jsonl.
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "keep-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),unsupported=$unsupported,calls=$reviewCalls,reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "keep-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),unsupported=$unsupported,calls=$reviewCalls,reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "keep"; output = "" } | ConvertTo-Json -Depth 4
         }
@@ -3178,7 +3419,12 @@ $draftForReview
 
     # Same failover on the second call: the free tier can run out between the
     # review and the rewrite, and half a delegation is worth nothing.
-    $rewriteResult = Invoke-DelegateAcrossBackends -ChosenBackend $reviewBackend -Text $rewritePrompt -ChosenModel $reviewModel -EffectiveComplexity "deep" -Stage "improve"
+    # A correction that came with the review carries the reviewer's own defects: no second turn then.
+    $rewriteResult = if (-not [string]::IsNullOrWhiteSpace($webCorrected)) {
+        [pscustomobject]@{ exitCode = 0; output = $webCorrected; backend = $reviewBackend; model = $reviewModel; fellBack = $false }
+    } else {
+        Invoke-ImproveCall -Text $rewritePrompt -ApiBackend $reviewBackend -ApiModel $reviewModel -Cx "deep" -CallStage "improve"
+    }
     if ($rewriteResult.fellBack) {
         $reviewBackend = $rewriteResult.backend
         $reviewModel = $rewriteResult.model
@@ -3187,7 +3433,7 @@ $draftForReview
     }
     $improved = Filter-ConversationalNoise ((($rewriteResult.output | ForEach-Object { [string]$_ }) -join "`n").Trim())
     if ($rewriteResult.exitCode -ne 0) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "rewrite-failed" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),ctxmissing=$($script:ImproveMissingContext)"
         [Console]::Error.WriteLine("[Delegator] improve: the rewrite failed, keeping your draft")
         Exit-Delegate 1
     }
@@ -3197,7 +3443,7 @@ $draftForReview
     # it. Nothing checked the rewrite at all - only the draft was ever linted.
     $rewriteProblems = @(Get-MechanicalDefects -Task $task -Draft $draft -Rewrite $improved -WantRewriteDefects)
     if ($rewriteProblems.Count -gt 0) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-rewrite-broken" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,reason=$($rewriteProblems[0])"
+        Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "guard-rewrite-broken" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,reason=$($rewriteProblems[0])"
         [Console]::Error.WriteLine("[Delegator] improve: rewrite is worse than the draft, keeping yours - $($rewriteProblems[0])")
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "rewrite-broken"; output = "" } | ConvertTo-Json -Depth 4
@@ -3207,7 +3453,7 @@ $draftForReview
 
     $guard = Test-ImproveGuards -Draft $draft -Improved $improved
     if (-not [string]::IsNullOrWhiteSpace($guard)) {
-        Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,ctxmissing=$($script:ImproveMissingContext)"
+        Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "guard-$guard" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=fail,ctxmissing=$($script:ImproveMissingContext)"
         [Console]::Error.WriteLine("[Delegator] improve: rewrite rejected by guard '$guard', keeping your draft")
         if ($callerWantsJson) {
             [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = $guard; output = "" } | ConvertTo-Json -Depth 4
@@ -3215,14 +3461,14 @@ $draftForReview
         Exit-Delegate 3
     }
 
-    Write-DelegateMetric -Stage "improve" -Model $reviewModel -Backend $reviewBackend -Status "improved-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=pass,ctxmissing=$($script:ImproveMissingContext)"
+    Write-DelegateMetric -Stage "improve" -Model $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel }) -Backend $(if ($script:ImproveWebModel) { "web" } else { $reviewBackend }) -Status "improved-$verdict" -LatencyMs $improveSw.ElapsedMilliseconds -Domain $taskDomain -Extra "defects=$($defects.Count),calls=$(($reviewCalls + 1)),reask=$reasked,parse=$($verdictObj.parseMode),guard=pass,ctxmissing=$($script:ImproveMissingContext)"
     if ($callerWantsJson) {
         [pscustomobject]@{ delegate = "improve"; verdict = $verdict; model = $reviewModel; defects = $defects; guard = "pass"; output = $improved } | ConvertTo-Json -Depth 4
     } else {
         $header = [pscustomobject]@{
             verdict = $verdict
             defects = $defects.Count
-            model   = $reviewModel
+            model   = $(if ($script:ImproveWebModel) { $script:ImproveWebModel } else { $reviewModel })
         } | ConvertTo-Json -Compress
         Write-Output ("##DELEGATOR_IMPROVE## " + $header)
         Write-Output $improved
@@ -3261,37 +3507,23 @@ function Invoke-WebDelegation {
       Returns the answer text, or $null when the web path is not applicable or
       failed - the caller then simply runs the ordinary ladder.
     #>
-    param([string]$Text, [string]$WebReasoning = "")
+    param([string]$Text, [string]$WebReasoning = "", [int]$WebTimeout = 300)
 
     # The benchmark door already tried the web chat (and its model ladder) for this call; a second
     # try would only repeat the wait - measured: two 500 s timeouts back to back.
-    if ($script:WebTried) { return $null }
-    if ($Backend -ne "auto" -or -not [string]::IsNullOrWhiteSpace($Model)) { return $null }
-    if ($env:CODEX_DELEGATE_BOOST_ACTIVE -eq "1") { return $null }
-    if ($Text -match "^Reply exactly:") { return $null }
-    if (Test-VisionContent $Text) { return $null }
-    # Text files are already inside $Text (Run-Ask). The other files go to Gemini as attachments; Puter carries text only.
-    $binaryFiles = @()
-    foreach ($entry in @($ContextFile)) {
-        foreach ($piece in ([string]$entry).Split(";")) {
-            $cp = $piece.Trim()
-            if ($cp -and (Test-Path -LiteralPath $cp -PathType Leaf) -and -not (Test-TextFile $cp)) { $binaryFiles += $cp }
-        }
-    }
-    if (-not (Test-Path -LiteralPath $script:DelegatorAppConfigFile)) { return $null }
-    try {
-        $cfg = Get-Content -LiteralPath $script:DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        # Gemini Web has the first claim; the Core sends the request the same way (web_ask).
-        $geminiOn = $cfg.PSObject.Properties["gemini_web_enabled"] -and [bool]$cfg.gemini_web_enabled
-        $puterOn = $cfg.PSObject.Properties["puter_web_enabled"] -and [bool]$cfg.puter_web_enabled
-        if (-not $geminiOn -and -not $puterOn) { return $null }
-        if ($cfg.PSObject.Properties["delegator_enabled"] -and -not [bool]$cfg.delegator_enabled) { return $null }
-    } catch { return $null }
+    if (-not (Test-WebEligible $Text)) { return $null }
+    # Text files are already inside $Text (Run-Ask). The other files go to Gemini as attachments; the other doors carry text only.
+    $binaryFiles = @(Get-BinaryContextFiles)
+    # Text that talks about a picture is refused only when no picture goes along: Gemini Web takes the
+    # attachment, so a picture question with its file attached is a web question.
+    if ((Test-VisionContent $Text) -and $binaryFiles.Count -eq 0) { return $null }
+    if (-not (Test-WebDoorsUp)) { return $null }
 
     # Attachments for Gemini (name, mime, base64). Without Gemini a binary file cannot go along: the usual models answer.
     $fileList = @()
     if ($binaryFiles.Count -gt 0) {
-        if (-not $geminiOn) {
+        $geminiDoor = @((Get-WebDoorsState).doors | Where-Object { $_.id -eq "gemini" -and $_.enabled })
+        if ($geminiDoor.Count -eq 0) {
             [Console]::Error.WriteLine("[Delegator] Web: a non-text file needs Gemini Web for attachment, using the usual models")
             return $null
         }
@@ -3310,46 +3542,101 @@ function Invoke-WebDelegation {
         }
     }
 
-    $core = "http://127.0.0.1:1380"
-    # The core asks Gemini Web first and fails over to Puter, so the web door is up when either enabled bridge is connected.
-    $webStates = @()
-    if ($geminiOn) { $webStates += "$core/api/gemini-web/state" }
-    if ($puterOn) { $webStates += "$core/api/puter-web/state" }
+    $light = [string]::IsNullOrWhiteSpace($WebReasoning) -and $fileList.Count -eq 0 -and (Test-LightWebTask $Text)
+    return Invoke-WebTurn -Text (Add-ExecutionLanguagePolicy $Text) -Reasoning $WebReasoning -Files $fileList -Timeout $WebTimeout -Light:$light
+}
+
+function Test-WebEligible {
+    param([string]$Text)
+    if ($script:WebTried) { return $false }
+    if ($Backend -ne "auto" -or -not [string]::IsNullOrWhiteSpace($Model)) { return $false }
+    if ($env:CODEX_DELEGATE_BOOST_ACTIVE -eq "1") { return $false }
+    if ($Text -match "^Reply exactly:") { return $false }
+    return $true
+}
+
+function Get-BinaryContextFiles {
+    $found = @()
+    foreach ($entry in @($ContextFile)) {
+        foreach ($piece in ([string]$entry).Split(";")) {
+            $cp = $piece.Trim()
+            if ($cp -and (Test-Path -LiteralPath $cp -PathType Leaf) -and -not (Test-TextFile $cp)) { $found += $cp }
+        }
+    }
+    return $found
+}
+
+function Test-LightWebTask {
+    # A short plain question needs no top reasoning level: Argon at «Высокий» thought 33 s before
+    # saying one word (measured). Only short text with no code and no heavy-task words qualifies.
+    param([string]$Text)
+    if ($Text.Length -gt 1200) { return $false }
+    if ($Text -match '```|\bdef\s|\bclass\s|\bfunction\s|#include') { return $false }
+    return -not (Test-HeavyTaskText $Text)
+}
+
+function Get-WebDoorsState {
+    # Read once per run: a request's route does not change while it is being decided.
+    if ($script:WebDoorsRead) { return $script:WebDoorsState }
+    $script:WebDoorsRead = $true
+    $script:WebDoorsState = $null
+    try { $script:WebDoorsState = Invoke-RestMethod -Uri "http://127.0.0.1:1380/api/web/doors" -TimeoutSec 3 } catch {}
+    return $script:WebDoorsState
+}
+
+function Get-WebBestStrength {
+    # DPR of the strongest door that could answer now; 0 when none. Only the state already known or
+    # cheaply read: never a wait for the extension.
+    $state = Get-WebDoorsState
+    if ($null -eq $state -or $state.paused) { return 0 }
+    $usable = @($state.doors | Where-Object { $_.enabled -and [int]$_.resting_sec -eq 0 })
+    if ($usable.Count -eq 0) { return 0 }
+    return [int](($usable | Measure-Object -Property strength -Maximum).Maximum)
+}
+
+function Test-WebDoorsUp {
+    # True when at least one door can take a turn. An idle MV3 service worker sleeps and its 30 s alarm
+    # wakes it, so a recently seen extension is worth waiting for. One not seen for minutes means Chrome
+    # is closed: waiting for it spent 50 s of every request on nothing.
+    if ($null -ne $script:WebUp) { return $script:WebUp }
+    $script:WebUp = $false
+    $state = Get-WebDoorsState
+    if ($null -eq $state -or $state.paused) { return $false }
+    $usable = @($state.doors | Where-Object { $_.enabled -and ($_.auth -ne "signed_out" -or [int]$_.resting_sec -eq 0) })
+    if ($usable.Count -eq 0) { return $false }
+    if ($state.connected) { $script:WebUp = $true; return $true }
+    $patience = if ($null -eq $state.seen_age) { 8 } elseif ([double]$state.seen_age -le 300) { 35 } else { 0 }
+    for ($wait = 0; $wait -lt $patience; $wait++) {
+        Start-Sleep -Seconds 1
+        try {
+            if ((Invoke-RestMethod -Uri "http://127.0.0.1:1380/api/web/doors" -TimeoutSec 3).connected) {
+                $script:WebUp = $true
+                return $true
+            }
+        } catch {}
+    }
+    [Console]::Error.WriteLine("[Delegator] Web: the Chrome extension is not connected, using the usual models")
+    Write-DelegateMetric -Stage "web" -Backend "web" -Status "not-connected"
+    return $false
+}
+
+function Invoke-WebTurn {
+    # One turn through the core's race. The caller decided that the web is the right place for it.
+    param([string]$Text, [string]$Reasoning = "", [array]$Files = @(), [int]$Timeout = 300, [switch]$Light)
     $webSw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $webConnected = $false
-        # An idle MV3 service worker sleeps; the extension's 30 s alarm wakes it and only
-        # then does it poll again, and the core counts it connected for 45 s after the
-        # last poll. 15 s of waiting declared a live extension absent: wait 50 s.
-        for ($wait = 0; -not $webConnected -and $wait -le 50; $wait++) {
-            foreach ($url in $webStates) {
-                try { if ((Invoke-RestMethod -Uri $url -TimeoutSec 3).connected) { $webConnected = $true; break } } catch {}
-            }
-            if (-not $webConnected) { Start-Sleep -Seconds 1 }
+        if ($null -ne $script:AssistDeadline) {
+            $left = [int]($script:AssistDeadline - (Get-Date)).TotalSeconds
+            if ($left -lt 30) { return $null }
+            $Timeout = [math]::Min($Timeout, $left)
         }
-        if (-not $webConnected) {
-            [Console]::Error.WriteLine("[Delegator] Web: the Chrome extension is not connected, using the usual models")
-            Write-DelegateMetric -Stage "web" -Backend "web" -Status "not-connected"
-            return $null
-        }
-        # Full OUTPUT RULES block only when Gemini is the only web door. Puter's content filter refused that
-        # block next to an attached file, every try (measured 2026-10-26: "Do not mention these rules" and
-        # "Keep code ... unchanged" each tripped it). With Puter on, a Gemini failure falls over to Puter,
-        # so both get the condensed block.
-        if ($geminiOn -and -not $puterOn) {
-            $askText = Add-ExecutionLanguagePolicy $Text
-        } else {
-            $puterLanguage = if ($env:CODEX_DELEGATE_LANGUAGE) { $env:CODEX_DELEGATE_LANGUAGE } else { Get-PreferredOutputLanguage $Text }
-            $askText = "$Text`n`nOUTPUT RULES:`n- Final answer language: $puterLanguage unless the request explicitly requires another language.`n- Hidden internal reasoning may stay in English.`n- Avoid conversational pleasantries, greetings, warnings, or friendly introductions/conclusions. Return a dense, direct, technical output."
-        }
-        $ask = @{ text = $askText; timeout_sec = 570; files = $fileList }
-        if (-not [string]::IsNullOrWhiteSpace($WebReasoning)) { $ask.reasoning = $WebReasoning }
-        $payload = $ask | ConvertTo-Json -Compress
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $ask = @{ text = $Text; timeout_sec = $Timeout; files = @($Files); light = [bool]$Light }
+        if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $ask.reasoning = $Reasoning }
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($ask | ConvertTo-Json -Compress))
         # Decoded as UTF-8 by hand: the Core's JSON carries no charset, and 5.1
         # reads such a body as Latin-1 (I3) - every Cyrillic letter became two.
-        $response = Invoke-WebRequest -Uri "$core/api/web/ask" -Method Post -Body $bytes `
-            -ContentType "application/json; charset=utf-8" -TimeoutSec 610 -UseBasicParsing
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:1380/api/web/ask" -Method Post -Body $bytes `
+            -ContentType "application/json; charset=utf-8" -TimeoutSec ($Timeout + 40) -UseBasicParsing
         $reply = [System.Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()) | ConvertFrom-Json
         $answer = [string]$reply.text
         if ([string]::IsNullOrWhiteSpace($answer)) { throw "empty answer" }
@@ -3357,8 +3644,8 @@ function Invoke-WebDelegation {
         $script:FinalModel = $used
         $script:FinalProvider = "web"
         # The line the owner reads in the IDE to confirm WHICH model answered.
-        [Console]::Error.WriteLine("[Delegator] Web: ответила модель '$used' за $([math]::Round($webSw.Elapsed.TotalSeconds, 1)) с")
-        Write-DelegateMetric -Stage "web" -Model $used -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "ok"
+        [Console]::Error.WriteLine("[Delegator] Web: ответила модель '$used' ($($reply.provider)) за $([math]::Round($webSw.Elapsed.TotalSeconds, 1)) с")
+        Write-DelegateMetric -Stage "web" -Model $used -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "ok" -Extra "door=$($reply.door)"
         return $answer
     } catch {
         $why = $_.Exception.Message
@@ -3367,6 +3654,84 @@ function Invoke-WebDelegation {
         Write-DelegateMetric -Stage "web" -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "failed"
         return $null
     }
+}
+
+function Invoke-WebBoost {
+    # A task the router judged worth more than one opinion: the two strongest doors answer it at once,
+    # and the strongest of them reconciles the two. Null when fewer than two doors can take it, and the
+    # caller then asks one door as usual.
+    param([string]$Text)
+    if (-not (Test-WebEligible $Text)) { return $null }
+    if ((Test-VisionContent $Text) -or @(Get-BinaryContextFiles).Count -gt 0) { return $null }
+    if (-not (Test-WebDoorsUp)) { return $null }
+    $ready = @((Get-WebDoorsState).doors | Where-Object { $_.enabled -and [int]$_.resting_sec -eq 0 })
+    if ($ready.Count -lt 2) { return $null }
+    $webSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $policy = Add-ExecutionLanguagePolicy $Text
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes((@{ text = $policy; size = 2; timeout_sec = 240 } | ConvertTo-Json -Compress))
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:1380/api/web/panel" -Method Post -Body $bytes `
+            -ContentType "application/json; charset=utf-8" -TimeoutSec 280 -UseBasicParsing
+        $answers = @(([System.Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()) | ConvertFrom-Json).answers)
+    } catch {
+        [Console]::Error.WriteLine("[Delegator] Web panel failed, asking one door")
+        return $null
+    }
+    if ($answers.Count -eq 0) { return $null }
+    $script:FinalProvider = "web"
+    $script:FinalModel = [string]$answers[0].model
+    if ($answers.Count -eq 1) {
+        Write-DelegateMetric -Stage "web-boost" -Model $script:FinalModel -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status "one-answer"
+        return [string]$answers[0].text
+    }
+    $judgePrompt = @"
+Two strong assistants answered the TASK below independently. Write the single best final answer.
+Check where they disagree and work out which is right. Keep what is correct from either, drop what is wrong or unsupported, and do not average a correct claim with a wrong one.
+Output the final answer only: no comparison, no mention of the two answers.
+
+TASK:
+$Text
+
+ANSWER A:
+$($answers[0].text)
+
+ANSWER B:
+$($answers[1].text)
+"@
+    $final = Invoke-WebTurn -Text (Add-ExecutionLanguagePolicy $judgePrompt) -Timeout 180
+    $status = if ($null -ne $final) { "reconciled" } else { "judge-failed" }
+    Write-DelegateMetric -Stage "web-boost" -Model $script:FinalModel -Backend "web" -LatencyMs $webSw.ElapsedMilliseconds -Status $status
+    [Console]::Error.WriteLine("[Delegator] Web boost: $($answers[0].door) + $($answers[1].door), $status, $([math]::Round($webSw.Elapsed.TotalSeconds, 1)) с")
+    # The judge failed: the strongest door's own answer still stands.
+    if ($null -ne $final) { return $final }
+    return [string]$answers[0].text
+}
+
+function Get-WebOrCachedAnswer {
+    # The cache in front of the web: an identical question costs nothing the second time, on any route.
+    # A very short prompt is left out, because "continue" means something else in every conversation.
+    param([string]$Text, [System.Diagnostics.Stopwatch]$Started)
+    # With an attachment the key would not cover the question: "what is on this screenshot?" must not
+    # get yesterday's screenshot.
+    $cacheable = $Text -notmatch "^Reply exactly:" -and $Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model) -and $Text.Length -ge 60 -and @(Get-BinaryContextFiles).Count -eq 0
+    $hash = ""
+    $domain = ""
+    if ($cacheable) {
+        $hash = Get-PromptHash $Text -Variant (Get-CacheVariant)
+        $domain = Get-TaskDomain $Text
+        $hit = Find-CachedResponse -PromptHash $hash -Domain $domain
+        if ($hit) {
+            [Console]::Error.WriteLine("[Delegator] ответ из кэша")
+            Write-DelegateMetric -Stage "cache-hit" -Status "ok" -LatencyMs $Started.ElapsedMilliseconds -Domain $domain
+            return $hit
+        }
+    }
+    $answer = if ($script:Boost) { Invoke-WebBoost $Text } else { $null }
+    if ($null -eq $answer) { $answer = Invoke-WebDelegation $Text }
+    if ($null -ne $answer -and $cacheable) {
+        Add-CachedResponse -PromptHash $hash -Response $answer -Model $script:FinalModel -Domain $domain
+    }
+    return $answer
 }
 
 function Run-Ask {
@@ -3386,22 +3751,10 @@ function Run-Ask {
         }
     }
 
-    $webAnswer = Invoke-WebDelegation $Prompt
-    if ($null -ne $webAnswer) {
-        $webAnswer
+    $webOrCached = Get-WebOrCachedAnswer -Text $Prompt -Started $askSw
+    if ($null -ne $webOrCached) {
+        $webOrCached
         return
-    }
-
-    # ── Response cache lookup ──
-    if ($Prompt -notmatch "^Reply exactly:" -and $Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model)) {
-        $promptHash = Get-PromptHash $Prompt -Variant (Get-CacheVariant)
-        $cachedDomain = Get-TaskDomain $Prompt
-        $cachedResponse = Find-CachedResponse -PromptHash $promptHash -Domain $cachedDomain
-        if ($cachedResponse) {
-            Write-DelegateMetric -Stage "cache-hit" -Status "ok" -LatencyMs $askSw.ElapsedMilliseconds -Domain $cachedDomain
-            $cachedResponse
-            return
-        }
     }
 
     # Forced backend mode: skip planner/triage to avoid extra latency and duplicate timeouts.
@@ -3420,15 +3773,6 @@ function Run-Ask {
             $final = Filter-ConversationalNoise $direct.output
             $final
             return
-        }
-        if ($Backend -eq "puter") {
-            Write-Warning "Puter backend failed; trying opencode fallback."
-            $fallbackModel = Get-PreferredBackendModel -BackendName "opencode" -Text $Prompt
-            if ([string]::IsNullOrWhiteSpace($fallbackModel)) { $fallbackModel = "opencode/deepseek-v4-flash-free" }
-            $fallbackResult = Invoke-Delegate -ChosenBackend "opencode" -Text $executionPrompt -ChosenModel $fallbackModel -EffectiveComplexity $Complexity
-            $final = Filter-ConversationalNoise $fallbackResult.output
-            $final
-            Exit-Delegate $fallbackResult.exitCode
         }
         $direct.output
         Exit-Delegate $direct.exitCode

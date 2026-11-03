@@ -7,4 +7,5 @@ pub mod quota;
 pub mod thinking;
 pub mod updater;
 pub mod usage;
+pub mod web_doors;
 pub use app::DelegatorApp;

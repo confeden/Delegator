@@ -1,5 +1,5 @@
 #define MyAppName "Delegator"
-#define MyAppVersion "0.9.20"
+#define MyAppVersion "0.10.0"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -64,21 +64,25 @@ Source: "..\extensions\gemini-web-bridge\CHANGELOG.md"; DestDir: "{app}\extensio
 Source: "..\extensions\gemini-web-bridge\README.md"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\background.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\content.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\door.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\manifest.json"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\visible.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\DELEGATOR.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\BENCHMARK.md"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\coding-bench\code_rules.py"; DestDir: "{app}\runtime\coding-bench"; Flags: ignoreversion
 Source: "..\coding-bench\grade_run.py"; DestDir: "{app}\runtime\coding-bench"; Flags: ignoreversion
 Source: "..\coding-bench\start.py"; DestDir: "{app}\runtime\coding-bench"; Flags: ignoreversion
-Source: "..\coding-bench\hidden\score_sat.py"; DestDir: "{app}\runtime\coding-bench\hidden"; Flags: ignoreversion
-Source: "..\coding-bench\hidden\compress\score_compress.py"; DestDir: "{app}\runtime\coding-bench\hidden\compress"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\code.py.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\code2.py.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\data.csv"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\data2.csv"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\logs.json"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\mixed.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\prose.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\compress\corpus\random.bin"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\corpus\syslog2.txt"; DestDir: "{app}\runtime\coding-bench\hidden\compress\corpus"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\compress\score_compress.py"; DestDir: "{app}\runtime\coding-bench\hidden\compress"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\routing\instances.json"; DestDir: "{app}\runtime\coding-bench\hidden\routing"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\routing\score_routing.py"; DestDir: "{app}\runtime\coding-bench\hidden\routing"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\sat\index.json"; DestDir: "{app}\runtime\coding-bench\hidden\sat"; Flags: ignoreversion
@@ -115,22 +119,31 @@ Source: "..\coding-bench\hidden\sat\instances\30_coloring.cnf"; DestDir: "{app}\
 Source: "..\coding-bench\hidden\sat\instances\31_coloring.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\sat\instances\32_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
 Source: "..\coding-bench\hidden\sat\instances\33_php.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
-Source: "..\coding-bench\template\REPORT.md"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\34_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\35_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\36_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\37_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\38_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\39_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\40_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\sat\instances\41_random3.cnf"; DestDir: "{app}\runtime\coding-bench\hidden\sat\instances"; Flags: ignoreversion
+Source: "..\coding-bench\hidden\score_sat.py"; DestDir: "{app}\runtime\coding-bench\hidden"; Flags: ignoreversion
 Source: "..\coding-bench\template\bench.py"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
-Source: "..\coding-bench\template\compress\README.md"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
+Source: "..\coding-bench\template\code_rules.py"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\check.py"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\codec.py"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
+Source: "..\coding-bench\template\compress\README.md"; DestDir: "{app}\runtime\coding-bench\template\compress"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\samples\code.py.txt"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\samples\data.csv"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\samples\logs.json"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\compress\samples\prose.txt"; DestDir: "{app}\runtime\coding-bench\template\compress\samples"; Flags: ignoreversion
-Source: "..\coding-bench\template\routing\README.md"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\REPORT.md"; DestDir: "{app}\runtime\coding-bench\template"; Flags: ignoreversion
 Source: "..\coding-bench\template\routing\check.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
 Source: "..\coding-bench\template\routing\instances.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
+Source: "..\coding-bench\template\routing\README.md"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
 Source: "..\coding-bench\template\routing\routing.py"; DestDir: "{app}\runtime\coding-bench\template\routing"; Flags: ignoreversion
-Source: "..\coding-bench\template\sat\README.md"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\check.py"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
-Source: "..\coding-bench\template\sat\solver.py"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\README.md"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\samples\color3_v60_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\samples\factor_12_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\samples\factor_12_unsat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
@@ -141,6 +154,7 @@ Source: "..\coding-bench\template\sat\samples\r3_n60_a_sat.cnf"; DestDir: "{app}
 Source: "..\coding-bench\template\sat\samples\r3_n60_b_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\samples\r3_n90_a_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
 Source: "..\coding-bench\template\sat\samples\r3_n90_b_sat.cnf"; DestDir: "{app}\runtime\coding-bench\template\sat\samples"; Flags: ignoreversion
+Source: "..\coding-bench\template\sat\solver.py"; DestDir: "{app}\runtime\coding-bench\template\sat"; Flags: ignoreversion
 Source: "..\dist\pyembed\python.exe"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
 Source: "..\dist\pyembed\python3.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
 Source: "..\dist\pyembed\python312.dll"; DestDir: "{app}\runtime\python"; Flags: ignoreversion
@@ -183,16 +197,16 @@ Source: "..\scripts\opencode-delegate.ps1"; DestDir: "{app}\runtime"; Flags: ign
 [Icons]
 Name: "{group}\Delegator"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\Delegator"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+; Autostart is ONE mechanism: this shortcut in the Startup folder (0.9.21+). The
+; app owns it from then on (autostart.rs), so the tray can switch it off without a
+; reinstall. The 0.9.22 installer wrote nothing here and switched autostart OFF on
+; the next upgrade - the check below now reads this shortcut as the earlier answer.
+Name: "{userstartup}\Delegator"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; Tasks: startup; Check: ShouldSetAutostart
 
-; Autostart is ONE mechanism: this Run value. A Startup-folder shortcut as well
-; would start Delegator twice at logon, and the second copy raises the first
-; one's window. The tray owns the same value, so it can be switched off without
-; reinstalling; delegator.exe deletes the shortcut older versions left behind.
+; A Run value from 0.8.x-0.9.20 would start Delegator twice with the shortcut;
+; delegator.exe migrates it into the shortcut at launch, and this removes it now.
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Delegator"; ValueData: """{app}\{#MyAppExeName}"" --background"; Flags: uninsdeletevalue; Tasks: startup; Check: ShouldSetAutostart
-; Unticking the task must MEAN something on an upgrade: without this the value
-; written by an earlier install would simply stay and autostart would not go away.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Delegator"; Flags: deletevalue; Tasks: not startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Delegator"; Flags: deletevalue
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
@@ -215,7 +229,8 @@ begin
     autostart back ON for a user who had just turned it off in the tray. The
     GUID must stay equal to AppId above. }
   GWasInstalled := RegKeyExists(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{9E3EA6A8-CE3B-4B2C-A70D-17B2D79C772E}_is1');
-  GHadAutostart := RegValueExists(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Delegator');
+  GHadAutostart := FileExists(ExpandConstant('{userstartup}\Delegator.lnk')) or
+    RegValueExists(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Delegator');
   Result := True;
 end;
 

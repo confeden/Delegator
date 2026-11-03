@@ -32,6 +32,7 @@ $DelegateHome = if ($env:DELEGATOR_RUNTIME_HOME) {
 $RunsFile = Join-Path $DelegateHome "runs.jsonl"
 $UsageLogFile = Join-Path $DelegateHome "usage.jsonl"
 $CooldownsFile = Join-Path $DelegateHome "cooldowns.json"
+$ModelAvailabilityFile = Join-Path $DelegateHome "model-availability.json"
 $ZenCatalogFile = Join-Path $DelegateHome "opencode-zen-catalog.json"
 $OpenCodeExtraModelsFile = Join-Path $DelegateHome "opencode-extra-models.json"
 $ModelSettingsFile = Join-Path $DelegateHome "delegate-model-settings.json"
@@ -377,6 +378,8 @@ function Invoke-OpenAICompatModel {
         $headers = @{
             Authorization = "Bearer $($account.key)"
             "Content-Type" = "application/json; charset=utf-8"
+            # Groq (Cloudflare) answers 403 «error code: 1010» to a library User-Agent.
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Delegator"
         }
         if ($ExtraHeaders) {
             foreach ($name in $ExtraHeaders.Keys) { $headers[$name] = [string]$ExtraHeaders[$name] }
@@ -432,7 +435,10 @@ function Invoke-CustomProviderModel {
         return [pscustomobject]@{ exitCode = 2; output = "Model '$OpenCodeModel' does not belong to a configured provider." }
     }
     $modelId = $OpenCodeModel.Substring($provider.id.Length + 1)
-    return (Invoke-OpenAICompatModel -Text $Text -BaseUrl $provider.baseUrl -ModelId $modelId -Accounts $provider.accounts -Seconds $Seconds)
+    # Own egress, not the OpenCode proxy: a custom provider has its own key and
+    # was verified direct (ROADMAP S14). A dead Opera proxy on 127.0.0.1:1371 made
+    # every B.AI request fail, the listing included.
+    return (Invoke-OpenAICompatModel -Text $Text -BaseUrl $provider.baseUrl -ModelId $modelId -Accounts $provider.accounts -Seconds $Seconds -ProxyProvider "custom")
 }
 
 function Get-OpenRouterModelId {
@@ -499,6 +505,8 @@ function Get-DelegateProxy {
         if ($override.Trim() -ieq "off") { return $null }
         return $override.Trim()
     }
+    # Custom (API-key) providers never take a GUI proxy row: see Invoke-CustomProviderModel.
+    if ($Provider -eq "custom") { return $null }
     # GUI-managed proxies (config.json "proxies", DEV_CONTRACTS 7a) are authoritative
     # when the key exists; the legacy <RT>\proxy.json below is only a pre-v8 fallback.
     try {
@@ -1205,6 +1213,89 @@ function Set-ModelCooldown {
     } catch {}
 }
 
+function Invoke-AvailabilityLocked {
+    param([scriptblock]$Body)
+    $mutex = [System.Threading.Mutex]::new($false, "Global\DelegatorModelAvailability")
+    $locked = $false
+    try {
+        $locked = $mutex.WaitOne(30000)
+        if (-not $locked) { throw "Timed out waiting for the availability lock." }
+        & $Body
+    } finally {
+        if ($locked) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
+
+function Read-ModelAvailability {
+    # <RT>\model-availability.json: one record per model, kept across Delegator restarts,
+    # so the ladder starts from what the last sessions measured instead of from zero.
+    if (-not (Test-Path -LiteralPath $ModelAvailabilityFile)) {
+        return [pscustomobject]@{ version = 1; models = [pscustomobject]@{} }
+    }
+    try {
+        $state = Get-Content -LiteralPath $ModelAvailabilityFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return [pscustomobject]@{ version = 1; models = [pscustomobject]@{} }
+    }
+    if (-not $state -or -not $state.PSObject.Properties["models"] -or -not $state.models) {
+        return [pscustomobject]@{ version = 1; models = [pscustomobject]@{} }
+    }
+    return $state
+}
+
+function Update-ModelAvailability {
+    # Records the outcome of ONE real call. A stalled call is not an outcome: the model
+    # was working, so it neither earns a success nor takes a failure.
+    param([string]$ModelId, [bool]$Ok, [string]$ErrorClass = "", [int]$ElapsedMs = 0)
+    if ([string]::IsNullOrWhiteSpace($ModelId)) { return }
+    if ((-not $Ok) -and $ErrorClass -eq "stalled") { return }
+    try {
+        Ensure-DelegateDirs
+        Invoke-AvailabilityLocked {
+            $state = Read-ModelAvailability
+            $entry = [pscustomobject]@{ okCount = 0; failCount = 0; lastOk = ""; lastFail = ""; lastErrorClass = ""; lastMs = 0 }
+            if ($state.models.PSObject.Properties[$ModelId]) { $entry = $state.models.PSObject.Properties[$ModelId].Value }
+            $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            if ($Ok) {
+                $entry.okCount = [int]$entry.okCount + 1
+                $entry.lastOk = $now
+                $entry.lastMs = $ElapsedMs
+            } else {
+                $entry.failCount = [int]$entry.failCount + 1
+                $entry.lastFail = $now
+                $entry.lastErrorClass = $ErrorClass
+            }
+            $state.models | Add-Member -Force -NotePropertyName $ModelId -NotePropertyValue $entry
+            Write-Utf8NoBom -Path $ModelAvailabilityFile -Text ($state | ConvertTo-Json -Depth 8)
+        }
+    } catch {}
+}
+
+function Sort-ByAvailability {
+    # Moves a model whose LAST outcome was a failure (within the last 6 h) behind the
+    # others. Models with no record, or whose last outcome was a success, keep their
+    # order. Nothing is removed: a demoted model is still the last resort.
+    param([string[]]$Candidates)
+    $list = @($Candidates)
+    if ($list.Count -le 1) { return $list }
+    $state = Read-ModelAvailability
+    $horizon = (Get-Date).ToUniversalTime().AddHours(-6).ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $keyed = @()
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $penalty = 0
+        $id = [string]$list[$i]
+        if ($state.models.PSObject.Properties[$id]) {
+            $rec = $state.models.PSObject.Properties[$id].Value
+            $lastFail = [string]$rec.lastFail
+            $lastOk = [string]$rec.lastOk
+            if ($lastFail -and $lastFail -gt $horizon -and $lastFail -gt $lastOk) { $penalty = 1 }
+        }
+        $keyed += [pscustomobject]@{ id = $id; penalty = $penalty; index = $i }
+    }
+    return @($keyed | Sort-Object penalty, index | ForEach-Object { $_.id })
+}
+
 function Clear-ModelCooldown {
     param([string]$ModelId)
     if ([string]::IsNullOrWhiteSpace($ModelId)) { return }
@@ -1229,7 +1320,10 @@ function Get-ModelCooldownSeconds {
     }
     if ($ErrorClass -eq "auth" -or $ErrorClass -eq "not_found") { return 21600 }
     if ($ErrorClass -eq "content_policy") { return 600 }
-    if ($ErrorClass -eq "server" -or $ErrorClass -eq "timeout") { return 60 }
+    # A 5xx from the upstream lasted minutes in the live probe, not seconds: 60 s put the
+    # same dead model back on the ladder at the next call.
+    if ($ErrorClass -eq "server") { return 300 }
+    if ($ErrorClass -eq "timeout") { return 60 }
     if ($ErrorClass -eq "network") { return 30 }
     return 0
 }
@@ -1249,6 +1343,7 @@ function Test-AttemptIsModelFailure {
     #>
     param([int]$ExitCode, [string]$ErrorClass)
     if ($ExitCode -eq 2) { return $false }
+    if ($ErrorClass -eq "stalled") { return $false }
     return $true
 }
 
@@ -1424,6 +1519,10 @@ function Parse-OpenRouterDirectOutput {
     $promptTokens = $null
     $completionTokens = $null
     $cost = 0
+    # Cline's gateway wraps the completion as {"data": {...}}; the standard shape has choices at the top.
+    if (-not $ResponseObject.choices -and $ResponseObject.data -and $ResponseObject.data.choices) {
+        $ResponseObject = $ResponseObject.data
+    }
     try {
         if ($ResponseObject.choices -and @($ResponseObject.choices).Count -gt 0) {
             $answer = [string]$ResponseObject.choices[0].message.content
@@ -1547,23 +1646,59 @@ function Stop-ProcessTree {
     try { & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null } catch {}
 }
 
+function Test-StreamEventLine {
+    # One line of `opencode run --format json` that shows the model is working:
+    # a reasoning ("thinking") part, a text part, or a step boundary. Anything else
+    # (blank lines, tool noise, plain text) is not evidence of life.
+    param([string]$Line)
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $false }
+    try { $event = $Line | ConvertFrom-Json } catch { return $false }
+    $type = [string]$event.type
+    return ($type -in @("text", "reasoning", "thinking", "step_start", "step-start", "step_finish", "step-finish"))
+}
+
+function Get-StreamEventCount {
+    param([string]$Text)
+    $count = 0
+    foreach ($line in (([string]$Text) -split "\r?\n")) {
+        if (Test-StreamEventLine $line) { $count++ }
+    }
+    return $count
+}
+
 function Wait-ProcessWithActivity {
+    # Idle kill: no byte written to stdout/stderr for IdleSeconds. Hard cap: MaxSeconds,
+    # extended ONCE by another MaxSeconds when the stdout already carries stream events -
+    # a model that is thinking out loud is working, and cutting it at the cap throws away
+    # everything it produced so far.
     param(
         [System.Diagnostics.Process]$Process,
         [int]$MaxSeconds,
         [int]$IdleSeconds,
-        [string[]]$ActivityFiles
+        [string[]]$ActivityFiles,
+        [string]$StreamPath
     )
 
     $started = Get-Date
     $lastActivity = Get-Date
     $lastSignature = Get-FilesActivitySignature $ActivityFiles
+    $capSeconds = $MaxSeconds
+    $extended = $false
     while (-not $Process.HasExited) {
         if ($Process.WaitForExit(500)) { return [pscustomobject]@{ exited = $true; reason = "completed" } }
         $now = Get-Date
-        if (($now - $started).TotalSeconds -ge $MaxSeconds) {
-            Stop-ProcessTree $Process.Id
-            return [pscustomobject]@{ exited = $false; reason = "Timed out after $MaxSeconds seconds." }
+        if (($now - $started).TotalSeconds -ge $capSeconds) {
+            $streaming = $false
+            if (-not $extended -and $StreamPath -and (Test-Path -LiteralPath $StreamPath)) {
+                $streaming = ((Get-StreamEventCount (Get-Content -LiteralPath $StreamPath -Raw -Encoding UTF8)) -gt 0)
+            }
+            if ($streaming) {
+                $extended = $true
+                $capSeconds = $MaxSeconds * 2
+            } else {
+                Stop-ProcessTree $Process.Id
+                return [pscustomobject]@{ exited = $false; reason = "Timed out after $capSeconds seconds." }
+            }
         }
         $signature = Get-FilesActivitySignature $ActivityFiles
         if ($signature -ne $lastSignature) {
@@ -1683,15 +1818,7 @@ exit `$LASTEXITCODE
     [void]$process.Start()
 
     $idleTimeout = Get-OpenCodeIdleTimeout $OpenCodeModel
-    $wait = Wait-ProcessWithActivity -Process $process -MaxSeconds $Seconds -IdleSeconds $idleTimeout -ActivityFiles @($stdoutPath, $stderrPath)
-    if (-not $wait.exited) {
-        Remove-Item -LiteralPath $cmdPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $promptPath -Force -ErrorAction SilentlyContinue
-        return [pscustomobject]@{ exitCode = 124; output = $wait.reason }
-    }
+    $wait = Wait-ProcessWithActivity -Process $process -MaxSeconds $Seconds -IdleSeconds $idleTimeout -ActivityFiles @($stdoutPath, $stderrPath) -StreamPath $stdoutPath
     $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 } else { "" }
     $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 } else { "" }
     Remove-Item -LiteralPath $cmdPath -Force -ErrorAction SilentlyContinue
@@ -1699,9 +1826,13 @@ exit `$LASTEXITCODE
     Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $promptPath -Force -ErrorAction SilentlyContinue
+    $streamEvents = Get-StreamEventCount $stdout
+    if (-not $wait.exited) {
+        return [pscustomobject]@{ exitCode = 124; output = $wait.reason; streamEvents = $streamEvents }
+    }
     $cleanStdout = Clean-OpenCodeOutput $stdout
     $cleanStderr = Clean-OpenCodeOutput $stderr
-    return [pscustomobject]@{ exitCode = $process.ExitCode; output = (($cleanStdout + [Environment]::NewLine + $cleanStderr).Trim()) }
+    return [pscustomobject]@{ exitCode = $process.ExitCode; output = (($cleanStdout + [Environment]::NewLine + $cleanStderr).Trim()); streamEvents = $streamEvents }
 }
 
 function Invoke-OpenRouterDirectModel {
@@ -1784,6 +1915,8 @@ function Run-Ask {
     try {
         $attempts = @()
         $candidateModels = @(Get-ModelAttempts -SelectedModel $selected -Text $Prompt)
+        # Recently failed models go to the back; the record survives restarts (model-availability.json).
+        $candidateModels = @(Sort-ByAvailability -Candidates $candidateModels)
         # DEV_CONTRACTS section 5: skip models with an active cooldown unless nothing else is left.
         $activeCandidates = @($candidateModels | Where-Object { -not (Test-ModelCoolingDown $_) })
         if ($activeCandidates.Count -gt 0) { $candidateModels = $activeCandidates }
@@ -1873,6 +2006,7 @@ function Run-Ask {
                 # keeps the call number (that is what p75 latency is made of).
                 Write-DelegateUsageRecord -Mode $Command -Provider $providerName -ModelId $candidate -PromptTokens $parsed.promptTokens -CompletionTokens $parsed.completionTokens -TotalTokens $parsed.tokens -Cost $parsed.cost -ElapsedMs ([long]$attemptSw.ElapsedMilliseconds) -Ok $true -AccountId $accountId
                 Clear-ModelCooldown $candidate
+                Update-ModelAvailability -ModelId $candidate -Ok $true -ElapsedMs ([int]$attemptSw.ElapsedMilliseconds)
                 $script:_runCompleted = $true
                 if ($Json) {
                     [pscustomobject]@{ delegate = "opencode"; model = $candidate; output = $parsed.answer; tokens = $parsed.tokens; promptTokens = $parsed.promptTokens; completionTokens = $parsed.completionTokens; totalTokens = $parsed.tokens; cost = $parsed.cost; executionPath = $executionPath; attempts = $attempts } | ConvertTo-Json -Depth 8
@@ -1883,6 +2017,11 @@ function Run-Ask {
             }
             $attemptSw.Stop()
             $errorClass = Get-OpenCodeErrorClass -ExitCode $result.exitCode -Output $result.output
+            # A call that hit its cap while the model was still streaming is alive, not
+            # broken: no cooldown, no health penalty, and the ladder moves on.
+            if ($result.exitCode -eq 124 -and $result.PSObject.Properties["streamEvents"] -and [int]$result.streamEvents -gt 0) {
+                $errorClass = "stalled"
+            }
             $retryAfterSec = 0
             if ([string]$result.output -match '(?i)retry[-_ ]?(after|delay)\D{0,10}(\d+)') { $retryAfterSec = [int]$Matches[2] }
             $failStatusCode = [int]$result.exitCode
@@ -1908,6 +2047,7 @@ function Run-Ask {
             if ($result.PSObject.Properties["accountId"]) { $failedAccountId = [string]$result.accountId }
             if (Test-AttemptIsModelFailure -ExitCode $result.exitCode -ErrorClass $errorClass) {
                 Write-DelegateUsageRecord -Mode $Command -Provider $providerName -ModelId $candidate -PromptTokens $null -CompletionTokens $null -TotalTokens $null -Cost $null -ElapsedMs ([long]$attemptSw.ElapsedMilliseconds) -Ok $false -AccountId $failedAccountId -ErrorClass $errorClass
+                Update-ModelAvailability -ModelId $candidate -Ok $false -ErrorClass $errorClass
                 [void]$recordedFailures.Add([string]$candidate)
             } else {
                 # "Deliberately NOT recorded" is a different state from "already

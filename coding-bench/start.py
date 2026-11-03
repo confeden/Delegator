@@ -22,7 +22,7 @@ for _s in (sys.stdout, sys.stderr):  # non-ASCII paths must not crash printing o
         pass
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BENCH_VERSION = "1.5"
+BENCH_VERSION = "1.7"
 MODES = ("native", "delegator")
 
 RULES = {
@@ -73,6 +73,42 @@ def grade_pending():
         pass
 
 
+PROBE_PROMPT = "Reply exactly: ok"
+
+
+def delegator_answers():
+    """Pre-start check for the delegator arm: one real `ask` through the same ladder the arm will use.
+
+    `ask` skips the router, so a `keep` cannot pass for an answer, and the web door is tried first as in
+    real use. Returns (ok, detail). Only an answer with exit 0 and text counts.
+    """
+    import subprocess
+    import tempfile
+    candidates = [os.path.join(ROOT, "..", "ai-delegate.ps1"), os.path.join(ROOT, "..", "scripts", "ai-delegate.ps1")]
+    script = next((path for path in candidates if os.path.exists(path)), None)
+    if script is None:
+        return False, "ai-delegate.ps1 not found next to this benchmark"
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
+        fh.write(PROBE_PROMPT)
+        probe = fh.name
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "ask", "-PromptFile", probe],
+            capture_output=True, timeout=360)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, "probe did not finish: %s" % exc
+    finally:
+        try:
+            os.remove(probe)
+        except OSError:
+            pass
+    answer = result.stdout.decode("utf-8", errors="replace").strip()
+    if result.returncode == 0 and answer:
+        return True, "answered (%d chars)" % len(answer)
+    tail = result.stderr.decode("utf-8", errors="replace").strip().splitlines()[-1:] or [""]
+    return False, "exit %d, no answer: %s" % (result.returncode, tail[0])
+
+
 def make_run(mode, model, slug, session, isolation):
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
     while True:
@@ -102,6 +138,12 @@ def make_run(mode, model, slug, session, isolation):
             "usage_file": os.path.join(rt, "usage.jsonl"), "metrics_file": os.path.join(rt, "delegate-metrics.jsonl")}
     with open(os.path.join(dest, "run_info.json"), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=2)
+    try:  # tamper-evident copy outside the run folder: the grader trusts it over run_info.json
+        os.makedirs(os.path.join(DATA, "registry"), exist_ok=True)
+        with open(os.path.join(DATA, "registry", run + ".json"), "w", encoding="utf-8") as fh:
+            json.dump(meta, fh, indent=2)
+    except OSError:
+        pass
     try:  # the flag makes Delegator stamp its traffic bench:true so the "saved" counter ignores it
         os.makedirs(rt, exist_ok=True)
         with open(meta["active_flag"], "w", encoding="utf-8") as fh:
@@ -122,8 +164,18 @@ def main(argv):
             sys.exit(USAGE)
         mode = rest[1]
         rest = rest[2:]
+    no_check = "--no-check" in rest
+    rest = [part for part in rest if part != "--no-check"]
     model = " ".join(rest).strip() or "unknown-model"
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", model)[:40].strip("_") or "model"
+    if mode == "delegator" and not no_check:
+        ok, detail = delegator_answers()
+        if not ok:
+            # A delegator arm that cannot be answered measures the bare model under the wrong name.
+            print("NOT STARTED: Delegator did not answer the pre-start check (%s)." % detail)
+            print("Wait until a provider answers, or start anyway with --no-check (the grade will carry a flag).")
+            sys.exit(2)
+        print("Pre-start check: %s" % detail)
     # Each arm is its own chat, so the arms never share a context; they may run at the same time.
     dest = make_run(mode, model, slug, dt.datetime.now().strftime("%Y%m%d-%H%M%S"), "separate-chat")
     grade_pending()

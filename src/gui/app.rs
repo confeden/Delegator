@@ -11,6 +11,9 @@ use crate::gui::proxy::{run_proxy_test, GoogleProbe, ProxyTestResult};
 use crate::gui::quota::{limit_line, read_limits, ProviderLimit};
 use crate::gui::updater::{progress_label, run_update, update_button_label};
 use crate::gui::usage::{fetch_usage, format_count, UsageReport};
+use crate::gui::web_doors::{
+    door_status, fetch_web_doors, request_login, DoorTone, WebDoorsReport, WebLoginReply,
+};
 use crate::ide_detector::IdeDetector;
 use crate::models_service::{
     fetch_gemini_catalog, fetch_opencode_models, ModelInfo, OpenCodeCatalog,
@@ -56,6 +59,8 @@ pub enum AppMessage {
     GeminiModelsFetched(Result<(Vec<ModelInfo>, HashMap<String, f64>), String>),
     OpenCodeModelsFetched(Result<OpenCodeCatalog, String>),
     UsageFetched(Result<UsageReport, String>),
+    WebDoorsFetched(Result<WebDoorsReport, String>),
+    WebLoginRequested(Result<WebLoginReply, String>),
     ProxyTested(ProxyTestResult),
     /// A background dependency install / `opencode upgrade` finished.
     OpenCodeCliJob(CliJob, CliJobResult),
@@ -97,7 +102,6 @@ enum SelectedTab {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ApiProvider {
     Google,
-    OpenCode,
     Custom(String),
     Add,
 }
@@ -140,8 +144,14 @@ enum InstallState {
 pub struct DelegatorApp {
     config: AppConfig,
     active_tab: SelectedTab,
+    web_doors: Option<WebDoorsReport>,
+    web_doors_loading: bool,
+    web_doors_polled_at: Option<std::time::Instant>,
     // One-shot startup fit of the window width to the tab row (see update()).
     window_width_fitted: bool,
+    // Width of the «АКТИВЕН/ПАУЗА» group (and «Обновить» beside it) as last
+    // drawn; the row reserves it before placing that group on the right.
+    toggle_group_width: f32,
 
     // Temp UI Inputs
     google_account_drafts: Vec<ApiAccountDraft>,
@@ -284,6 +294,9 @@ impl DelegatorApp {
         let mut app = Self {
             config,
             active_tab: SelectedTab::Ides,
+            web_doors: None,
+            web_doors_loading: false,
+            web_doors_polled_at: None,
             google_account_drafts,
             new_google_label: String::new(),
             new_google_key: String::new(),
@@ -315,6 +328,7 @@ impl DelegatorApp {
             is_loading_usage: false,
             stats_tab_was_active: false,
             window_width_fitted: false,
+            toggle_group_width: 0.0,
             proxy_tests: HashMap::new(),
             benchmark_view: BenchmarkView::default(),
             benchmark_read_at: None,
@@ -436,7 +450,50 @@ impl DelegatorApp {
         });
     }
 
-    /// The update control in the header, drawn immediately to the left of the
+    /// The one navigation row: the tabs on the left, the update control and the
+    /// «АКТИВЕН/ПАУЗА» toggle pinned to the right. The toggle group is placed
+    /// after a spacer that leaves exactly its last measured width, so it stays
+    /// on the right edge; in a wrapped row a too-narrow window pushes it onto
+    /// the next line instead of out of reach.
+    fn draw_navigation_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        accents: TabAccents,
+        update_request: &mut bool,
+    ) -> NavigationWidths {
+        navigation_tabs(ui, &mut self.active_tab, &self.theme, accents);
+        let tabs = ui.min_rect().width();
+
+        // max_rect, not available_width(): inside a wrapped row the latter can exceed
+        // the window, which parked the toggle past the right edge (headless probe, 1040 px).
+        let spare = ui.max_rect().right() - ui.cursor().left() - self.toggle_group_width;
+        if spare > 0.0 {
+            ui.add_space(spare);
+        }
+        let group = ui.horizontal(|ui| {
+            // Only visible with a newer release.
+            if let Some(UpdateStatus::Available { tag, .. }) = &self.update_status {
+                *update_request = self.update_button(ui, tag);
+            }
+            let mut active = self.config.delegator_enabled;
+            let label = if active {
+                "АКТИВЕН"
+            } else {
+                "ПАУЗА"
+            };
+            if ui.toggle_value(&mut active, label).changed() {
+                self.config.delegator_enabled = active;
+                self.config.save();
+                set_toggle_label(active);
+                self.sync_all_ide_hooks();
+            }
+        });
+        let toggle = group.response.rect.width();
+        self.toggle_group_width = toggle;
+        NavigationWidths { tabs, toggle }
+    }
+
+    /// The update control, drawn immediately to the left of the
     /// «АКТИВЕН/ПАУЗА» toggle. One widget, four states, one short line each.
     /// Returns true when the user asked to update (or to retry).
     fn update_button(&self, ui: &mut egui::Ui, tag: &str) -> bool {
@@ -796,130 +853,6 @@ impl DelegatorApp {
         });
     }
 
-    /// OpenCode / OpenRouter keys. One key authorises both the CLI and the direct
-    /// OpenRouter path, which is why it never moved into `custom_providers`.
-    fn draw_opencode_keys(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.add_space(16.0);
-            ui.separator();
-            ui.add_space(8.0);
-            ui.heading("OpenCode / OpenRouter");
-            ui.label("Ключи нужны для моделей openrouter/*; модели opencode/* авторизует сам OpenCode CLI.");
-
-            let mut save_opencode: Option<(String, String, String, bool)> = None;
-            let mut remove_opencode: Option<String> = None;
-            for draft in &mut self.opencode_account_drafts {
-                ui.group(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut draft.enabled, "Включён");
-                        ui.strong("Сохранённый OpenCode/OpenRouter-аккаунт");
-                    });
-                    ui.label("Название аккаунта:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.label)
-                            .desired_width(ui.available_width()),
-                    );
-                    ui.label("Новый ключ (пусто — оставить текущий):");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.new_key)
-                            .password(true)
-                            .desired_width(ui.available_width()),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button("Сохранить изменения").clicked() {
-                            save_opencode = Some((
-                                draft.id.clone(),
-                                draft.label.clone(),
-                                draft.new_key.clone(),
-                                draft.enabled,
-                            ));
-                        }
-                        if ui
-                            .button(egui::RichText::new("Удалить ключ").color(self.theme.error_color()))
-                            .clicked()
-                        {
-                            remove_opencode = Some(draft.id.clone());
-                        }
-                    });
-                });
-                ui.add_space(6.0);
-            }
-
-            if let Some((id, label, new_key, enabled)) = save_opencode {
-                let new_key = if new_key.trim().is_empty() {
-                    None
-                } else {
-                    Some(new_key.as_str())
-                };
-                match self.config.update_opencode_account(
-                    &id,
-                    &label,
-                    new_key,
-                    enabled,
-                ) {
-                    Ok(()) => {
-                        if let Some(draft) = self
-                            .opencode_account_drafts
-                            .iter_mut()
-                            .find(|draft| draft.id == id)
-                        {
-                            draft.new_key.clear();
-                        }
-                        self.status_message =
-                            "OpenCode/OpenRouter-аккаунт сохранён".to_string();
-                    }
-                    Err(err) => self.status_message = err,
-                }
-            }
-            if let Some(id) = remove_opencode {
-                self.config.remove_opencode_account(&id);
-                self.opencode_account_drafts
-                    .retain(|draft| draft.id != id);
-                self.status_message =
-                    "OpenCode/OpenRouter-ключ удалён".to_string();
-            }
-
-            ui.group(|ui| {
-                ui.strong("Добавить OpenCode/OpenRouter-ключ");
-                ui.label("Название аккаунта:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.new_opencode_label)
-                        .hint_text("Например: Основной OpenRouter")
-                        .desired_width(ui.available_width()),
-                );
-                ui.label("API-ключ:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.new_opencode_key)
-                        .password(true)
-                        .desired_width(ui.available_width()),
-                );
-                if ui.button("Добавить OpenCode/OpenRouter-ключ").clicked() {
-                    match self.config.add_opencode_account(
-                        &self.new_opencode_label,
-                        &self.new_opencode_key,
-                    ) {
-                        Ok(()) => {
-                            if let Some(account) = self.config.opencode_accounts.last()
-                            {
-                                self.opencode_account_drafts.push(ApiAccountDraft {
-                                    id: account.id.clone(),
-                                    label: account.label.clone(),
-                                    new_key: String::new(),
-                                    enabled: account.enabled,
-                                });
-                            }
-                            self.new_opencode_label.clear();
-                            self.new_opencode_key.clear();
-                            self.status_message =
-                                "OpenCode/OpenRouter-ключ добавлен".to_string();
-                        }
-                        Err(err) => self.status_message = err,
-                    }
-                }
-            });
-        });
-    }
-
     /// The Gemini model allowlist — the old «Модели Gemini» tab.
     fn draw_gemini_models(&mut self, ui: &mut egui::Ui) {
         ui.label("Delegator использует только отмеченные модели Google.");
@@ -971,206 +904,6 @@ impl DelegatorApp {
             });
     }
 
-    /// The OpenCode model allowlist — the old «Модели OpenCode» tab.
-    fn draw_opencode_models(&mut self, ui: &mut egui::Ui) {
-        ui.label("Список берётся из OpenCode CLI: новые бесплатные модели включаются сами, сильные — сверху.");
-        if let Some(limit) = self.opencode_limit.clone() {
-            limit_banner(ui, &self.theme, "OpenCode", &limit);
-        }
-        let warning = self.theme.warning_color();
-        let success = self.theme.success_color();
-        let weak = self.theme.weak_text_color();
-        let cli_required = self
-            .config
-            .enabled_opencode_models
-            .iter()
-            .any(|model| model.starts_with("opencode/"));
-        // Deferred so the button handlers can take &mut self after
-        // the layout closures have released their borrows.
-        let mut install_request = false;
-        let mut upgrade_request = false;
-        let mut redetect_request = false;
-        let mut open_link: Option<&'static str> = None;
-        if cli_required && !self.dependencies.opencode_cli_available() {
-            let fill =
-                egui::Color32::from_rgba_unmultiplied(warning.r(), warning.g(), warning.b(), 28);
-            let installing = matches!(self.opencode_install, Some(InstallState::Running(_)));
-            // Without either installer nothing can be automated —
-            // the manual links are then the only way forward.
-            let can_install =
-                self.dependencies.winget_available() || self.dependencies.npm_available();
-            let failed = matches!(self.opencode_install, Some(InstallState::Done(Err(_))));
-            egui::Frame::none()
-                .fill(fill)
-                .stroke(egui::Stroke::new(1.5, warning))
-                .rounding(6.0)
-                .inner_margin(10.0)
-                .show(ui, |ui| {
-                    ui.colored_label(warning, "Нужен OpenCode CLI для моделей opencode/*.");
-                    ui.horizontal(|ui| {
-                        let install = ui
-                            .add_enabled(
-                                can_install && !installing,
-                                egui::Button::new("Установить"),
-                            )
-                            .on_hover_text(
-                                "winget install --id SST.opencode\nnpm install -g opencode-ai",
-                            )
-                            .on_disabled_hover_text(
-                                "Не найдены ни winget, ни npm — установите вручную",
-                            );
-                        if install.clicked() {
-                            install_request = true;
-                        }
-                        if ui
-                            .add_enabled(!installing, egui::Button::new("Проверить снова"))
-                            .clicked()
-                        {
-                            redetect_request = true;
-                        }
-                        match &self.opencode_install {
-                            Some(InstallState::Running(step)) => {
-                                ui.spinner();
-                                ui.label(step.status_line());
-                            }
-                            Some(InstallState::Done(Ok(()))) => {
-                                ui.colored_label(success, "Готово");
-                            }
-                            Some(InstallState::Done(Err(reason))) => {
-                                ui.colored_label(warning, "Не удалось установить")
-                                    .on_hover_text(reason.as_str());
-                            }
-                            None => {}
-                        }
-                    });
-                    ui.colored_label(weak, "Windows может запросить подтверждение (UAC).");
-                    if failed || !can_install {
-                        ui.horizontal(|ui| {
-                            if ui.link("Скачать Node.js").clicked() {
-                                open_link = Some(NODEJS_DOWNLOAD_URL);
-                            }
-                            if ui.link("Сайт OpenCode").clicked() {
-                                open_link = Some(OPENCODE_SITE_URL);
-                            }
-                        });
-                    }
-                });
-            ui.add_space(8.0);
-        } else if let Some(path) = &self.dependencies.opencode_cli_path {
-            ui.colored_label(success, "OpenCode CLI установлен")
-                .on_hover_text(path.display().to_string());
-        }
-        if self.dependencies.opencode_cli_available() {
-            let upgrading = matches!(self.opencode_upgrade, Some(CliJobState::Running));
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(!upgrading, egui::Button::new("Обновить CLI"))
-                    .clicked()
-                {
-                    upgrade_request = true;
-                }
-                match &self.opencode_upgrade {
-                    Some(CliJobState::Running) => {
-                        ui.spinner();
-                        ui.label("Обновляю…");
-                    }
-                    Some(CliJobState::Done(Ok(()))) => {
-                        ui.colored_label(success, "Обновлено");
-                    }
-                    Some(CliJobState::Done(Err(reason))) => {
-                        ui.colored_label(warning, "Не удалось обновить")
-                            .on_hover_text(reason.as_str());
-                    }
-                    None => {}
-                }
-            });
-        }
-        if redetect_request {
-            self.dependencies = DependencyStatus::detect();
-        }
-        if install_request {
-            self.start_opencode_install();
-        }
-        if upgrade_request {
-            self.start_opencode_upgrade();
-        }
-        if let Some(url) = open_link {
-            open_url(url);
-        }
-        if self.config.enabled_opencode_models.is_empty() {
-            ui.colored_label(self.theme.warning_color(), "Не выбрана ни одна модель.");
-        }
-        if self.opencode_catalog_is_fallback {
-            ui.colored_label(
-                self.theme.warning_color(),
-                "Список не получен от OpenCode CLI — показан встроенный минимум.",
-            )
-            .on_hover_text(
-                "Запрос списка к CLI не успел или не удался, поэтому здесь только \
-                 встроенные модели OpenCode Zen плюс те, что вы уже включили. \
-                 Ваш выбор не потерян и делегирование работает как обычно. \
-                 Нажмите «Обновить CLI» или откройте вкладку заново.",
-            );
-        }
-        ui.horizontal(|ui| {
-            ui.label("Поиск:");
-            ui.text_edit_singleline(&mut self.opencode_search);
-            if self.is_loading_opencode {
-                ui.spinner();
-            }
-        });
-
-        ui.separator();
-
-        // `auto_shrink` off horizontally: without it the area is only
-        // as wide as its widest row, so widening the window leaves
-        // the scrollbar stranded in the middle instead of at the
-        // right edge where it belongs.
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for model in &self.opencode_models {
-                    if !self.opencode_search.is_empty()
-                        && !model
-                            .id
-                            .to_lowercase()
-                            .contains(&self.opencode_search.to_lowercase())
-                    {
-                        continue;
-                    }
-
-                    let mut checked = self.config.enabled_opencode_models.contains(&model.id);
-                    ui.horizontal(|ui| {
-                        let row = ui
-                            .checkbox(&mut checked, &model.name)
-                            .on_hover_text(crate::gui::opencode_setup::dpr_hint(&model.id));
-                        if row.changed() {
-                            if checked {
-                                self.config.enabled_opencode_models.push(model.id.clone());
-                            } else {
-                                self.config
-                                    .enabled_opencode_models
-                                    .retain(|id| id != &model.id);
-                            }
-                            self.config.save();
-                        }
-
-                        if crate::models_service::is_custom_provider_model(&model.id) {
-                            ui.colored_label(self.theme.accent_color(), "[СВОЙ]")
-                                .on_hover_text(format!(
-                                    "Провайдер из вашей конфигурации OpenCode: {}. \
-                                 Работает и в обычном делегировании, и в бенчмарке.",
-                                    model.provider
-                                ));
-                        } else if model.is_free {
-                            ui.colored_label(self.theme.success_color(), "[FREE]");
-                        }
-                        ui.colored_label(self.theme.weak_text_color(), format!("({})", model.id));
-                    });
-                }
-            });
-    }
-
     /// The «API» tab: one button per provider, then that provider's keys or its
     /// models. Before this the same three things lived in three top-level tabs
     /// («API-ключи», «Модели Gemini», «Модели OpenCode»), so adding a fourth
@@ -1178,6 +911,43 @@ impl DelegatorApp {
     /// Second column of «Интеграция»: the web chats Delegator can hand a task to.
     /// Gemini is the first; Qwen and the rest get their own block under it.
     fn draw_web_column(&mut self, ui: &mut egui::Ui) {
+        const WEB_DOORS: [(&str, &str, &str); 7] = [
+            (
+                "aistudio",
+                "AI Studio",
+                "aistudio.google.com. Тот же аккаунт Google, но свои лимиты: выручает, когда Gemini исчерпан.",
+            ),
+            (
+                "kimi",
+                "Kimi (K3)",
+                "kimi.ai. Текст задач уходит на сайт в Китае.",
+            ),
+            (
+                "zai",
+                "Z.ai (GLM-5.3)",
+                "chat.z.ai. Текст задач уходит на сайт в Китае.",
+            ),
+            (
+                "qwen",
+                "Qwen (3.8 Max)",
+                "chat.qwen.ai. Текст задач уходит на сайт в Китае.",
+            ),
+            (
+                "deepseek",
+                "DeepSeek (V4)",
+                "chat.deepseek.com. Текст задач уходит на сайт в Китае.",
+            ),
+            (
+                "tencent",
+                "Tencent Hy",
+                "aistudio.tencent.ai. Модель без рейтинга, идёт после оценённых.",
+            ),
+            (
+                "rudder",
+                "Rudder",
+                "rudder.chat. Безлимитный чат, модель сайт выбирает сам: запасной вариант.",
+            ),
+        ];
         const MODELS: [(&str, &str); 5] = [
             ("best", "Самая новая (авто)"),
             ("argon", "Argon"),
@@ -1201,19 +971,23 @@ impl DelegatorApp {
 
         ui.strong("Web");
         ui.add_space(5.0);
-        if ui
-            .checkbox(&mut self.config.gemini_web_enabled, "Gemini (через Chrome)")
-            .on_hover_text(
-                "Задачи из IDE уходят в вашу сессию Gemini в Chrome — к самой сильной модели, \
+        let mut gemini_on = self.config.gemini_web_enabled;
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .checkbox(&mut gemini_on, "Gemini (через Chrome)")
+                .on_hover_text(
+                    "Задачи из IDE уходят в вашу сессию Gemini в Chrome — к самой сильной модели, \
                  одним запросом, без промежуточных ступеней. Если Chrome недоступен, работает \
                  обычная цепочка моделей. Нужно расширение из папки extensions\\gemini-web-bridge \
                  (один раз: chrome://extensions → Загрузить распакованное). Окно Gemini \
                  расширение открывает и закрывает само.",
-            )
-            .changed()
-        {
-            self.config.save();
-        }
+                )
+                .changed()
+            {
+                self.set_web_door_flag("gemini", gemini_on);
+            }
+            self.draw_web_door_login(ui, "gemini");
+        });
         ui.add_enabled_ui(self.config.gemini_web_enabled, |ui| {
             let mut changed = false;
             ui.horizontal(|ui| {
@@ -1252,18 +1026,123 @@ impl DelegatorApp {
                 self.config.save();
             }
         });
-        if ui
-            .checkbox(&mut self.config.puter_web_enabled, "Puter (через Chrome)")
-            .on_hover_text(
-                "Задачи из IDE уходят в вашу сессию Puter (builder.puter.com) в Chrome — к модели \
-                 Claude Opus 5.5, оплата с вашего баланса Puter. Нужен тот же расширенный мост \
-                 extensions\\gemini-web-bridge и вход в Puter в этом Chrome. Вкладку Puter \
-                 расширение открывает и закрывает само.",
-            )
-            .changed()
-        {
-            self.config.save();
+        ui.add_space(6.0);
+        ui.colored_label(
+            self.theme.weak_text_color(),
+            "Другие сайты: вперёд идёт самый сильный",
+        );
+        for (id, label, hint) in WEB_DOORS {
+            let mut enabled = self.web_door_flag(id);
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .checkbox(&mut enabled, label)
+                    .on_hover_text(hint)
+                    .changed()
+                {
+                    self.set_web_door_flag(id, enabled);
+                }
+                self.draw_web_door_login(ui, id);
+            });
         }
+    }
+
+    fn web_door_flag(&self, id: &str) -> bool {
+        match id {
+            "gemini" => self.config.gemini_web_enabled,
+            "aistudio" => self.config.aistudio_web_enabled,
+            "kimi" => self.config.kimi_web_enabled,
+            "zai" => self.config.zai_web_enabled,
+            "qwen" => self.config.qwen_web_enabled,
+            "deepseek" => self.config.deepseek_web_enabled,
+            "tencent" => self.config.tencent_web_enabled,
+            "rudder" => self.config.rudder_web_enabled,
+            _ => false,
+        }
+    }
+
+    fn set_web_door_flag(&mut self, id: &str, enabled: bool) {
+        let flag = match id {
+            "gemini" => &mut self.config.gemini_web_enabled,
+            "aistudio" => &mut self.config.aistudio_web_enabled,
+            "kimi" => &mut self.config.kimi_web_enabled,
+            "zai" => &mut self.config.zai_web_enabled,
+            "qwen" => &mut self.config.qwen_web_enabled,
+            "deepseek" => &mut self.config.deepseek_web_enabled,
+            "tencent" => &mut self.config.tencent_web_enabled,
+            "rudder" => &mut self.config.rudder_web_enabled,
+            _ => return,
+        };
+        *flag = enabled;
+        self.config.save();
+    }
+
+    /// «Войти» and the status beside it. Pressing it also ticks the door: nobody signs in to a site
+    /// they do not mean to use, and a second click on the checkbox would be one more thing to miss.
+    fn draw_web_door_login(&mut self, ui: &mut egui::Ui, id: &'static str) {
+        let row = self
+            .web_doors
+            .as_ref()
+            .and_then(|report| report.doors.iter().find(|door| door.id == id));
+        let connected = self
+            .web_doors
+            .as_ref()
+            .is_some_and(|report| report.connected);
+        let (status, tone) = door_status(row, connected);
+        let detail = row
+            .map(|door| {
+                let mut lines = Vec::new();
+                if !door.auth_label.is_empty() {
+                    lines.push(door.auth_label.clone());
+                }
+                if door.last_seconds > 0.0 {
+                    lines.push(format!("Последний ответ: {:.0} с", door.last_seconds));
+                }
+                if !door.last_error.is_empty() {
+                    lines.push(door.last_error.clone());
+                }
+                lines.join("\n")
+            })
+            .unwrap_or_default();
+        if ui
+            .small_button("Войти")
+            .on_hover_text("Откроет сайт в Chrome. Войдите как обычно: Delegator сам увидит вход и закроет вкладку.")
+            .clicked()
+        {
+            self.set_web_door_flag(id, true);
+            let tx = self.tx.clone();
+            tokio::spawn(async move {
+                let _ = tx.send(AppMessage::WebLoginRequested(request_login(id).await));
+            });
+            self.web_doors_polled_at = None;
+        }
+        let color = match tone {
+            DoorTone::Good => self.theme.success_color(),
+            DoorTone::Warn => self.theme.warning_color(),
+            DoorTone::Weak => self.theme.weak_text_color(),
+        };
+        let label = ui.colored_label(color, status);
+        if !detail.is_empty() {
+            label.on_hover_text(detail);
+        }
+    }
+
+    /// Polled only while the tab that shows it is open: every 3 s, so a sign-in shows up by itself.
+    fn refresh_web_doors(&mut self, ctx: &egui::Context) {
+        if self.active_tab != SelectedTab::Ides || self.web_doors_loading {
+            return;
+        }
+        let due = self
+            .web_doors_polled_at
+            .is_none_or(|at| at.elapsed() >= Duration::from_secs(3));
+        if due {
+            self.web_doors_loading = true;
+            self.web_doors_polled_at = Some(std::time::Instant::now());
+            let tx = self.tx.clone();
+            tokio::spawn(async move {
+                let _ = tx.send(AppMessage::WebDoorsFetched(fetch_web_doors().await));
+            });
+        }
+        ctx.request_repaint_after(Duration::from_secs(3));
     }
 
     fn draw_api_tab(&mut self, ui: &mut egui::Ui) {
@@ -1325,8 +1204,6 @@ impl DelegatorApp {
             (ApiProvider::Add, _) => self.draw_provider_picker(ui),
             (ApiProvider::Google, ApiSection::Keys) => self.draw_google_keys(ui),
             (ApiProvider::Google, ApiSection::Models) => self.draw_gemini_models(ui),
-            (ApiProvider::OpenCode, ApiSection::Keys) => self.draw_opencode_keys(ui),
-            (ApiProvider::OpenCode, ApiSection::Models) => self.draw_opencode_models(ui),
             (ApiProvider::Custom(id), ApiSection::Keys) => self.draw_custom_keys(ui, &id),
             (ApiProvider::Custom(id), ApiSection::Models) => self.draw_custom_models(ui, &id),
         }
@@ -1352,6 +1229,7 @@ impl DelegatorApp {
             ui.add_space(10.0);
 
             let mut add_request: Option<(String, String, String, Vec<String>)> = None;
+            let mut add_preset: Option<&'static config::ProviderPreset> = None;
             for preset in config::PROVIDER_PRESETS {
                 let already = self.config.custom_provider(preset.id).is_some();
                 ui.group(|ui| {
@@ -1361,17 +1239,16 @@ impl DelegatorApp {
                     });
                     ui.colored_label(
                         self.theme.weak_text_color(),
-                        format!("Модели: {}", preset.models.join(", ")),
+                        format!(
+                            "Бесплатные: {} · платные: {}",
+                            preset.free_models().join(", "),
+                            preset.models[preset.free_count..].join(", ")
+                        ),
                     );
                     if already {
                         ui.colored_label(self.theme.success_color(), "Уже добавлен");
                     } else if ui.button(format!("Добавить {}", preset.label)).clicked() {
-                        add_request = Some((
-                            preset.id.to_string(),
-                            preset.label.to_string(),
-                            preset.base_url.to_string(),
-                            preset.models.iter().map(|m| m.to_string()).collect(),
-                        ));
+                        add_preset = Some(preset);
                     }
                 });
                 ui.add_space(6.0);
@@ -1414,6 +1291,19 @@ impl DelegatorApp {
                 ));
             }
 
+            if let Some(preset) = add_preset {
+                match self.config.add_preset_provider(preset) {
+                    Ok(()) => {
+                        self.status_message = format!(
+                            "Провайдер «{}» добавлен: бесплатные модели включены",
+                            preset.label
+                        );
+                        self.api_provider = ApiProvider::Custom(preset.id.to_string());
+                        self.api_section = ApiSection::Keys;
+                    }
+                    Err(err) => self.status_message = err,
+                }
+            }
             if let Some((id, label, base_url, models)) = add_request {
                 match self
                     .config
@@ -1598,7 +1488,12 @@ impl DelegatorApp {
         let Some(provider) = self.config.custom_provider(provider_id) else {
             return;
         };
-        let known: Vec<String> = provider.known_models.clone();
+        let mut known: Vec<String> = provider.known_models.clone();
+        // Free models first; the paid ones follow a divider.
+        known.sort_by_key(|model| !config::is_free_model(provider_id, model));
+        let first_paid = known
+            .iter()
+            .position(|model| !config::is_free_model(provider_id, model));
         let enabled: Vec<String> = provider.enabled_models.clone();
         let base_url = provider.base_url.clone();
 
@@ -1662,7 +1557,11 @@ impl DelegatorApp {
                         "Список пуст — добавьте модель вручную.",
                     );
                 }
-                for model in &known {
+                for (index, model) in known.iter().enumerate() {
+                    if Some(index) == first_paid && index > 0 {
+                        ui.separator();
+                        ui.strong("Платные модели");
+                    }
                     let mut checked = enabled.iter().any(|id| id == model);
                     let verdict = self.provider_verdicts.get(provider_id, model, now);
                     ui.horizontal(|ui| {
@@ -1766,11 +1665,54 @@ impl DelegatorApp {
 /// One-word verdict chip: a filled, outlined label so the winning side of a row
 /// is visible at a glance without reading numbers.
 /// One compact block per mode; details live in the hover tooltips.
+/// How long the «команда скопирована» confirmation stays after a click.
+const COPY_FLASH_SEC: f64 = 1.4;
+
+/// A command as selectable-looking text: a left click puts the exact command on
+/// the clipboard, a soft highlight shows it is clickable, and for a moment the
+/// text says «команда скопирована» so the click is never a guess.
+fn copy_chip(ui: &mut egui::Ui, command: &str) {
+    let flash_id = egui::Id::new(("copy-chip-flash", command));
+    let now = ui.input(|input| input.time);
+    let copied_at: Option<f64> = ui.ctx().data(|data| data.get_temp(flash_id));
+    let flashing = copied_at.is_some_and(|at| now - at < COPY_FLASH_SEC);
+    if flashing {
+        ui.ctx().request_repaint_after(Duration::from_millis(50));
+    }
+
+    let (text, color) = if flashing {
+        (
+            "команда скопирована".to_string(),
+            egui::Color32::from_rgb(90, 200, 120),
+        )
+    } else {
+        (command.to_string(), ui.visuals().hyperlink_color)
+    };
+    let response = ui
+        .add(
+            egui::Label::new(egui::RichText::new(text).color(color).monospace())
+                .sense(egui::Sense::click()),
+        )
+        .on_hover_text(format!("Нажмите, чтобы скопировать «{command}»"))
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.hovered() && !flashing {
+        let tint = ui.visuals().selection.bg_fill;
+        let tint = egui::Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), 60);
+        ui.painter()
+            .rect_filled(response.rect.expand(2.0), 3.0, tint);
+    }
+    if response.clicked() {
+        ui.ctx().copy_text(command.to_owned());
+        ui.ctx().data_mut(|data| data.insert_temp(flash_id, now));
+    }
+}
+
 fn benchmark_block(
     ui: &mut egui::Ui,
     title: &str,
     grade: &crate::gui::benchmark::Grade,
     weak: egui::Color32,
+    warning: egui::Color32,
 ) {
     use crate::gui::benchmark::format_points;
     let model = if grade.model.is_empty() {
@@ -1809,6 +1751,10 @@ fn benchmark_block(
                 .on_hover_text(
                     "Ошибка калибровки: насколько самооценка модели расходится с проверкой.",
                 );
+        }
+        if !grade.flags.is_empty() {
+            ui.colored_label(warning, format!("флагов: {}", grade.flags.len()))
+                .on_hover_text(grade.flags.join("\n"));
         }
     });
     if let Some(delegation) = &grade.delegation {
@@ -1905,6 +1851,13 @@ struct TabAccents {
     benchmark: TabAccent,
 }
 
+/// Widths of the two groups on the navigation row, as drawn this frame.
+#[derive(Debug, Clone, Copy)]
+struct NavigationWidths {
+    tabs: f32,
+    toggle: f32,
+}
+
 /// One row per provider for the «API» tab: its key, its button label, and
 /// whether it wants attention (no enabled account). The two built-ins are always
 /// present — they own storage of their own and cannot be removed.
@@ -1913,21 +1866,11 @@ struct TabAccents {
 /// is denied on the machine this ships from (D7): what the tab offers has to be
 /// assertable without anyone looking at it.
 fn api_provider_rows(config: &AppConfig) -> Vec<(ApiProvider, String, bool)> {
-    let mut rows = vec![
-        (
-            ApiProvider::Google,
-            "Google AI Studio".to_string(),
-            !config.google_accounts.iter().any(|account| account.enabled),
-        ),
-        (
-            ApiProvider::OpenCode,
-            "OpenCode / OpenRouter".to_string(),
-            !config
-                .opencode_accounts
-                .iter()
-                .any(|account| account.enabled),
-        ),
-    ];
+    let mut rows = vec![(
+        ApiProvider::Google,
+        "Google AI Studio".to_string(),
+        !config.google_accounts.iter().any(|account| account.enabled),
+    )];
     for provider in &config.custom_providers {
         let label = if provider.label.is_empty() {
             provider.id.clone()
@@ -2107,6 +2050,7 @@ impl eframe::App for DelegatorApp {
         let benchmark_tab_active = self.active_tab == SelectedTab::Benchmark;
         self.refresh_benchmark(benchmark_tab_active && !self.benchmark_tab_was_active);
         self.refresh_limits();
+        self.refresh_web_doors(ctx);
         // Between reads nothing would wake the loop, and the slow heartbeat
         // would stall on whatever frame the user last caused.
         if !benchmark_tab_active && self.benchmark_view.active.is_none() {
@@ -2165,6 +2109,18 @@ impl eframe::App for DelegatorApp {
                             );
                         }
                         Err(err) => self.status_message = format!("OpenCode error: {}", err),
+                    }
+                }
+                AppMessage::WebDoorsFetched(res) => {
+                    self.web_doors_loading = false;
+                    self.web_doors = res.ok();
+                }
+                AppMessage::WebLoginRequested(res) => {
+                    // Nothing listens for the request: at least the site opens, in the default browser.
+                    if let Ok(reply) = res {
+                        if !reply.queued && !reply.url.is_empty() {
+                            open_url(&reply.url);
+                        }
                     }
                 }
                 AppMessage::UsageFetched(res) => {
@@ -2278,35 +2234,11 @@ impl eframe::App for DelegatorApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Header Bar
+            // No title text anywhere in the window: the caption already says
+            // «Delegator vX.Y.Z» and the tray tooltip repeats it.
             let mut update_request = false;
-            ui.horizontal(|ui| {
-                // No title text here: the window caption already says
-                // «Delegator vX.Y.Z» and the tray tooltip repeats it. A third
-                // copy only cost vertical space and drifted out of date once.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut active = self.config.delegator_enabled;
-                    let label = if active { "АКТИВЕН" } else { "ПАУЗА" };
-                    if ui.toggle_value(&mut active, label).changed() {
-                        self.config.delegator_enabled = active;
-                        self.config.save();
-                        set_toggle_label(active);
-                        self.sync_all_ide_hooks();
-                    }
-                    // Right-to-left layout: added after the toggle, so it sits
-                    // immediately to its LEFT. Only visible with a newer release.
-                    if let Some(UpdateStatus::Available { tag, .. }) = &self.update_status {
-                        update_request = self.update_button(ui, tag);
-                    }
-                });
-            });
-            if update_request {
-                self.start_update();
-            }
 
-            ui.separator();
-
-            // Navigation Tabs
+            // Navigation Tabs, with the «АКТИВЕН/ПАУЗА» toggle on the same row.
             let api_warning = self.api_keys_need_attention();
             // A provider that reports a limit is exactly the state the tab
             // highlight exists for: nothing is broken, but delegation to that
@@ -2341,23 +2273,27 @@ impl eframe::App for DelegatorApp {
             // was GIVEN, so the one-shot fit below would read "810" and grow the
             // window by the padding at every single launch. An unwrapped row
             // reports the width it WANTS, which is the number that fit needs.
-            let tabs_row = if self.window_width_fitted {
+            let widths = if self.window_width_fitted {
                 ui.horizontal_wrapped(|ui| {
-                    navigation_tabs(ui, &mut self.active_tab, &self.theme, accents)
+                    self.draw_navigation_row(ui, accents, &mut update_request)
                 })
+                .inner
             } else {
-                ui.horizontal(|ui| {
-                    navigation_tabs(ui, &mut self.active_tab, &self.theme, accents)
-                })
+                ui.horizontal(|ui| self.draw_navigation_row(ui, accents, &mut update_request))
+                    .inner
             };
+            if update_request {
+                self.start_update();
+            }
 
-            // Fit the window width to the tab row once at startup so the row
-            // starts on one line; later resizes stay under the user's control.
+            // Fit the window width to the tab row and the toggle once at startup
+            // so the row starts on one line; later resizes stay under the user's
+            // control.
             if !self.window_width_fitted {
-                let tabs_width = tabs_row.response.rect.width();
+                let tabs_width = widths.tabs;
                 if tabs_width > 0.0 {
                     self.window_width_fitted = true;
-                    let required = tabs_width + 28.0;
+                    let required = tabs_width + widths.toggle + 28.0;
                     let (current_width, current_height) =
                         ctx.input(|i| (i.screen_rect().width(), i.screen_rect().height()));
                     if required > current_width {
@@ -2564,30 +2500,37 @@ impl eframe::App for DelegatorApp {
                 }
                 SelectedTab::Thinking => {
                     ui.horizontal(|ui| {
-                        ui.label("Живая карта работы Delegator: кто просит, что решил роутер, куда ушла задача.");
+                        ui.label("Живая карта работы Delegator: каждая строка — один запрос: решение роутера, вызовы моделей, ответ.");
                     });
                     ui.colored_label(
                         self.theme.weak_text_color(),
-                        "Прототип. Показываются только процессы — содержимого задач и ответов здесь нет и быть не может.",
+                        "Показываются только процессы — содержимого задач и ответов здесь нет и быть не может.",
                     );
                     ui.separator();
                     self.thinking.ui(ui, &self.theme);
                 }
                 SelectedTab::Benchmark => {
                     ui.horizontal(|ui| {
-                        ui.label("Кодовый бенчмарк 1.5: ваша модель без делегирования и с Delegator.");
+                        ui.label("Бенчмарк v1.5: способ сравнить интеллект вашей модели отдельно и в связке с Delegator.");
                         if ui.button("Обновить").clicked() {
                             self.refresh_benchmark(true);
                         }
                     });
-                    ui.colored_label(
-                        self.theme.weak_text_color(),
-                        "«-benchmark» в чате IDE — модель без делегирования; «-benchmark d» — та же модель с Delegator (запускайте в двух чатах, можно одновременно).",
-                    )
-                    .on_hover_text(
-                        "Прогон ведёт агент IDE, а не это окно. Оценка механическая: ответы не \
-                         оценивает ни одна модель. Результат появится здесь, когда прогон закончится.",
-                    );
+                    let weak = self.theme.weak_text_color();
+                    ui.horizontal_wrapped(|ui| {
+                        ui.colored_label(weak, "В чате IDE")
+                            .on_hover_text(
+                                "Прогон ведёт агент IDE, а не это окно. Оценка механическая: ответы не \
+                                 оценивает ни одна модель. Результат появится здесь, когда прогон закончится.",
+                            );
+                        copy_chip(ui, "-benchmark");
+                        ui.colored_label(weak, "— модель без делегирования;");
+                        copy_chip(ui, "-benchmark d");
+                        ui.colored_label(
+                            weak,
+                            "— та же модель с Delegator (запускайте в двух чатах, можно одновременно).",
+                        );
+                    });
                     ui.separator();
 
                     if let Some(active) = &self.benchmark_view.active {
@@ -2605,6 +2548,7 @@ impl eframe::App for DelegatorApp {
                     }
 
                     let weak = self.theme.weak_text_color();
+                    let warning = self.theme.warning_color();
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         let view = &self.benchmark_view;
                         if view.native.is_none() && view.delegator.is_none() {
@@ -2620,7 +2564,7 @@ impl eframe::App for DelegatorApp {
                             let Some(grade) = grade else {
                                 continue;
                             };
-                            benchmark_block(ui, title, grade, weak);
+                            benchmark_block(ui, title, grade, weak, warning);
                             ui.add_space(8.0);
                         }
                         if let Some(line) = view.difference_line() {
@@ -2831,6 +2775,57 @@ mod tests {
         rect
     }
 
+    /// The «АКТИВЕН/ПАУЗА» toggle must sit on the tab row, at its right edge.
+    /// A wrapped row once parked it past the window (available_width() ran wider
+    /// than the window), so it was simply not there on screen.
+    #[test]
+    fn the_toggle_stays_on_the_tab_row_at_the_right_edge() {
+        const WIDTH: f32 = 1040.0;
+        const TOGGLE_WIDTH_GUESS: f32 = 70.0;
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(WIDTH, 420.0),
+            )),
+            ..Default::default()
+        };
+        let theme = ThemeConfig::load();
+        let accents = TabAccents {
+            api: TabAccent::None,
+            benchmark: TabAccent::None,
+        };
+        let mut active = SelectedTab::Ides;
+        let mut toggle_rect = egui::Rect::NOTHING;
+        let mut tabs_rect = egui::Rect::NOTHING;
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    navigation_tabs(ui, &mut active, &theme, accents);
+                    tabs_rect = ui.min_rect();
+                    let spare = ui.max_rect().right() - ui.cursor().left() - TOGGLE_WIDTH_GUESS;
+                    if spare > 0.0 {
+                        ui.add_space(spare);
+                    }
+                    let mut on = true;
+                    toggle_rect = ui.toggle_value(&mut on, "АКТИВЕН").rect;
+                });
+            });
+        });
+        assert!(
+            toggle_rect.right() <= WIDTH,
+            "toggle past the right edge: {toggle_rect:?}"
+        );
+        assert!(
+            toggle_rect.right() > WIDTH - 40.0,
+            "toggle not pinned right: {toggle_rect:?}"
+        );
+        assert!(
+            (toggle_rect.top() - tabs_rect.top()).abs() < 1.0,
+            "toggle left the tab row"
+        );
+    }
+
     /// The «API» tab has never been on screen and cannot be (D7), so what it
     /// OFFERS is asserted here instead: which providers get a button, what each
     /// is called, and which of them is asking for attention.
@@ -2845,12 +2840,10 @@ mod tests {
         // their own and cannot be removed — and both want attention, because
         // neither has a key.
         let rows = api_provider_rows(&config);
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, ApiProvider::Google);
         assert_eq!(rows[0].1, "Google AI Studio");
         assert!(rows[0].2, "no Google key must show as needing attention");
-        assert_eq!(rows[1].0, ApiProvider::OpenCode);
-        assert!(rows[1].2);
 
         config.google_accounts.push(GoogleApiAccount {
             id: "g1".into(),
@@ -2858,17 +2851,8 @@ mod tests {
             api_key_enc: "blob".into(),
             enabled: true,
         });
-        // A key that exists but is switched OFF is not a key: the runtime skips
-        // disabled accounts, so the row must keep asking.
-        config.opencode_accounts.push(OpenCodeApiAccount {
-            id: "o1".into(),
-            label: "OR".into(),
-            api_key_enc: "blob".into(),
-            enabled: false,
-        });
         let rows = api_provider_rows(&config);
         assert!(!rows[0].2, "an enabled Google key clears the warning");
-        assert!(rows[1].2, "a disabled key must still warn");
 
         // Added providers follow, in config order, keyed by id.
         let mut with_key = provider("bai", "B.AI");
@@ -2877,13 +2861,13 @@ mod tests {
         config.custom_providers = vec![with_key, unlabelled];
 
         let rows = api_provider_rows(&config);
-        assert_eq!(rows.len(), 4);
-        assert_eq!(rows[2].0, ApiProvider::Custom("bai".to_string()));
-        assert_eq!(rows[2].1, "B.AI");
-        assert!(!rows[2].2);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1].0, ApiProvider::Custom("bai".to_string()));
+        assert_eq!(rows[1].1, "B.AI");
+        assert!(!rows[1].2);
         // No label falls back to the id, so a row can never be a blank button.
-        assert_eq!(rows[3].1, "tokenrouter");
-        assert!(rows[3].2, "a provider with no key must ask for one");
+        assert_eq!(rows[2].1, "tokenrouter");
+        assert!(rows[2].2, "a provider with no key must ask for one");
     }
 
     /// Tabs used to be drawn past the right edge — visible in no way, clickable

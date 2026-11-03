@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import time
 import logging
 import mimetypes
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,8 +28,11 @@ from .models import (
     ChatTaskEvent,
     GeminiWebPhaseRequest,
     GeminiWebResultRequest,
-    PuterWebResultRequest,
+    WebDoorAuthRequest,
+    WebDoorResultRequest,
+    WebLoginRequest,
     WebAskRequest,
+    WebPanelRequest,
     ImportSessionsResponse,
     ChatTurnRequest,
     ChatTurnResponse,
@@ -41,7 +45,16 @@ from .models import (
 )
 from .providers import ProviderResult, ProviderUsage, ShellDelegateProvider
 from .providers.gemini_web import GeminiWebBridge, gemini_web_choice, gemini_web_flags
-from .providers.puter_web import PuterWebBridge, puter_web_choice, puter_web_flags
+from .router import route_payload
+from .providers.web_doors import (
+    DOOR_BY_ID,
+    GEMINI,
+    WebDoors,
+    clean_used_label,
+    hedge_delay_sec,
+    is_foreign_request,
+    shipped_extension_version,
+)
 from .session_store import SessionStore
 from .usage import build_usage_report
 
@@ -70,6 +83,25 @@ class TaskEventBus:
             queues = list(self._subscribers.get(task_id, []))
         for queue in queues:
             await queue.put(event)
+
+
+class LocalCallersOnly:
+    """Plain ASGI, not `@app.middleware`: that wrapper buffers `receive`, which the long polls and
+    `request.is_disconnected()` depend on."""
+
+    PATHS = ("/api/web", "/api/gemini-web", "/api/route")
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith(self.PATHS):
+            headers = {key.decode("latin-1"): value.decode("latin-1") for key, value in scope["headers"]}
+            if is_foreign_request(headers.get("host", ""), headers.get("origin", ""), headers.get("sec-fetch-site", "")):
+                await send({"type": "http.response.start", "status": 403, "headers": []})
+                await send({"type": "http.response.body", "body": b""})
+                return
+        await self.app(scope, receive, send)
 
 
 class AppState:
@@ -114,7 +146,9 @@ class AppState:
             timeout_sec=config.shell_timeout_sec,
         )
         self.gemini_web = GeminiWebBridge()
-        self.puter_web = PuterWebBridge()
+        self.web_doors = WebDoors(
+            config.runtime_home / "web-doors.json", shipped_extension_version(config.shell_delegate_cmd),
+        )
         self.static_dir = Path(__file__).parent / "static"
         self.index_file = self.static_dir / "index.html"
         self.upload_dir = self.config.home_dir / "uploads"
@@ -1081,6 +1115,7 @@ def create_app() -> FastAPI:
         app.state.core.conn.close()
 
     app = FastAPI(title="Delegator Core", version=__version__, lifespan=lifespan)
+    app.add_middleware(LocalCallersOnly)
     static_dir = Path(__file__).parent / "static"
     app.mount("/assets", StaticFiles(directory=static_dir), name="assets")
 
@@ -1286,71 +1321,188 @@ def create_app() -> FastAPI:
         core: AppState = app.state.core
         return core.gemini_web.last
 
+    def _web_asker(
+        core: AppState,
+        *,
+        text: str,
+        model: str | None,
+        reasoning: str | None,
+        files: list[dict],
+        light: bool = False,
+        debug: bool = False,
+        no_lite: bool = False,
+    ):
+        """How the race asks one door: Gemini through its own bridge, the rest through theirs."""
+
+        async def ask(door, timeout_sec: float) -> ProviderResult:
+            if door.id == GEMINI.id:
+                chosen_model, chosen_reasoning = gemini_web_choice()
+                # A short plain question does not need the top level, unless the user picked one by hand.
+                if light and chosen_reasoning == "best":
+                    chosen_reasoning = "medium"
+                return await core.gemini_web.request(
+                    mode="delegate",
+                    text=text,
+                    model=model or chosen_model,
+                    reasoning=reasoning or chosen_reasoning,
+                    timeout_sec=timeout_sec,
+                    files=files,
+                    no_lite=no_lite,
+                )
+            return await core.web_doors.bridges[door.id].request(
+                text=text, mode="delegate", timeout_sec=timeout_sec, debug=debug,
+            )
+
+        return ask
+
+    @app.post("/api/route")
+    def route(payload: dict) -> dict:
+        """The router in-process: a pure function, so the runtime need not spawn the frozen exe for it."""
+        return asdict(route_payload(payload))
+
     @app.post("/api/web/ask")
-    async def web_ask(payload: WebAskRequest) -> dict:
+    async def web_ask(payload: WebAskRequest, request: Request) -> dict:
         """The IDE runtime's door to the web integration: one turn, one answer.
 
-        Gemini Web (when on) is asked first, with its model ladder inside. When it fails and
-        Puter is on, the Puter tab gets the same turn. Model and reasoning default to the
-        user's choice on «Интеграция → Web».
+        The strongest enabled door goes first and the next one joins it when it runs late
+        (`WebDoors.race`). Attachments go to Gemini only: an answer without the file would be wrong.
         """
         core: AppState = app.state.core
-        gemini_on, puter_on = gemini_web_flags()[0], puter_web_flags()[0]
         files = [entry.model_dump() for entry in payload.files]
         if sum(len(entry["data_base64"]) for entry in files) > 16_000_000:
             raise HTTPException(status_code=413, detail="Вложения больше 12 МБ вместе: уменьшите файлы.")
-        if files and not gemini_on:
+        doors = core.web_doors.ready_doors(files=bool(files), only=payload.doors)
+        if not doors:
             raise HTTPException(
                 status_code=503,
-                detail="Вложения передаются только в Gemini Web: включите его на вкладке «Интеграция».",
+                detail="Вложения передаются только в Gemini Web: включите его на вкладке «Интеграция»."
+                if files else "Web выключен или нужен вход: откройте «Интеграция → Web» и нажмите «Войти».",
             )
-        errors: list[str] = []
-        if gemini_on:
-            chosen_model, chosen_reasoning = gemini_web_choice()
-            # With Puter as the fallback, Gemini leaves it a minute, so the caller's wait covers both.
-            gemini_budget = max(payload.timeout_sec - 60, 10) if puter_on else payload.timeout_sec
-            try:
-                result = await core.gemini_web.request(
-                    mode="delegate",
-                    text=payload.text,
-                    model=payload.model or chosen_model,
-                    reasoning=payload.reasoning or chosen_reasoning,
-                    timeout_sec=gemini_budget,
-                    files=files,
-                )
-            except RuntimeError as exc:
-                errors.append(f"Gemini Web: {exc}")
-                # Puter cannot take a file: an answer without the attachment would be a wrong answer.
-                if files:
-                    raise HTTPException(status_code=503, detail=errors[-1]) from exc
-            else:
-                return {
-                    "text": result.text,
-                    "model": result.usage.model if result.usage else "",
-                    "provider": "Gemini Web",
-                    "seconds": core.gemini_web.last.get("seconds"),
-                }
-        if puter_on:
-            try:
-                result = await core.puter_web.request(
-                    mode="delegate",
-                    text=payload.text,
-                    model=puter_web_choice(),
-                    timeout_sec=payload.timeout_sec,
-                )
-            except RuntimeError as exc:
-                errors.append(f"Puter Web: {exc}")
-            else:
-                return {
-                    "text": result.text,
-                    "model": result.usage.model if result.usage else "",
-                    "provider": "Puter Web",
-                    "seconds": core.puter_web.last.get("seconds"),
-                }
-        raise HTTPException(
-            status_code=503,
-            detail=" | ".join(errors) or "Web выключен: включите Gemini Web или Puter Web на вкладке «Интеграция».",
+        ask = _web_asker(
+            core,
+            text=payload.text,
+            model=payload.model,
+            reasoning=payload.reasoning,
+            files=files,
+            light=payload.light,
+            debug=payload.debug,
+            no_lite=len(doors) > 1,
         )
+        race = asyncio.create_task(core.web_doors.race(
+            ask, doors, hedge_after=hedge_delay_sec(payload.text), timeout_sec=payload.timeout_sec,
+        ))
+        # A caller that gave up (the IDE stopped the call) leaves nobody to answer, and uvicorn does not
+        # cancel the handler: without this the chats would run on and spend the sites' quota.
+        while not race.done():
+            await asyncio.wait({race}, timeout=1.0)
+            if not race.done() and await request.is_disconnected():
+                race.cancel()
+                await asyncio.gather(race, return_exceptions=True)
+                raise HTTPException(status_code=499, detail="Вызов прерван.")
+        try:
+            answer = race.result()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {
+            "text": answer.result.text,
+            "model": answer.result.usage.model if answer.result.usage else "",
+            "provider": answer.result.provider,
+            "door": answer.door.id,
+            "seconds": answer.seconds,
+            "errors": answer.errors,
+        }
+
+    @app.post("/api/web/panel")
+    async def web_panel(payload: WebPanelRequest) -> dict:
+        """The same turn to the strongest doors at once, for a task worth a second opinion."""
+        core: AppState = app.state.core
+        doors = core.web_doors.ready_doors()
+        if not doors:
+            raise HTTPException(status_code=503, detail="Web выключен или нужен вход.")
+        ask = _web_asker(core, text=payload.text, model=None, reasoning=payload.reasoning, files=[], no_lite=len(doors) > 1)
+        answers = await core.web_doors.panel(ask, doors, size=payload.size, timeout_sec=payload.timeout_sec)
+        if not answers:
+            raise HTTPException(status_code=503, detail="Ни одна дверь Web не ответила.")
+        return {"answers": [
+            {
+                "text": answer.result.text,
+                "model": answer.result.usage.model if answer.result.usage else "",
+                "door": answer.door.id,
+                "seconds": answer.seconds,
+            }
+            for answer in answers
+        ]}
+
+    @app.get("/api/web/doors")
+    def web_doors_state() -> dict:
+        """Everything «Интеграция → Web» shows, and what the runtime needs to skip a dead web fast."""
+        core: AppState = app.state.core
+        return {
+            "connected": core.web_doors.is_connected() or core.gemini_web.is_connected(),
+            "paused": not gemini_web_flags()[1],
+            "seen_age": core.web_doors.seen_age(),
+            "wanted": core.web_doors.wanted(),
+            "doors": core.web_doors.describe(),
+        }
+
+    @app.post("/api/web/login")
+    def web_login(payload: WebLoginRequest) -> dict:
+        """«Войти»: the extension opens the site in front and reports the sign-in when it sees one."""
+        core: AppState = app.state.core
+        door = DOOR_BY_ID.get(payload.door)
+        if door is None:
+            raise HTTPException(status_code=404, detail="Unknown web door")
+        queued = core.web_doors.request_login(door.id)
+        return {"queued": queued, "url": door.url}
+
+    @app.post("/api/web/auth")
+    def web_auth(payload: WebDoorAuthRequest) -> dict[str, bool]:
+        """The extension's sign-in report for one door."""
+        core: AppState = app.state.core
+        if payload.door not in DOOR_BY_ID:
+            raise HTTPException(status_code=404, detail="Unknown web door")
+        core.web_doors.touch()
+        core.web_doors.report_auth(payload.door, payload.state, payload.label)
+        return {"ok": True}
+
+    @app.get("/api/web-door/wait")
+    async def web_door_wait(known: str = "") -> dict:
+        """Long-poll for the extension: which door tabs are wanted, and which logins were requested."""
+        core: AppState = app.state.core
+        return await core.web_doors.wait_change([item for item in known.split(",") if item])
+
+    @app.get("/api/web-door/{door_id}/live")
+    def web_door_live(door_id: str, id: str = "") -> dict[str, bool]:
+        """Is this request still waited for? False once another door won the race."""
+        core: AppState = app.state.core
+        if door_id == GEMINI.id:
+            return {"live": core.gemini_web.is_live(id)}
+        bridge = core.web_doors.bridges.get(door_id)
+        return {"live": bool(bridge and bridge.is_live(id))}
+
+    @app.post("/api/web-door/{door_id}/phase")
+    def web_door_phase(door_id: str, payload: dict) -> dict[str, bool]:
+        """Which step a door's turn is on, so a turn that hangs says where."""
+        core: AppState = app.state.core
+        status = core.web_doors.status.get(door_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail="Unknown web door")
+        status.phase = str(payload.get("phase") or "")[:300]
+        core.web_doors.touch()
+        return {"ok": True}
+
+    @app.post("/api/web-door/{door_id}/result")
+    def web_door_result(door_id: str, payload: WebDoorResultRequest) -> dict[str, bool]:
+        core: AppState = app.state.core
+        bridge = core.web_doors.bridges.get(door_id)
+        if bridge is None:
+            raise HTTPException(status_code=404, detail="Unknown web door")
+        core.web_doors.touch()
+        resolved = bridge.resolve(
+            payload.request_id, text=payload.text, error=payload.error, used=clean_used_label(payload.used),
+        )
+        # A loser of the race finishing late is normal: its answer is simply no longer needed.
+        return {"ok": resolved}
 
     @app.get("/api/gemini-web/next")
     async def gemini_web_next():
@@ -1374,41 +1526,6 @@ def create_app() -> FastAPI:
         )
         if not resolved:
             raise HTTPException(status_code=404, detail="Gemini Web request is no longer active")
-        return {"ok": True}
-
-    @app.get("/api/puter-web/state")
-    def puter_web_state() -> dict:
-        core: AppState = app.state.core
-        enabled = puter_web_flags()[0]
-        return {"enabled": enabled, "wanted": enabled and core.puter_web.has_demand(),
-               "connected": core.puter_web.is_connected(), "model": puter_web_choice()}
-
-    @app.get("/api/puter-web/wait")
-    async def puter_web_wait(known: int = 0) -> dict:
-        """Long-poll for the extension: answers when the need for a Puter tab changes."""
-        core: AppState = app.state.core
-        if not puter_web_flags()[0]:
-            await asyncio.sleep(20)
-            return {"wanted": False}
-        return {"wanted": await core.puter_web.wait_demand(bool(known))}
-
-    @app.get("/api/puter-web/next")
-    async def puter_web_next():
-        core: AppState = app.state.core
-        if not puter_web_flags()[0]:
-            await asyncio.sleep(2)
-            return Response(status_code=204)
-        request = await core.puter_web.next_request()
-        if request is None:
-            return Response(status_code=204)
-        return request
-
-    @app.post("/api/puter-web/result")
-    def puter_web_result(payload: PuterWebResultRequest) -> dict[str, bool]:
-        core: AppState = app.state.core
-        resolved = core.puter_web.resolve(payload.request_id, text=payload.text, error=payload.error)
-        if not resolved:
-            raise HTTPException(status_code=404, detail="Puter Web request is no longer active")
         return {"ok": True}
 
     @app.get("/api/chat/tasks/{task_id}")

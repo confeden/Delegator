@@ -23,3 +23,7 @@ Invalid solution, exception or time limit exceeded → 0 for that instance.
 
 `python check.py` runs your solver on sample instances and prints cost, time and validity next to a
 nearest-neighbour baseline. A valid simple solution first; then improve (use the whole time budget).
+
+## Code rules
+
+Allowed imports ONLY: `math random time heapq collections itertools functools bisect array typing dataclasses operator`, plus `sys` for `sys.setrecursionlimit` / `sys.maxsize` only. No file access, subprocesses, threads or `atexit`; no `open eval exec compile __import__ getattr setattr delattr globals locals vars breakpoint input help attrgetter methodcaller` (not even as variable names), no dunder attributes (`__class__`, `__dict__`, ...), no frame attributes (`gi_frame`, `f_back`, ...). A violation scores 0 for the whole task; `python check.py` runs this check first. Also rejected here (Delegator build): `memoryview`, a file over 400 KB, and any mention of grader data in the file (paths such as `hidden/`, scorer or `run_info` names).

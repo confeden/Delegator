@@ -1,0 +1,17 @@
+{
+  "run": "native-test-model-20261026-1154-01ro",
+  "model": "test-model",
+  "mode": "native",
+  "slug": "test-model",
+  "session": "20261026-115448",
+  "isolation": "separate-chat",
+  "bench_version": "1.6",
+  "started": "2026-10-26T11:54:48",
+  "finished": "2026-10-26T11:54:51",
+  "results_root": "C:\\Users\\Justin\\AppData\\Local\\DelegatorWin\\runtime\\coding-bench\\results",
+  "results_dir": "C:\\Users\\Justin\\AppData\\Local\\DelegatorWin\\runtime\\coding-bench\\results\\test-model\\native",
+  "grader": "D:\\Documents\\Coding\\Delegator\\coding-bench\\grade_run.py",
+  "active_flag": "C:\\Users\\Justin\\AppData\\Local\\DelegatorWin\\runtime\\benchmark-active.json",
+  "usage_file": "C:\\Users\\Justin\\AppData\\Local\\DelegatorWin\\runtime\\usage.jsonl",
+  "metrics_file": "C:\\Users\\Justin\\AppData\\Local\\DelegatorWin\\runtime\\delegate-metrics.jsonl"
+}

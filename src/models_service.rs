@@ -545,13 +545,20 @@ fn is_zero_price(value: &str) -> bool {
 /// probe from an egress the delegation itself cannot use, and every verdict
 /// would describe a route nothing else takes.
 fn provider_client(proxy_url: Option<&str>, timeout: Duration) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().timeout(timeout);
+    // Groq answers a client without a browser-like User-Agent with Cloudflare's
+    // 403 «error code: 1010»; the runtime sends the same header (opencode-delegate.ps1).
+    let mut builder = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent(PROVIDER_USER_AGENT);
     if let Some(url) = proxy_url.map(str::trim).filter(|url| !url.is_empty()) {
         let proxy = reqwest::Proxy::all(url).map_err(|error| format!("proxy {url}: {error}"))?;
         builder = builder.proxy(proxy);
     }
     builder.build().map_err(|error| error.to_string())
 }
+
+/// Sent to every API-key provider. Groq (Cloudflare) refuses library agents.
+pub const PROVIDER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Delegator";
 
 /// `GET <base_url>/models` — every model id the provider lists.
 ///

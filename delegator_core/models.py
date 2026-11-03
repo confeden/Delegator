@@ -67,10 +67,27 @@ class GeminiWebResultRequest(BaseModel):
     used: str | None = Field(default=None, max_length=200)
 
 
-class PuterWebResultRequest(BaseModel):
+class WebDoorResultRequest(BaseModel):
+    """A web door's answer (or its failure), posted by the extension."""
+
     request_id: str = Field(min_length=1, max_length=64)
-    text: str = Field(default="", max_length=500_000)
-    error: str | None = Field(default=None, max_length=2_000)
+    text: str = Field(default="", max_length=2_000_000)
+    error: str | None = Field(default=None, max_length=4000)
+    used: str | None = Field(default=None, max_length=200)
+
+
+class WebDoorAuthRequest(BaseModel):
+    """The extension's sign-in report for one door."""
+
+    door: str = Field(min_length=1, max_length=20)
+    state: str = Field(min_length=1, max_length=20)
+    label: str = Field(default="", max_length=200)
+
+
+class WebLoginRequest(BaseModel):
+    """«Войти» on «Интеграция → Web»."""
+
+    door: str = Field(min_length=1, max_length=20)
 
 
 class GeminiWebPhaseRequest(BaseModel):
@@ -94,6 +111,21 @@ class WebAskRequest(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     reasoning: str | None = Field(default=None, max_length=40)
     timeout_sec: float = Field(default=300, ge=10, le=900)
+    # A short plain question: Gemini answers it at a lower level when the user left the level on auto.
+    light: bool = False
+    # Checking one site by hand: only these doors, in this order.
+    doors: list[str] | None = Field(default=None, max_length=10)
+    # Also return the shape of the answer's markup, for when a site changes it.
+    debug: bool = False
+
+
+class WebPanelRequest(BaseModel):
+    """One turn for the strongest web doors at once (boost)."""
+
+    text: str = Field(min_length=1, max_length=500_000)
+    size: int = Field(default=2, ge=1, le=4)
+    reasoning: str | None = Field(default=None, max_length=40)
+    timeout_sec: float = Field(default=240, ge=10, le=900)
 
 
 class ChatTurnResponse(BaseModel):

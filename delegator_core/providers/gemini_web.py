@@ -41,10 +41,11 @@ DEFAULT_WEB_REASONING = "best"
 _MODEL_IDS = {"best", "argon", "3.1-pro", "3.8-flash", "3.5-flash-lite"}
 _REASONING_IDS = {"best", "high", "medium", "low", "auto"}
 
-# When a model's quota is spent the bridge moves on to the next one of THIS list,
-# strongest first (Argon, then Flash 3.8, then Pro 3.1, then Flash-Lite). "best"
-# comes first and stands for whatever the page's own menu ranks highest.
-FALLBACK_ORDER = ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+# When a model's quota is spent the bridge moves on to the next one of THIS list.
+# The ladder after "best" is the owner's rule, shared with the API keys
+# (`Get-GeminiModelScore` in scripts/ai-delegate.ps1): Argon, then Flash only while
+# its number is above Pro's, then Pro, then Flash, then Flash-Lite. See web_fallback_order.
+# "best" comes first and stands for whatever the page's own menu ranks highest.
 
 
 def _alias_version(name: str, default: float) -> float:
@@ -57,15 +58,14 @@ def _alias_version(name: str, default: float) -> float:
 
 
 def web_fallback_order() -> tuple[str, ...]:
-    """The ladder after Argon: the newest Flash, then Pro only while its number is below Flash's,
-    then Flash-Lite. The numbers come from `gemini_alias_versions`, so a new release moves the order."""
+    """Argon, then Flash and Pro by number: Flash goes first only while its number is above Pro's,
+    otherwise Pro goes first. Flash-Lite is always last. The numbers come from
+    `gemini_alias_versions`, so a new release moves the order."""
     flash = _alias_version("flash", 3.8)
     pro = _alias_version("pro", 3.1)
-    order = ["argon", "3.8-flash"]
-    if pro < flash:
-        order.append("3.1-pro")
-    order.append("3.5-flash-lite")
-    return tuple(order)
+    if flash > pro:
+        return ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+    return ("argon", "3.1-pro", "3.8-flash", "3.5-flash-lite")
 MAX_ALIVE_WAIT_SEC = 360  # ceiling for a model that keeps showing signs of life
 QUOTA_COOLDOWN_SEC = 3 * 3600  # a spent quota resets on a daily scale; retry the strong model after this
 SLOW_COOLDOWN_SEC = 20 * 60  # a model that stalled on one prompt is not asked again straight away
@@ -95,7 +95,7 @@ def classify_failure(message: str) -> str:
         return "slow"
     if "не ответил вовремя" in text:  # the extension went silent altogether: same as a frozen model
         return "slow"
-    if "В меню Gemini нет модели" in text or "Gemini не выбрал модель" in text:
+    if "В меню Gemini нет модели" in text or "Gemini не выбрал модель" in text or "Не найден выбор модели" in text:
         return "unavailable"
     return ""
 
@@ -114,8 +114,10 @@ def gemini_web_choice() -> tuple[str, str]:
     return f"gemini-web/{model}", reasoning
 
 
-# How long the tab stays open after the last request, for a follow-up task.
-TAB_LINGER_SEC = 60
+# How long the tab stays open after the last request, for a follow-up task. Measured: a cold tab
+# costs 10-20 s of page load, a parked tab in the collapsed group costs nothing, and an IDE agent's
+# next call usually comes within minutes.
+TAB_LINGER_SEC = 300
 
 
 class GeminiWebBridge:
@@ -137,6 +139,10 @@ class GeminiWebBridge:
         # of every poll, so a live one is never older than ~20 s. 15 s here made
         # the state flap false for a quarter of every poll cycle.
         return time.monotonic() - self._last_seen <= max_age_sec
+
+    def is_live(self, request_id: str) -> bool:
+        """False once nobody waits for this request (another web door won the race)."""
+        return request_id in self._pending
 
     def has_demand(self) -> bool:
         """True while a request is queued, in flight, or finished within the linger window.
@@ -164,8 +170,12 @@ class GeminiWebBridge:
         mode: str,
         timeout_sec: float = 300,
         files: list[dict[str, str]] | None = None,
+        no_lite: bool = False,
     ) -> ProviderResult:
         """One turn, with a way down the model ladder when a model's quota is spent.
+
+        `no_lite`: another door can take this turn, so Gemini stops short of Flash-Lite. The door is in the
+        race on the strength of Argon; quietly answering from its weakest model would pass that off as this.
 
         The requested model goes first; when the page reports its quota (or the model
         is not offered any more) the next one of web_fallback_order() is tried, and the
@@ -180,6 +190,8 @@ class GeminiWebBridge:
             ladder = list(order[order.index(wanted):])
         else:
             ladder = [wanted]
+        if no_lite:
+            ladder = [entry for entry in ladder if entry != "3.5-flash-lite"] or ladder
         now = time.monotonic()
         resting = {key for key, until in self.exhausted.items() if until > now}
         candidates = [entry for entry in ladder if entry not in resting] or ladder[-1:]
@@ -199,7 +211,7 @@ class GeminiWebBridge:
                 try:
                     result = await self._request_once(
                         text=text, model=f"gemini-web/{entry}", reasoning=reasoning, mode=mode,
-                        timeout_sec=remaining, files=files,
+                        timeout_sec=remaining, files=files, no_lite=no_lite,
                     )
                 except RuntimeError as exc:
                     kind = classify_failure(str(exc))
@@ -218,8 +230,10 @@ class GeminiWebBridge:
                 if last_error is not None:
                     result = dataclasses.replace(result, stderr=f"fallback: {entry} after {last_error}")
                 return result
+        # Spent quota is said in the door's own vocabulary, so the door rests hours rather than minutes.
+        prefix = "QUOTA: " if last_error is not None and classify_failure(str(last_error)) == "quota" else ""
         raise RuntimeError(
-            "Ни одна модель Gemini Web не ответила (квота, зависание или недоступна): "
+            f"{prefix}Ни одна модель Gemini Web не ответила (квота, зависание или недоступна): "
             f"{last_error}. Повторная попытка через {max(self.exhausted_now().values(), default=0) // 60} мин."
         )
 
@@ -232,6 +246,7 @@ class GeminiWebBridge:
         mode: str,
         timeout_sec: float = 300,
         files: list[dict[str, str]] | None = None,
+        no_lite: bool = False,
     ) -> ProviderResult:
         if not gemini_web_flags()[0]:
             raise RuntimeError(
@@ -255,6 +270,7 @@ class GeminiWebBridge:
             "reasoning": reasoning or "auto",
             # Files the page attaches before the text (name, mime, data_base64).
             "files": files or [],
+            "no_lite": no_lite,
             # How long the extension may keep waiting for a model that is still alive.
             "max_wait_ms": int(min(timeout_sec, MAX_ALIVE_WAIT_SEC) * 1000),
         })
@@ -302,10 +318,16 @@ class GeminiWebBridge:
 
     async def next_request(self, timeout_sec: float = 20) -> dict[str, str] | None:
         self._last_seen = time.monotonic()
+        deadline = time.monotonic() + timeout_sec
         try:
-            return await asyncio.wait_for(self._requests.get(), timeout=timeout_sec)
-        except TimeoutError:
-            return None
+            while True:
+                try:
+                    request = await asyncio.wait_for(self._requests.get(), timeout=max(0.1, deadline - time.monotonic()))
+                except TimeoutError:
+                    return None
+                # Another web door may have won before the tab took this turn: never run a dead turn.
+                if request["request_id"] in self._pending:
+                    return request
         finally:
             self._last_seen = time.monotonic()
 

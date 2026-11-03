@@ -102,8 +102,9 @@ def caller_margin(caller_confidence: str = "", best_confidence: str = "") -> int
     return CALLER_MARGIN if both_confirmed else CALLER_MARGIN_PROVISIONAL
 
 # Amplifying is only worth its latency on work where a swarm has somewhere to
-# go. Below this a single strong model is already the ceiling.
-AMPLIFY_TASK_CHARS = 400
+# go. Below this a single strong model is already the ceiling. Raised from 400: through the web a
+# boost is two chats plus a reconciling third, a minute or more against about 20 s for one chat.
+AMPLIFY_TASK_CHARS = 1500
 
 
 def caller_tier(
@@ -371,6 +372,21 @@ def decide(
     return adjust(decision(MODE_DELEGATE, "plain-question", 0.55, "fast"))
 
 
+def route_payload(payload: dict) -> Decision:
+    """The router on one request object: the same reading of it for the file and the HTTP door."""
+    return decide(
+        str(payload.get("task") or ""),
+        str(payload.get("draft") or ""),
+        int(payload.get("contextFiles") or 0),
+        # Absent on a 1.0 caller, and absent is not zero-with-meaning: both
+        # default to 0 = "not declared", which routes exactly as 1.0 did.
+        int(payload.get("callerDpr") or 0),
+        int(payload.get("bestDpr") or 0),
+        str(payload.get("callerConfidence") or ""),
+        str(payload.get("bestConfidence") or ""),
+    )
+
+
 def route_files(request_path: str | Path, decision_path: str | Path) -> Decision:
     """The `--route` entry point: JSON in, JSON out, never raises.
 
@@ -385,17 +401,7 @@ def route_files(request_path: str | Path, decision_path: str | Path) -> Decision
         payload = json.loads(Path(request_path).read_text(encoding="utf-8-sig"))
         if not isinstance(payload, dict):
             raise ValueError("request must be an object")
-        result = decide(
-            str(payload.get("task") or ""),
-            str(payload.get("draft") or ""),
-            int(payload.get("contextFiles") or 0),
-            # Absent on a 1.0 caller, and absent is not zero-with-meaning: both
-            # default to 0 = "not declared", which routes exactly as 1.0 did.
-            int(payload.get("callerDpr") or 0),
-            int(payload.get("bestDpr") or 0),
-            str(payload.get("callerConfidence") or ""),
-            str(payload.get("bestConfidence") or ""),
-        )
+        result = route_payload(payload)
     except (OSError, ValueError, TypeError) as error:
         result = Decision(
             mode=MODE_DELEGATE,

@@ -247,10 +247,11 @@ async fn provider_catalog_round() -> Vec<ProviderRefreshOutcome> {
     // and the next tick would run the whole round again.
     CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
 
-    // Custom providers ride the `opencode` proxy flag — the PowerShell runtime
-    // resolves them the same way, and a catalog probed from one egress while
-    // delegation leaves from another describes a route that does not exist.
-    let proxy = config.effective_proxy_for("opencode");
+    // Custom providers go DIRECT, the same egress as `Invoke-CustomProviderModel`
+    // in the runtime. They used to ride the `opencode` proxy row (Opera, 127.0.0.1:1371),
+    // which is down whenever Opera is closed: that is the «error sending request»
+    // on api.b.ai/v1/models. A catalog must be probed from the egress delegation uses.
+    let proxy: Option<String> = None;
     let runtime_home = crate::config::runtime_home_dir();
     let live_ids: Vec<String> = config
         .custom_providers

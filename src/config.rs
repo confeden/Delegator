@@ -81,33 +81,253 @@ impl CustomProvider {
 /// candidate models are already there. `models` is a STARTING GUESS, not a
 /// promise — a provider's `/models` listing carries no prices, so what a given
 /// key actually serves is settled by the catalog refresh, not by this table.
+///
+/// `models` lists the FREE ones first (the first `free_count`), then the paid
+/// ones. Adding a preset enables only the free ones; the rest are ticked by hand.
 pub struct ProviderPreset {
     pub id: &'static str,
     pub label: &'static str,
     pub base_url: &'static str,
+    pub free_count: usize,
+    /// Enabled when the preset is added: the owner's pick (free ones included).
+    pub default_count: usize,
     pub models: &'static [&'static str],
 }
 
-/// Presets shown on the «API» tab under «+ Добавить провайдера».
-///
-/// The b.ai list is what a deposit-free key served when it was measured
-/// (`kb/providers-routing.md#P17`): its `/v1/models` advertises 48 models and
-/// four of them answer, so seeding the listing wholesale would fill the pool
-/// with models that reply `403 access_denied`.
+impl ProviderPreset {
+    pub fn free_models(&self) -> &'static [&'static str] {
+        &self.models[..self.free_count]
+    }
+
+    pub fn default_models(&self) -> &'static [&'static str] {
+        &self.models[..self.default_count]
+    }
+}
+
+/// Presets shown on the «API» tab under «+ Добавить провайдера». The six
+/// providers that used to live in OpenCode are presets of their own, labelled the
+/// way their sites are written. The model lists follow the live `/models`
+/// listings read in October 2026; a listing is not a verdict, and a model the
+/// key cannot run is refused by the provider and marked by the daily probe.
 pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
+    ProviderPreset {
+        id: "opencodeai",
+        label: "OpenCode.ai",
+        base_url: "https://opencode.ai/zen/v1",
+        free_count: 9,
+        default_count: 9,
+        models: &[
+            "big-pickle",
+            "beam-free",
+            "flint-40b-free",
+            "mimo-v2.6-flash-free",
+            "nemotron-3.5-super-vl-free",
+            "nemotron-3.5-lightning-free",
+            "jev-1.13-free",
+            "deepseek-v4.1-flash-free",
+            "glm-5.3-flash-free",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+            "claude-fable-5-1",
+            "gpt-5.5",
+            "gpt-6.1-sol",
+            "gpt-6-astra",
+            "gemini-3.8-flash",
+            "glm-5.3",
+            "kimi-k3",
+            "deepseek-v4-pro",
+            "minimax-m3",
+            "grok-4.7",
+            "qwen3.8-flash",
+        ],
+    },
+    ProviderPreset {
+        id: "openrouter",
+        label: "OpenRouter.ai",
+        base_url: "https://openrouter.ai/api/v1",
+        free_count: 9,
+        default_count: 9,
+        models: &[
+            "openrouter/free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "poolside/laguna-s-2.1:free",
+            "thinkingmachines/inkling:free",
+            "anthropic/claude-opus-5.5",
+            "anthropic/claude-sonnet-5.5",
+            "openai/gpt-6.1-sol",
+            "openai/gpt-6-astra",
+            "google/gemini-3.8-flash",
+            "z-ai/glm-5.3",
+            "deepseek/deepseek-v4-pro",
+            "moonshotai/kimi-k3.1-pro",
+        ],
+    },
     ProviderPreset {
         id: "bai",
         label: "B.AI",
         base_url: "https://api.b.ai/v1",
-        models: &["hy3", "mimo-v2.5", "glm-5.3-flash", "qwen3.8-flash"],
+        free_count: 4,
+        default_count: 4,
+        models: &[
+            "hy3",
+            "mimo-v2.5",
+            "glm-5.3-flash",
+            "qwen3.8-flash",
+            "claude-opus-5.5",
+            "claude-sonnet-5.5",
+            "gpt-5.6-sol",
+            "gemini-3.8-flash",
+            "kimi-k3",
+            "glm-5.3",
+            "deepseek-v4-pro",
+        ],
+    },
+    ProviderPreset {
+        id: "groq",
+        label: "Groq.com",
+        base_url: "https://api.groq.com/openai/v1",
+        free_count: 4,
+        default_count: 4,
+        models: &[
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "allam-2-7b",
+        ],
+    },
+    ProviderPreset {
+        id: "orcarouter",
+        label: "OrcaRouter.ai",
+        base_url: "https://api.orcarouter.ai/v1",
+        free_count: 7,
+        default_count: 41,
+        models: &[
+            "orcarouter/free",
+            "deepseek/deepseek-v4-flash-free",
+            "deepseek/deepseek-v4.1-flash-free",
+            "tencent/hy3-free",
+            "z-ai/glm-5.3-flash-free",
+            "tencent/hy4-preview-free",
+            "orca/orcaverify-text1.0-free",
+            "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4.8",
+            "anthropic/claude-opus-5",
+            "anthropic/claude-sonnet-5",
+            "deepseek/deepseek-v4-flash-0731",
+            "deepseek/deepseek-v4-flash-vision-exp",
+            "deepseek/deepseek-v4-pro-0813",
+            "google/gemini-3.1-flash-lite",
+            "kimi/kimi-k2.7-code",
+            "kimi/kimi-k3",
+            "meta/muse-spark-1.1",
+            "meta/muse-spark-1.2",
+            "minimax/minimax-m3",
+            "openai/gpt-5.6-luna",
+            "openai/gpt-5.6-sol",
+            "openai/gpt-5.6-terra",
+            "orcarouter/fusion",
+            "orcarouter/fusion-flash",
+            "orcarouter/fusion-mini",
+            "qwen/qwen3.5-flash",
+            "qwen/qwen3.6-flash",
+            "qwen/qwen3.7-flash",
+            "qwen/qwen3.7-max",
+            "qwen/qwen3.7-plus",
+            "qwen/qwen3.8-27b",
+            "qwen/qwen3.8-max",
+            "tencent/hy3",
+            "z-ai/glm-5.2",
+            "z-ai/glm-5.3",
+            "z-ai/glm-5.3-flash",
+            "google/gemini-flash-lite-latest",
+            "google/gemini-flash-latest",
+            "google/gemma-4-31b-it",
+            "minimax/minimax-m2.7-highspeed",
+        ],
+    },
+    ProviderPreset {
+        id: "tokenharbor",
+        label: "TokenHarbor.ai",
+        base_url: "https://tokenharbor.ai/v1",
+        free_count: 6,
+        default_count: 6,
+        models: &[
+            "mimo-v2.5:free",
+            "deepseek-v4-flash:free",
+            "deepseek-v4.1-flash:free",
+            "mimo-v2.6-flash:free",
+            "deepseek-v4.1-flash",
+            "mimo-v2.6-flash",
+            "claude-haiku-5.5",
+            "claude-opus-5.5",
+            "claude-sonnet-5.5",
+            "gpt-6.1-sol",
+            "gemini-3.8-flash",
+            "glm-5.3",
+            "qwen3.8-flash",
+        ],
+    },
+    ProviderPreset {
+        id: "agentrouter",
+        label: "AgentRouter.org",
+        base_url: "https://agentrouter.org/v1",
+        free_count: 0,
+        default_count: 0,
+        models: &[
+            "claude-opus-5",
+            "gpt-5.6-sol",
+            "deepseek-v4-flash",
+            "glm-5.3",
+        ],
+    },
+    ProviderPreset {
+        id: "aerolink",
+        label: "AeroLink.lat",
+        base_url: "https://api.aerolink.lat/v1",
+        free_count: 0,
+        default_count: 0,
+        models: &["claude-opus-5", "claude-sonnet-5"],
+    },
+    ProviderPreset {
+        id: "huggingface",
+        label: "HuggingFace.co",
+        base_url: "https://router.huggingface.co/v1",
+        free_count: 0,
+        default_count: 0,
+        models: &[
+            "deepseek-ai/DeepSeek-V4-Pro",
+            "moonshotai/Kimi-K3",
+            "zai-org/GLM-5.3",
+        ],
     },
     ProviderPreset {
         id: "tokenrouter",
         label: "TokenRouter",
         base_url: "https://api.tokenrouter.com/v1",
+        free_count: 1,
+        default_count: 1,
         models: &["z-ai/glm-5.3-free"],
     },
 ];
+
+/// Whether a model is free on its provider. A preset's own list decides (its
+/// first `free_count` entries); a provider the user added by hand is judged by
+/// the word «free» in its id, which is how every free route names itself.
+pub fn is_free_model(provider_id: &str, model: &str) -> bool {
+    match PROVIDER_PRESETS
+        .iter()
+        .find(|preset| preset.id == provider_id)
+    {
+        Some(preset) => preset.free_models().contains(&model),
+        None => model.to_ascii_lowercase().contains("free"),
+    }
+}
 
 /// True when `id` is usable as a model-id prefix: lowercase alphanumerics,
 /// `-`, `_` and `.`, and never empty. Anything else would either collide with
@@ -267,14 +487,22 @@ pub struct AppConfig {
     /// `high`, `medium`, `low`, or `auto` (leave the page's default).
     #[serde(default = "default_web_best")]
     pub gemini_web_reasoning: String,
-    /// «Puter (через Chrome)»: the same extension opens builder.puter.com and the
-    /// Core routes the web door through that page's own puter.js (user-pays).
+    /// The other web doors, one per site (`delegator_core/providers/web_doors.py`). The same extension
+    /// opens each site on demand. Off until the user asks: the text of a task goes to that site.
     #[serde(default)]
-    pub puter_web_enabled: bool,
-    /// Puter model id; the Core falls back to `claude-opus-5-5` when it is empty
-    /// or malformed.
-    #[serde(default = "default_puter_model")]
-    pub puter_web_model: String,
+    pub aistudio_web_enabled: bool,
+    #[serde(default)]
+    pub kimi_web_enabled: bool,
+    #[serde(default)]
+    pub zai_web_enabled: bool,
+    #[serde(default)]
+    pub qwen_web_enabled: bool,
+    #[serde(default)]
+    pub deepseek_web_enabled: bool,
+    #[serde(default)]
+    pub tencent_web_enabled: bool,
+    #[serde(default)]
+    pub rudder_web_enabled: bool,
     /// What each `-latest` alias resolves to now (`flash` 3.8, `pro` 3.1,
     /// `flash-lite` 3.5), read off the Google model list. The runtime ranks an
     /// alias by this number so "higher version = higher priority" holds for it.
@@ -284,10 +512,6 @@ pub struct AppConfig {
 
 fn default_web_best() -> String {
     "best".to_string()
-}
-
-fn default_puter_model() -> String {
-    "claude-opus-5-5".to_string()
 }
 
 impl Default for AppConfig {
@@ -310,8 +534,13 @@ impl Default for AppConfig {
             gemini_web_enabled: false,
             gemini_web_model: default_web_best(),
             gemini_web_reasoning: default_web_best(),
-            puter_web_enabled: false,
-            puter_web_model: default_puter_model(),
+            aistudio_web_enabled: false,
+            kimi_web_enabled: false,
+            zai_web_enabled: false,
+            qwen_web_enabled: false,
+            deepseek_web_enabled: false,
+            tencent_web_enabled: false,
+            rudder_web_enabled: false,
             gemini_alias_versions: HashMap::new(),
         }
     }
@@ -1028,6 +1257,25 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Adds a preset with its FREE models enabled and the whole list known, so
+    /// the paid ones can be ticked by hand.
+    pub fn add_preset_provider(&mut self, preset: &ProviderPreset) -> Result<(), String> {
+        let enabled: Vec<String> = preset
+            .default_models()
+            .iter()
+            .map(|m| m.to_string())
+            .collect();
+        let mut provider =
+            validated_custom_provider(preset.id, preset.label, preset.base_url, &enabled)?;
+        if self.custom_provider(&provider.id).is_some() {
+            return Err(format!("Провайдер «{}» уже добавлен", provider.id));
+        }
+        provider.known_models = preset.models.iter().map(|m| m.to_string()).collect();
+        self.custom_providers.push(provider);
+        self.save();
+        Ok(())
+    }
+
     pub fn remove_custom_provider(&mut self, id: &str) {
         self.custom_providers.retain(|provider| provider.id != id);
         self.save();
@@ -1253,9 +1501,10 @@ fn validated_custom_provider(
         );
     }
     // The prefix is a namespace shared with the built-in backends, so a
-    // provider called `opencode` or `openrouter` would silently capture their
-    // model ids in the runtime's split-on-first-slash.
-    if matches!(id.as_str(), "opencode" | "openrouter" | "gemini" | "google") {
+    // provider called `opencode` or `gemini` would silently capture their model
+    // ids in the runtime's split-on-first-slash. `openrouter` is not reserved:
+    // its own key lives in the custom provider, which the runtime tries first.
+    if matches!(id.as_str(), "opencode" | "gemini" | "google") {
         return Err(format!(
             "Идентификатор «{id}» уже занят встроенным бэкендом"
         ));
@@ -2393,9 +2642,10 @@ mod tests {
     #[test]
     fn a_provider_id_may_never_shadow_a_builtin_backend() {
         // `<provider>/<model>` is one namespace: a provider called `opencode`
-        // would capture every Zen id in the runtime's split-on-first-slash, and
-        // one called `openrouter` would capture the universal free route.
-        for taken in ["opencode", "openrouter", "gemini", "google", "OpenCode"] {
+        // would capture every Zen id in the runtime's split-on-first-slash.
+        // `openrouter` is NOT here: it is the OpenRouter.ai preset, whose own key
+        // the runtime tries before the built-in route.
+        for taken in ["opencode", "gemini", "google", "OpenCode"] {
             let error = validated_custom_provider(taken, "X", "https://h/v1", &[])
                 .expect_err("builtin prefix must be refused");
             assert!(error.contains("встроенным"), "{taken}: {error}");

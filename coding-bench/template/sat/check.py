@@ -6,10 +6,15 @@ import tempfile
 import subprocess
 import shutil
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from code_rules import check_code  # the very same static rules as the hidden scorer
+
 def verify_model(num_vars, clauses, model):
-    if not model or len(model) != num_vars:
+    if not isinstance(model, list) or len(model) != num_vars:
         return False
-    # model contains literals like 1, -2, 3...
+    # same rule as the hidden scorer: one literal per variable, strictly in order 1..num_vars
+    if any(not isinstance(lit, int) or abs(lit) != i for i, lit in enumerate(model, 1)):
+        return False
     assignment = {abs(lit): (lit > 0) for lit in model}
     
     for clause in clauses:
@@ -22,6 +27,11 @@ def verify_model(num_vars, clauses, model):
         if not sat:
             return False
     return True
+
+def last_line(text):
+    lines = text.strip().splitlines()
+    return lines[-1] if lines else "(no output)"
+
 
 def run_instance(cnf_file, time_limit=10.0):
     expected = "UNSAT" if "unsat" in os.path.basename(cnf_file).lower() else "SAT"
@@ -64,14 +74,18 @@ with open({repr(cnf_file)}, "r") as f:
 num_vars, clauses = parse_dimacs(text)
 
 start = time.perf_counter()
-status, model = solve(num_vars, clauses, {time_limit})
+try:
+    status, model = solve(num_vars, clauses, {time_limit})
+except Exception as e:
+    status, model = "ERROR", None
 end = time.perf_counter()
 
 print(json.dumps({{"status": status, "model": model, "seconds": end - start}}))
 """
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        shutil.copy("solver.py", os.path.join(tmpdir, "solver.py"))
+        here = os.path.dirname(os.path.abspath(__file__))
+        shutil.copy(os.path.join(here, "solver.py"), os.path.join(tmpdir, "solver.py"))
         runner_path = os.path.join(tmpdir, "runner.py")
         with open(runner_path, "w") as f:
             f.write(script)
@@ -87,6 +101,7 @@ print(json.dumps({{"status": status, "model": model, "seconds": end - start}}))
             )
             elapsed = time.perf_counter() - start_time
             if proc.returncode != 0:
+                print(f"    {os.path.basename(cnf_file)}: exception: {last_line(proc.stderr)}")
                 return expected, "ERROR", elapsed, 0
                 
             try:
@@ -96,6 +111,7 @@ print(json.dumps({{"status": status, "model": model, "seconds": end - start}}))
                 model = res.get("model", None)
                 seconds = res.get("seconds", elapsed)
             except Exception:
+                print(f"    {os.path.basename(cnf_file)}: unreadable output: {last_line(proc.stdout)}")
                 return expected, "ERROR", elapsed, 0
                 
         except subprocess.TimeoutExpired:
@@ -111,12 +127,31 @@ print(json.dumps({{"status": status, "model": model, "seconds": end - start}}))
             return expected, "WRONG_MODEL", seconds, -2
     elif status == "UNSAT":
         return expected, "UNSAT", seconds, 1 if expected == "UNSAT" else -2
-    elif status == "UNKNOWN":
-        return expected, "UNKNOWN", seconds, 0
+    elif status in ("UNKNOWN", "ERROR"):
+        return expected, status, seconds, 0
     else:
         return expected, "INVALID", seconds, -2
 
+def check_interrupt(here):
+    """solve() must return UNKNOWN when it runs out of time; UNSAT for a satisfiable formula costs -2."""
+    big = max(glob.glob(os.path.join(here, "samples", "*.cnf")), key=os.path.getsize)
+    expected, got, secs, points = run_instance(big, time_limit=0.05)
+    name = os.path.basename(big)
+    if got == "UNSAT" and expected == "SAT":
+        print("WARNING: with time_limit=0.05 on %s solve() answered UNSAT for a satisfiable formula "
+              "(-2 on hidden tests). Return UNKNOWN when time is up." % name)
+    elif secs > 1.05:
+        print("WARNING: with time_limit=0.05 solve() needed %.2f s: it does not respect time_limit." % secs)
+    else:
+        print("Interrupt test ok (%s, time_limit=0.05 -> %s in %.2f s)" % (name, got, secs))
+
+
 def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    violation = check_code(os.path.join(here, "solver.py"), "sat")
+    if violation:
+        print("STATIC VIOLATION (the hidden scorer gives 0 for the whole task): " + violation)
+        return
     samples = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples", "*.cnf")))
     if not samples:
         print("No samples found.")
@@ -133,6 +168,7 @@ def main():
         print(f"{name:<30} | {expected:<8} | {got:<11} | {secs:<8.2f} | {points:>6}")
         
     score_frac = max(0, total_points) / len(samples)
+    check_interrupt(here)
     print("-" * 73)
     print(f"Total points: {total_points} / {len(samples)} (Score: {score_frac:.2f})")
 

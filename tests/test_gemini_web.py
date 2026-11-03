@@ -30,6 +30,8 @@ def test_answer_reports_the_model_the_page_really_used():
 
     from delegator_core.providers.gemini_web import GeminiWebBridge
 
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
     async def scenario():
         bridge = GeminiWebBridge()
         bridge._last_seen = __import__("time").monotonic()
@@ -58,7 +60,7 @@ def _bridge_with(script):
     bridge = gw.GeminiWebBridge()
     asked = []
 
-    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None):
+    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None, no_lite=False):
         asked.append(model)
         outcome = script[model.split("/", 1)[1]]
         if isinstance(outcome, Exception):
@@ -72,6 +74,8 @@ def _bridge_with(script):
 
 def test_spent_quota_moves_down_the_ladder_and_the_model_rests():
     import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
 
     quota = RuntimeError("QUOTA[Argon · Высокая]: лимит исчерпан")
     bridge, asked, _ = _bridge_with({"best": quota, "argon": quota, "3.8-flash": "flash answer", "3.1-pro": "pro"})
@@ -91,6 +95,8 @@ def test_spent_quota_moves_down_the_ladder_and_the_model_rests():
 def test_every_model_spent_raises_and_other_errors_do_not_fall_back():
     import asyncio
 
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
     import pytest
 
     quota = RuntimeError("QUOTA[x]: limit reached")
@@ -108,6 +114,8 @@ def test_every_model_spent_raises_and_other_errors_do_not_fall_back():
 def test_a_model_missing_from_the_menu_counts_as_unavailable():
     import asyncio
 
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
     gone = RuntimeError("В меню Gemini нет модели gemini-web/argon. Сейчас доступно: Flash")
     bridge, asked, _ = _bridge_with({"argon": gone, "3.8-flash": "ok"})
     result = asyncio.run(bridge.request(text="t", model="gemini-web/argon", reasoning="high", mode="delegate"))
@@ -116,6 +124,8 @@ def test_a_model_missing_from_the_menu_counts_as_unavailable():
 
 def test_a_frozen_model_is_retried_once_then_replaced():
     import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
 
     from delegator_core.providers import gemini_web as gw
 
@@ -137,12 +147,14 @@ def test_a_frozen_model_is_retried_once_then_replaced():
 def test_a_frozen_model_that_recovers_on_the_retry_is_not_demoted():
     import asyncio
 
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
     state = {"n": 0}
     from delegator_core.providers import gemini_web as gw
 
     bridge = gw.GeminiWebBridge()
 
-    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None):
+    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None, no_lite=False):
         state["n"] += 1
         if state["n"] == 1:
             raise RuntimeError("SLOW[Argon]: без признаков работы 120 с")
@@ -156,6 +168,8 @@ def test_a_frozen_model_that_recovers_on_the_retry_is_not_demoted():
 
 def test_the_whole_ladder_shares_one_budget():
     import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
 
     import pytest
 
@@ -180,25 +194,27 @@ def test_tab_demand_follows_requests_and_lingers():
     assert not bridge.has_demand()
 
 
-def test_fallback_order_puts_pro_only_below_flash(tmp_path, monkeypatch):
+def test_fallback_order_flash_first_only_when_above_pro(tmp_path, monkeypatch):
     from delegator_core.providers.gemini_web import web_fallback_order
 
     cfg = tmp_path / "config.json"
     monkeypatch.setenv("DELEGATOR_CONFIG_FILE", str(cfg))
-    # no stored versions: the shipped numbers (flash 3.8 > pro 3.1) keep Pro in the ladder
+    # no stored versions: the shipped numbers (flash 3.8 > pro 3.1) put Flash before Pro
     assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
     cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": 3.8, "pro": 3.1, "flash-lite": 3.5}}), encoding="utf-8")
     assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
-    # a Pro newer than Flash is not a fallback for Flash
+    # Pro above Flash: Pro goes first, Flash still stays in the ladder
     cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": 3.8, "pro": 4.0}}), encoding="utf-8")
-    assert web_fallback_order() == ("argon", "3.8-flash", "3.5-flash-lite")
+    assert web_fallback_order() == ("argon", "3.1-pro", "3.8-flash", "3.5-flash-lite")
     # a garbage number falls back to the shipped one, never breaks the ladder
     cfg.write_text(json.dumps({"gemini_alias_versions": {"flash": "x", "pro": None}}), encoding="utf-8")
     assert web_fallback_order() == ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
 
 
-def test_ladder_after_argon_skips_pro_when_newer(tmp_path, monkeypatch):
+def test_ladder_after_argon_takes_pro_first_when_newer(tmp_path, monkeypatch):
     import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
 
     from delegator_core.providers import gemini_web
     from delegator_core.providers.gemini_web import GeminiWebBridge
@@ -218,12 +234,14 @@ def test_ladder_after_argon_skips_pro_when_newer(tmp_path, monkeypatch):
         asyncio.run(bridge.request(text="x", model="gemini-web/argon", reasoning="high", mode="delegate", timeout_sec=60))
     except RuntimeError:
         pass
-    assert "gemini-web/3.1-pro" not in seen and "gemini-web/3.5-flash-lite" in seen
-    assert seen[0] == "gemini-web/argon" and seen[1] == "gemini-web/3.8-flash"
+    assert seen[0] == "gemini-web/argon" and seen[1] == "gemini-web/3.1-pro"
+    assert seen[2] == "gemini-web/3.8-flash" and seen[-1] == "gemini-web/3.5-flash-lite"
 
 
 def test_attachments_travel_with_the_task(monkeypatch):
     import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
     import time
 
     from delegator_core.providers import gemini_web
@@ -245,3 +263,26 @@ def test_attachments_travel_with_the_task(monkeypatch):
         assert (await task).text == "ок"
 
     asyncio.run(scenario())
+
+
+def test_with_another_door_ready_gemini_never_falls_to_flash_lite(monkeypatch):
+    import asyncio
+
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
+    bridge = GeminiWebBridge()
+    tried: list[str] = []
+
+    async def once(*, text, model, reasoning, mode, timeout_sec=300, files=None, no_lite=False):
+        tried.append(model)
+        raise RuntimeError("QUOTA[Argon]: spent")
+
+    monkeypatch.setattr(bridge, "_request_once", once)
+    try:
+        asyncio.run(bridge.request(text="q", model="gemini-web/best", reasoning="best", mode="delegate", no_lite=True))
+    except RuntimeError as exc:
+        assert str(exc).startswith("QUOTA: ")
+    else:
+        raise AssertionError("expected the spent quota to be reported")
+    assert tried
+    assert not any("lite" in model for model in tried)

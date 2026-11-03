@@ -1299,6 +1299,18 @@
       "note": "auto-route"
     },
     {
+      "match": "tencent/hy4-preview-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset, free. No index row for this exact id."
+    },
+    {
+      "match": "orca/orcaverify-text1.0-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset, free. No index row for this exact id."
+    },
+    {
       "match": "ox-alpha",
       "dpr": null,
       "confidence": "unrated",
@@ -1309,6 +1321,504 @@
       "dpr": null,
       "confidence": "unrated",
       "note": "OpenCode Zen stealth alias"
+    },
+    {
+      "match": "qwen/qwen3.8-27b",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "Groq and OrcaRouter preset. Not in the rated sources; a bare qwen3.8-27b row would not match this id."
+    },
+    {
+      "match": "openai/gpt-oss-120b",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "Groq preset. Open-weight model with no published index on the Delegator scale."
+    },
+    {
+      "match": "deepseek-ai/deepseek-v4-pro",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "HuggingFace preset. The provider ids differ from the public name; no index row for this exact id."
+    },
+    {
+      "match": "moonshotai/kimi-k3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "HuggingFace preset. No index row for this exact id."
+    },
+    {
+      "match": "zai-org/glm-5.3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "HuggingFace preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-opus-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset. Exact id; the claude-opus-5 row does not come from this route."
+    },
+    {
+      "match": "deepseek/deepseek-v4-flash-0731",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset. Dated snapshot id, no index row."
+    },
+    {
+      "match": "z-ai/glm-5.3-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset. No index row for this exact id."
+    },
+    {
+      "match": "minimax/minimax-m3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-opus-5.5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "TokenHarbor preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-sonnet-5.5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "TokenHarbor preset. No index row for this exact id."
+    },
+    {
+      "match": "gpt-6.1-sol",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "TokenHarbor preset. No index row for this exact id."
+    },
+    {
+      "match": "gemini-3.8-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "TokenHarbor preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-5.6-sol",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "OrcaRouter preset. Exact id; the gpt-5.6-sol row is for the OpenAI route."
+    },
+    {
+      "match": "beam-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "flint-40b-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "mimo-v2.6-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "nemotron-3.5-super-vl-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "nemotron-3.5-lightning-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "jev-1.13-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek-v4.1-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "glm-5.3-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-opus-5-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-sonnet-5-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-haiku-5-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-fable-5-1",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "gpt-6-astra",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "grok-4.7",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "opencodeai preset. No index row for this exact id."
+    },
+    {
+      "match": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "nvidia/nemotron-3-super-120b-a12b:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemma-4-31b-it:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemma-4-26b-a4b-it:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "nvidia/nemotron-3.5-lightning:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "nvidia/nemotron-3.5-super-vl:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "poolside/laguna-s-2.1:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "thinkingmachines/inkling:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-opus-5.5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-sonnet-5.5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-6.1-sol",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-6-astra",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemini-3.8-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "z-ai/glm-5.3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek/deepseek-v4-pro",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "moonshotai/kimi-k3.1-pro",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "openrouter preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-oss-20b",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "groq preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek/deepseek-v4-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek/deepseek-v4.1-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "tencent/hy3-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek-v4.1-flash:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "mimo-v2.6-flash:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "z-ai/glm-5.3-flash-free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-fable-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-opus-4.8",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "anthropic/claude-sonnet-5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek/deepseek-v4-flash-vision-exp",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek/deepseek-v4-pro-0813",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemini-3.1-flash-lite",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "kimi/kimi-k2.7-code",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "kimi/kimi-k3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "meta/muse-spark-1.1",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "meta/muse-spark-1.2",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-5.6-luna",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "openai/gpt-5.6-terra",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "orcarouter/fusion",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "orcarouter/fusion-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "orcarouter/fusion-mini",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.5-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.6-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.7-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.7-max",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.7-plus",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "qwen/qwen3.8-max",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "tencent/hy3",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "z-ai/glm-5.2",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemini-flash-lite-latest",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemini-flash-latest",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "google/gemma-4-31b-it",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "minimax/minimax-m2.7-highspeed",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "orcarouter preset. No index row for this exact id."
+    },
+    {
+      "match": "mimo-v2.5:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek-v4-flash:free",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "claude-haiku-5.5",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "deepseek-v4.1-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
+    },
+    {
+      "match": "mimo-v2.6-flash",
+      "dpr": null,
+      "confidence": "unrated",
+      "note": "tokenharbor preset. No index row for this exact id."
     }
   ]
 }

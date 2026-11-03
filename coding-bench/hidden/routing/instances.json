@@ -1,82 +1,90 @@
 [
-  {
-    "seed": 201,
-    "n": 100,
-    "kind": "uniform",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 9215.843594837967,
-    "reference_cost_v1.4": 9545.957015282673,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 202,
-    "n": 150,
-    "kind": "clustered",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 7568.904243807996,
-    "reference_cost_v1.4": 7637.659152540782,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 204,
-    "n": 300,
-    "kind": "clustered",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 13874.090934802174,
-    "reference_cost_v1.4": 14037.215092276627,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 205,
-    "n": 400,
-    "kind": "uniform",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 22809.0263489569,
-    "reference_cost_v1.4": 23604.17801024306,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 207,
-    "n": 500,
-    "kind": "uniform",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 26148.571283189005,
-    "reference_cost_v1.4": 26989.749425381957,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 210,
-    "n": 800,
-    "kind": "uniform",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 37672.06048997037,
-    "reference_cost_v1.4": 38980.08391522813,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 222,
-    "n": 400,
-    "kind": "clustered",
-    "capacity_mode": "tight",
-    "time_limit": 3.0,
-    "reference_cost": 49299.21802733928,
-    "reference_cost_v1.4": null,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  },
-  {
-    "seed": 224,
-    "n": 1000,
-    "kind": "clustered",
-    "capacity_mode": "loose",
-    "time_limit": 3.0,
-    "reference_cost": 38446.94182189444,
-    "reference_cost_v1.4": null,
-    "bks_method": "best of 4 x 300 s runs (Opus 5.5 / Sonnet 5.5 v1.4 solvers, 2 RNG seeds each)"
-  }
+ {
+  "seed": 201,
+  "n": 100,
+  "kind": "uniform",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 9215.843594837967,
+  "reference_cost_v1.4": 9545.957015282673,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 9215.843594837967
+ },
+ {
+  "seed": 202,
+  "n": 150,
+  "kind": "clustered",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 7568.904243807996,
+  "reference_cost_v1.4": 7637.659152540782,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 7568.904243807996
+ },
+ {
+  "seed": 204,
+  "n": 300,
+  "kind": "clustered",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 13871.460342972241,
+  "reference_cost_v1.4": 14037.215092276627,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 13874.090934802174
+ },
+ {
+  "seed": 205,
+  "n": 400,
+  "kind": "uniform",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 22711.18271216535,
+  "reference_cost_v1.4": 23604.17801024306,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 22809.0263489569
+ },
+ {
+  "seed": 207,
+  "n": 500,
+  "kind": "uniform",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 25977.512902225557,
+  "reference_cost_v1.4": 26989.749425381957,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 26148.571283189005
+ },
+ {
+  "seed": 210,
+  "n": 800,
+  "kind": "uniform",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 37672.06048997037,
+  "reference_cost_v1.4": 38980.08391522813,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 37672.06048997037
+ },
+ {
+  "seed": 222,
+  "n": 400,
+  "kind": "clustered",
+  "capacity_mode": "tight",
+  "time_limit": 3.0,
+  "reference_cost": 49299.21802733928,
+  "reference_cost_v1.4": null,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 49299.21802733928
+ },
+ {
+  "seed": 224,
+  "n": 1000,
+  "kind": "clustered",
+  "capacity_mode": "loose",
+  "time_limit": 3.0,
+  "reference_cost": 38443.49885300363,
+  "reference_cost_v1.4": null,
+  "bks_method": "v1.6: min of v1.5 BKS and 3 x 600 s Opus 5.5 solver runs (RNG seeds 3131313, 4242424, 5151515)",
+  "reference_cost_v1.5": 38446.94182189444
+ }
 ]

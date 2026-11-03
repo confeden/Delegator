@@ -196,3 +196,8 @@ Test-Case "the fallback reaches for a quick model, not the strongest one" {
     $enabled = @("agentrouter/claude-opus-5", "opencode/nemotron-3.5-lightning-free")
     Assert-Equal "opencode/nemotron-3.5-lightning-free" (Get-BackendFallbackModel -BackendName "opencode" -Enabled $enabled)
 }
+
+Test-Case "a model skipped for cooldown says when the cooldown ends, not that it failed" {
+    $text = (@(Format-PingReport -RuntimeHome "C:\Runtime" -CoreVersion "0.9.37" -GeminiModels 4 -OtherModels 108 -Caller "" -AnswerModel "" -TriedModels @("gemini-flash-latest") -TriedReasons @("в cooldown до 20:19 (server), не вызывался") -Seconds 0.4 -ExitCode 1) -join "`n")
+    Assert-Match "в cooldown до 20:19 \(server\), не вызывался" $text
+}

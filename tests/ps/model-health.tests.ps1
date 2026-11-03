@@ -267,3 +267,80 @@ Test-Case "a model nobody has called yet keeps its place" {
     $picked = @(Select-AffordableRankedModels @("m/unknown-a", "m/unknown-b"))
     Assert-Equal "m/unknown-a" $picked[0] "no record means try it, not skip it"
 }
+
+function New-AgedUsageLine {
+    param([string]$Model, [bool]$Ok, [string]$ErrorClass, [int]$MinutesAgo)
+    $row = [ordered]@{
+        ts         = (Get-Date).AddMinutes(-$MinutesAgo).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz")
+        requestId  = "r-test0002"
+        client     = "cli"
+        stage      = "answer"
+        mode       = "ask"
+        provider   = "opencode-cli"
+        model      = $Model
+        totalTokens = 0
+        elapsedMs  = 65000
+        ok         = $Ok
+    }
+    if ($ErrorClass) { $row.errorClass = $ErrorClass }
+    return ($row | ConvertTo-Json -Compress -Depth 4)
+}
+
+Test-Case "a provider that refused the last call is flagged for the strength floor" {
+    Set-SandboxUsageLog @(
+        (New-AgedUsageLine -Model "aerolink/claude-opus-5" -Ok $false -ErrorClass "network" -MinutesAgo 5)
+    )
+    $failed = Get-RecentHardFailedModels
+    Assert-True ($failed.ContainsKey("aerolink/claude-opus-5"))
+}
+
+Test-Case "a success after the failure clears the flag" {
+    Set-SandboxUsageLog @(
+        (New-AgedUsageLine -Model "aerolink/claude-opus-5" -Ok $false -ErrorClass "auth" -MinutesAgo 10),
+        (New-AgedUsageLine -Model "aerolink/claude-opus-5" -Ok $true -ErrorClass "" -MinutesAgo 2)
+    )
+    $failed = Get-RecentHardFailedModels
+    Assert-False ($failed.ContainsKey("aerolink/claude-opus-5"))
+}
+
+Test-Case "an old provider failure no longer blocks the model" {
+    Set-SandboxUsageLog @(
+        (New-AgedUsageLine -Model "agentrouter/claude-opus-5" -Ok $false -ErrorClass "auth" -MinutesAgo 120)
+    )
+    $failed = Get-RecentHardFailedModels
+    Assert-False ($failed.ContainsKey("agentrouter/claude-opus-5"))
+}
+
+Test-Case "a model-side failure (timeout, rate limit) is not a provider outage" {
+    Set-SandboxUsageLog @(
+        (New-AgedUsageLine -Model "opencode/hy3-free" -Ok $false -ErrorClass "timeout" -MinutesAgo 1),
+        (New-AgedUsageLine -Model "opencode/beam-free" -Ok $false -ErrorClass "rate_limit" -MinutesAgo 1)
+    )
+    $failed = Get-RecentHardFailedModels
+    Assert-False ($failed.ContainsKey("opencode/hy3-free"))
+    Assert-False ($failed.ContainsKey("opencode/beam-free"))
+}
+
+Test-Case "a refused proxy port is reported unreachable, a listening one reachable" {
+    $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        $open = [int]$listener.LocalEndpoint.Port
+        $script:ProxyReachableCache = @{}
+        Assert-True (Test-ProxyReachable "http://127.0.0.1:$open")
+    } finally {
+        $listener.Stop()
+    }
+    $script:ProxyReachableCache = @{}
+    Assert-False (Test-ProxyReachable "http://127.0.0.1:1")
+}
+
+Test-Case "only the free routes are recognised as free" {
+    Assert-True (Test-FreeModelId "openrouter/openrouter/free")
+    Assert-True (Test-FreeModelId "orcarouter/free")
+    Assert-True (Test-FreeModelId "tencent/hy3-free")
+    Assert-True (Test-FreeModelId "opencode/hy3-free")
+    Assert-False (Test-FreeModelId "gemini-flash-latest")
+    Assert-False (Test-FreeModelId "deepseek/deepseek-v4-flash")
+    Assert-False (Test-FreeModelId "freedom-model")
+}

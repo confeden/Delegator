@@ -1,18 +1,26 @@
 {
   "manifest_version": 3,
   "name": "Delegator Gemini Bridge",
-  "version": "0.18.2",
-  "description": "Sends selected Delegator chat requests to a dedicated signed-in Gemini Web tab or Puter tab.",
+  "version": "0.21.2",
+  "description": "Sends selected Delegator chat requests to dedicated signed-in web chat tabs: Gemini, AI Studio, Kimi, Z.ai, Qwen, DeepSeek, Tencent Hy, Rudder.",
   "permissions": [
     "alarms",
     "tabs",
     "tabGroups",
     "scripting",
-    "debugger"
+    "debugger",
+    "storage"
   ],
   "host_permissions": [
     "https://gemini.google.com/*",
-    "https://builder.puter.com/*",
+    "https://aistudio.google.com/*",
+    "https://www.kimi.ai/*",
+    "https://kimi.ai/*",
+    "https://chat.z.ai/*",
+    "https://chat.qwen.ai/*",
+    "https://chat.deepseek.com/*",
+    "https://rudder.chat/*",
+    "https://aistudio.tencent.ai/*",
     "http://127.0.0.1:1380/*"
   ],
   "background": {
@@ -21,7 +29,15 @@
   "content_scripts": [
     {
       "matches": [
-        "https://gemini.google.com/app*"
+        "https://gemini.google.com/app*",
+        "https://aistudio.google.com/*",
+        "https://www.kimi.ai/*",
+        "https://kimi.ai/*",
+        "https://chat.z.ai/*",
+        "https://chat.qwen.ai/*",
+        "https://chat.deepseek.com/*",
+        "https://rudder.chat/*",
+        "https://aistudio.tencent.ai/*"
       ],
       "js": [
         "visible.js"

@@ -1,0 +1,1833 @@
+Oct 27 00:00:00 web01 cron: connection from 10.0.165.135 accepted
+Oct 27 00:00:02 web02 sshd: session opened for user svc879
+Oct 27 00:00:02 batch-7 sshd: job 74756 finished in 79.00s
+Oct 27 00:00:03 web01 nginx: job 99328 finished in 601.00s
+Oct 27 00:00:05 batch-7 cron: cache miss key=item:55
+Oct 27 00:00:08 batch-7 app[1842]: GET /api/v2/items?id=93265 200 515ms
+Oct 27 00:00:10 web02 worker[913]: session opened for user svc629
+Oct 27 00:00:12 web02 cron: job 41843 finished in 379.00s
+Oct 27 00:00:13 batch-7 app[1842]: connection from 10.0.167.83 accepted
+Oct 27 00:00:13 cache-1 app[1842]: session opened for user svc307
+Oct 27 00:00:15 batch-7 worker[913]: job 94867 finished in 920.00s
+Oct 27 00:00:15 web02 app[1842]: job 16601 finished in 321.00s
+Oct 27 00:00:17 web01 nginx: timeout after 173ms waiting for upstream
+Oct 27 00:00:18 web02 nginx: connection from 10.0.8.251 accepted
+Oct 27 00:00:21 cache-1 worker[913]: cache miss key=item:719
+Oct 27 00:00:23 cache-1 cron: timeout after 6532ms waiting for upstream
+Oct 27 00:00:24 batch-7 nginx: timeout after 4912ms waiting for upstream
+Oct 27 00:00:27 web01 app[1842]: timeout after 1154ms waiting for upstream
+Oct 27 00:00:30 cache-1 app[1842]: connection from 10.0.63.145 accepted
+Oct 27 00:00:32 cache-1 nginx: session opened for user svc255
+Oct 27 00:00:33 db-primary app[1842]: GET /api/v2/items?id=22283 200 954ms
+Oct 27 00:00:36 db-primary kernel: session opened for user svc999
+Oct 27 00:00:36 db-primary kernel: connection from 10.0.176.20 accepted
+Oct 27 00:00:36 web02 kernel: cache miss key=item:761
+Oct 27 00:00:37 web01 app[1842]: connection from 10.0.151.232 accepted
+Oct 27 00:00:40 batch-7 nginx: job 45574 finished in 38.00s
+Oct 27 00:00:40 web01 sshd: connection from 10.0.93.98 accepted
+Oct 27 00:00:43 web02 app[1842]: GET /api/v2/items?id=45888 200 723ms
+Oct 27 00:00:43 cache-1 worker[913]: GET /api/v2/items?id=12054 200 180ms
+Oct 27 00:00:46 db-primary app[1842]: job 67529 finished in 986.00s
+Oct 27 00:00:49 web02 kernel: GET /api/v2/items?id=82827 200 246ms
+Oct 27 00:00:49 cache-1 app[1842]: timeout after 5490ms waiting for upstream
+Oct 27 00:00:50 db-primary sshd: timeout after 8369ms waiting for upstream
+Oct 27 00:00:51 db-primary worker[913]: job 60094 finished in 99.00s
+Oct 27 00:00:54 web01 worker[913]: connection from 10.0.186.107 accepted
+Oct 27 00:00:55 cache-1 kernel: connection from 10.0.218.102 accepted
+Oct 27 00:00:55 web02 nginx: connection from 10.0.65.120 accepted
+Oct 27 00:00:55 web02 kernel: GET /api/v2/items?id=24745 200 482ms
+Oct 27 00:00:57 web01 app[1842]: job 42567 finished in 587.00s
+Oct 27 00:00:57 cache-1 cron: cache miss key=item:732
+Oct 27 00:00:57 web01 app[1842]: session opened for user svc377
+Oct 27 00:00:59 batch-7 nginx: timeout after 3416ms waiting for upstream
+Oct 27 00:01:00 batch-7 sshd: job 77147 finished in 976.00s
+Oct 27 00:01:03 batch-7 sshd: job 80371 finished in 333.00s
+Oct 27 00:01:04 cache-1 sshd: connection from 10.0.149.223 accepted
+Oct 27 00:01:05 cache-1 app[1842]: timeout after 6149ms waiting for upstream
+Oct 27 00:01:08 batch-7 kernel: timeout after 8822ms waiting for upstream
+Oct 27 00:01:08 web01 app[1842]: GET /api/v2/items?id=46213 200 805ms
+Oct 27 00:01:11 web02 cron: session opened for user svc269
+Oct 27 00:01:13 db-primary cron: connection from 10.0.249.187 accepted
+Oct 27 00:01:14 web01 worker[913]: timeout after 8611ms waiting for upstream
+Oct 27 00:01:14 batch-7 nginx: connection from 10.0.225.139 accepted
+Oct 27 00:01:15 web02 app[1842]: GET /api/v2/items?id=49519 200 949ms
+Oct 27 00:01:17 db-primary kernel: timeout after 1278ms waiting for upstream
+Oct 27 00:01:20 batch-7 kernel: job 66448 finished in 548.00s
+Oct 27 00:01:21 web01 nginx: job 18648 finished in 870.00s
+Oct 27 00:01:21 web02 worker[913]: job 98107 finished in 986.00s
+Oct 27 00:01:21 batch-7 cron: job 49701 finished in 289.00s
+Oct 27 00:01:23 web01 nginx: job 37532 finished in 617.00s
+Oct 27 00:01:23 batch-7 sshd: connection from 10.0.236.141 accepted
+Oct 27 00:01:23 db-primary nginx: GET /api/v2/items?id=49777 200 116ms
+Oct 27 00:01:23 cache-1 worker[913]: GET /api/v2/items?id=86828 200 562ms
+Oct 27 00:01:26 web02 worker[913]: connection from 10.0.201.247 accepted
+Oct 27 00:01:27 web01 sshd: session opened for user svc321
+Oct 27 00:01:27 web02 nginx: timeout after 1964ms waiting for upstream
+Oct 27 00:01:27 db-primary nginx: timeout after 3139ms waiting for upstream
+Oct 27 00:01:29 cache-1 kernel: timeout after 3835ms waiting for upstream
+Oct 27 00:01:30 web01 cron: job 84639 finished in 94.00s
+Oct 27 00:01:30 db-primary kernel: connection from 10.0.130.139 accepted
+Oct 27 00:01:30 web02 kernel: job 30842 finished in 60.00s
+Oct 27 00:01:30 db-primary worker[913]: timeout after 8094ms waiting for upstream
+Oct 27 00:01:30 web02 cron: cache miss key=item:234
+Oct 27 00:01:33 db-primary kernel: session opened for user svc182
+Oct 27 00:01:35 web01 cron: GET /api/v2/items?id=23369 200 642ms
+Oct 27 00:01:36 batch-7 sshd: cache miss key=item:423
+Oct 27 00:01:39 batch-7 nginx: cache miss key=item:841
+Oct 27 00:01:39 web02 kernel: connection from 10.0.158.226 accepted
+Oct 27 00:01:42 db-primary nginx: cache miss key=item:310
+Oct 27 00:01:44 batch-7 kernel: cache miss key=item:298
+Oct 27 00:01:45 web01 kernel: job 11398 finished in 929.00s
+Oct 27 00:01:47 batch-7 app[1842]: connection from 10.0.77.3 accepted
+Oct 27 00:01:50 web02 sshd: cache miss key=item:994
+Oct 27 00:01:50 cache-1 kernel: job 86801 finished in 851.00s
+Oct 27 00:01:51 web02 sshd: connection from 10.0.33.193 accepted
+Oct 27 00:01:52 web01 app[1842]: session opened for user svc261
+Oct 27 00:01:53 cache-1 app[1842]: job 28811 finished in 221.00s
+Oct 27 00:01:56 cache-1 app[1842]: GET /api/v2/items?id=51780 200 554ms
+Oct 27 00:01:59 web01 kernel: cache miss key=item:893
+Oct 27 00:02:01 web01 worker[913]: timeout after 4531ms waiting for upstream
+Oct 27 00:02:03 batch-7 nginx: session opened for user svc226
+Oct 27 00:02:04 batch-7 cron: connection from 10.0.218.12 accepted
+Oct 27 00:02:07 web01 cron: timeout after 7045ms waiting for upstream
+Oct 27 00:02:09 cache-1 sshd: job 52303 finished in 78.00s
+Oct 27 00:02:09 web02 kernel: job 37418 finished in 389.00s
+Oct 27 00:02:11 cache-1 nginx: timeout after 5733ms waiting for upstream
+Oct 27 00:02:13 cache-1 worker[913]: job 61198 finished in 357.00s
+Oct 27 00:02:14 web01 nginx: GET /api/v2/items?id=11067 200 300ms
+Oct 27 00:02:17 cache-1 worker[913]: timeout after 7453ms waiting for upstream
+Oct 27 00:02:17 web01 cron: session opened for user svc442
+Oct 27 00:02:18 cache-1 cron: cache miss key=item:99
+Oct 27 00:02:20 cache-1 worker[913]: session opened for user svc842
+Oct 27 00:02:22 web02 sshd: job 35348 finished in 420.00s
+Oct 27 00:02:22 batch-7 nginx: connection from 10.0.53.64 accepted
+Oct 27 00:02:24 db-primary app[1842]: connection from 10.0.113.51 accepted
+Oct 27 00:02:24 web01 cron: connection from 10.0.32.124 accepted
+Oct 27 00:02:26 batch-7 cron: GET /api/v2/items?id=4346 200 516ms
+Oct 27 00:02:29 db-primary kernel: timeout after 6569ms waiting for upstream
+Oct 27 00:02:31 batch-7 app[1842]: job 19168 finished in 134.00s
+Oct 27 00:02:31 cache-1 worker[913]: cache miss key=item:18
+Oct 27 00:02:33 web01 worker[913]: GET /api/v2/items?id=61116 200 469ms
+Oct 27 00:02:34 web02 cron: timeout after 7272ms waiting for upstream
+Oct 27 00:02:37 batch-7 app[1842]: session opened for user svc649
+Oct 27 00:02:38 web02 cron: GET /api/v2/items?id=16035 200 673ms
+Oct 27 00:02:41 web01 sshd: session opened for user svc743
+Oct 27 00:02:44 web01 sshd: session opened for user svc791
+Oct 27 00:02:46 cache-1 sshd: cache miss key=item:207
+Oct 27 00:02:49 web01 sshd: timeout after 822ms waiting for upstream
+Oct 27 00:02:51 web02 sshd: cache miss key=item:499
+Oct 27 00:02:52 batch-7 worker[913]: cache miss key=item:576
+Oct 27 00:02:52 cache-1 worker[913]: timeout after 4758ms waiting for upstream
+Oct 27 00:02:53 web01 kernel: connection from 10.0.244.138 accepted
+Oct 27 00:02:54 web01 kernel: connection from 10.0.85.104 accepted
+Oct 27 00:02:57 web02 nginx: session opened for user svc223
+Oct 27 00:02:57 cache-1 app[1842]: cache miss key=item:302
+Oct 27 00:03:00 web02 kernel: timeout after 348ms waiting for upstream
+Oct 27 00:03:01 cache-1 cron: connection from 10.0.66.219 accepted
+Oct 27 00:03:03 web01 nginx: timeout after 7883ms waiting for upstream
+Oct 27 00:03:05 web02 kernel: connection from 10.0.8.246 accepted
+Oct 27 00:03:07 db-primary kernel: timeout after 4702ms waiting for upstream
+Oct 27 00:03:08 batch-7 app[1842]: connection from 10.0.45.37 accepted
+Oct 27 00:03:08 web02 cron: cache miss key=item:130
+Oct 27 00:03:10 batch-7 cron: connection from 10.0.96.12 accepted
+Oct 27 00:03:10 web02 kernel: cache miss key=item:905
+Oct 27 00:03:10 db-primary cron: timeout after 4188ms waiting for upstream
+Oct 27 00:03:10 batch-7 worker[913]: GET /api/v2/items?id=98385 200 18ms
+Oct 27 00:03:12 web02 kernel: cache miss key=item:29
+Oct 27 00:03:14 db-primary sshd: job 63055 finished in 673.00s
+Oct 27 00:03:15 cache-1 sshd: timeout after 2868ms waiting for upstream
+Oct 27 00:03:17 batch-7 nginx: job 13860 finished in 738.00s
+Oct 27 00:03:20 web02 nginx: cache miss key=item:92
+Oct 27 00:03:21 batch-7 app[1842]: cache miss key=item:446
+Oct 27 00:03:24 batch-7 app[1842]: connection from 10.0.157.126 accepted
+Oct 27 00:03:26 web02 sshd: connection from 10.0.240.191 accepted
+Oct 27 00:03:27 db-primary nginx: timeout after 3032ms waiting for upstream
+Oct 27 00:03:28 cache-1 sshd: timeout after 757ms waiting for upstream
+Oct 27 00:03:31 db-primary sshd: job 63611 finished in 790.00s
+Oct 27 00:03:34 web01 cron: session opened for user svc784
+Oct 27 00:03:37 web02 cron: cache miss key=item:688
+Oct 27 00:03:39 cache-1 sshd: GET /api/v2/items?id=93557 200 354ms
+Oct 27 00:03:42 db-primary nginx: connection from 10.0.131.93 accepted
+Oct 27 00:03:44 batch-7 kernel: job 32308 finished in 646.00s
+Oct 27 00:03:47 batch-7 worker[913]: connection from 10.0.146.119 accepted
+Oct 27 00:03:50 cache-1 sshd: cache miss key=item:944
+Oct 27 00:03:53 batch-7 nginx: cache miss key=item:279
+Oct 27 00:03:53 web01 sshd: connection from 10.0.33.70 accepted
+Oct 27 00:03:55 cache-1 cron: session opened for user svc400
+Oct 27 00:03:58 cache-1 sshd: GET /api/v2/items?id=16269 200 383ms
+Oct 27 00:04:01 web01 worker[913]: timeout after 562ms waiting for upstream
+Oct 27 00:04:03 web01 app[1842]: GET /api/v2/items?id=611 200 771ms
+Oct 27 00:04:05 cache-1 cron: GET /api/v2/items?id=95642 200 615ms
+Oct 27 00:04:08 batch-7 sshd: GET /api/v2/items?id=47628 200 70ms
+Oct 27 00:04:08 web02 sshd: job 65874 finished in 856.00s
+Oct 27 00:04:10 batch-7 nginx: job 54949 finished in 442.00s
+Oct 27 00:04:10 db-primary kernel: timeout after 4748ms waiting for upstream
+Oct 27 00:04:10 batch-7 kernel: GET /api/v2/items?id=32838 200 564ms
+Oct 27 00:04:12 web02 nginx: GET /api/v2/items?id=39849 200 138ms
+Oct 27 00:04:12 cache-1 worker[913]: job 52402 finished in 58.00s
+Oct 27 00:04:15 web02 cron: job 82529 finished in 751.00s
+Oct 27 00:04:18 batch-7 kernel: timeout after 7434ms waiting for upstream
+Oct 27 00:04:20 batch-7 sshd: job 64426 finished in 87.00s
+Oct 27 00:04:20 cache-1 worker[913]: session opened for user svc458
+Oct 27 00:04:20 web01 nginx: job 88970 finished in 755.00s
+Oct 27 00:04:21 db-primary nginx: GET /api/v2/items?id=94129 200 773ms
+Oct 27 00:04:22 batch-7 worker[913]: job 82487 finished in 745.00s
+Oct 27 00:04:25 db-primary kernel: cache miss key=item:704
+Oct 27 00:04:25 db-primary sshd: cache miss key=item:902
+Oct 27 00:04:27 cache-1 app[1842]: job 32270 finished in 325.00s
+Oct 27 00:04:27 db-primary cron: timeout after 8607ms waiting for upstream
+Oct 27 00:04:27 db-primary worker[913]: timeout after 5475ms waiting for upstream
+Oct 27 00:04:28 cache-1 cron: connection from 10.0.47.36 accepted
+Oct 27 00:04:31 cache-1 worker[913]: GET /api/v2/items?id=16349 200 924ms
+Oct 27 00:04:34 db-primary kernel: session opened for user svc223
+Oct 27 00:04:36 batch-7 nginx: cache miss key=item:690
+Oct 27 00:04:38 web01 nginx: timeout after 7070ms waiting for upstream
+Oct 27 00:04:41 db-primary app[1842]: job 74675 finished in 528.00s
+Oct 27 00:04:44 db-primary kernel: connection from 10.0.193.133 accepted
+Oct 27 00:04:44 batch-7 app[1842]: connection from 10.0.0.34 accepted
+Oct 27 00:04:45 web02 kernel: connection from 10.0.149.118 accepted
+Oct 27 00:04:48 web02 kernel: connection from 10.0.95.155 accepted
+Oct 27 00:04:50 batch-7 app[1842]: connection from 10.0.239.211 accepted
+Oct 27 00:04:52 cache-1 app[1842]: session opened for user svc319
+Oct 27 00:04:54 db-primary kernel: cache miss key=item:215
+Oct 27 00:04:56 cache-1 cron: cache miss key=item:526
+Oct 27 00:04:56 web01 nginx: session opened for user svc215
+Oct 27 00:04:59 batch-7 nginx: cache miss key=item:240
+Oct 27 00:04:59 db-primary sshd: job 46860 finished in 909.00s
+Oct 27 00:05:01 db-primary worker[913]: session opened for user svc705
+Oct 27 00:05:02 web02 worker[913]: cache miss key=item:944
+Oct 27 00:05:04 web01 sshd: job 47069 finished in 9.00s
+Oct 27 00:05:04 db-primary app[1842]: timeout after 2702ms waiting for upstream
+Oct 27 00:05:07 web01 sshd: job 57434 finished in 985.00s
+Oct 27 00:05:09 batch-7 app[1842]: timeout after 5342ms waiting for upstream
+Oct 27 00:05:12 web02 worker[913]: connection from 10.0.34.202 accepted
+Oct 27 00:05:15 web02 sshd: session opened for user svc926
+Oct 27 00:05:17 batch-7 nginx: session opened for user svc98
+Oct 27 00:05:19 batch-7 app[1842]: connection from 10.0.202.217 accepted
+Oct 27 00:05:21 db-primary nginx: connection from 10.0.16.38 accepted
+Oct 27 00:05:24 db-primary kernel: cache miss key=item:488
+Oct 27 00:05:26 web01 sshd: GET /api/v2/items?id=82276 200 17ms
+Oct 27 00:05:27 batch-7 kernel: timeout after 1695ms waiting for upstream
+Oct 27 00:05:30 cache-1 nginx: connection from 10.0.184.153 accepted
+Oct 27 00:05:31 db-primary nginx: GET /api/v2/items?id=29605 200 197ms
+Oct 27 00:05:33 web01 kernel: timeout after 5591ms waiting for upstream
+Oct 27 00:05:35 cache-1 worker[913]: GET /api/v2/items?id=45836 200 872ms
+Oct 27 00:05:35 web02 kernel: cache miss key=item:83
+Oct 27 00:05:38 web01 app[1842]: cache miss key=item:690
+Oct 27 00:05:40 cache-1 app[1842]: connection from 10.0.112.195 accepted
+Oct 27 00:05:40 web01 cron: cache miss key=item:995
+Oct 27 00:05:42 batch-7 worker[913]: connection from 10.0.65.46 accepted
+Oct 27 00:05:44 web02 cron: session opened for user svc722
+Oct 27 00:05:45 db-primary nginx: timeout after 6339ms waiting for upstream
+Oct 27 00:05:45 cache-1 cron: connection from 10.0.169.139 accepted
+Oct 27 00:05:46 web01 nginx: job 72501 finished in 779.00s
+Oct 27 00:05:46 db-primary kernel: timeout after 1257ms waiting for upstream
+Oct 27 00:05:47 batch-7 nginx: session opened for user svc385
+Oct 27 00:05:47 batch-7 cron: GET /api/v2/items?id=23352 200 288ms
+Oct 27 00:05:48 web01 worker[913]: session opened for user svc206
+Oct 27 00:05:49 db-primary cron: timeout after 3717ms waiting for upstream
+Oct 27 00:05:52 batch-7 sshd: timeout after 3426ms waiting for upstream
+Oct 27 00:05:54 db-primary sshd: session opened for user svc223
+Oct 27 00:05:55 web01 sshd: job 1029 finished in 691.00s
+Oct 27 00:05:55 batch-7 kernel: job 84136 finished in 84.00s
+Oct 27 00:05:55 batch-7 kernel: session opened for user svc214
+Oct 27 00:05:58 db-primary sshd: session opened for user svc467
+Oct 27 00:06:01 batch-7 worker[913]: job 40971 finished in 437.00s
+Oct 27 00:06:04 db-primary kernel: job 5639 finished in 291.00s
+Oct 27 00:06:06 web01 worker[913]: connection from 10.0.216.185 accepted
+Oct 27 00:06:08 web02 cron: connection from 10.0.122.252 accepted
+Oct 27 00:06:11 cache-1 nginx: GET /api/v2/items?id=2211 200 726ms
+Oct 27 00:06:11 web02 sshd: timeout after 787ms waiting for upstream
+Oct 27 00:06:13 batch-7 sshd: session opened for user svc334
+Oct 27 00:06:16 web02 cron: connection from 10.0.106.225 accepted
+Oct 27 00:06:19 batch-7 kernel: connection from 10.0.248.57 accepted
+Oct 27 00:06:20 db-primary sshd: session opened for user svc339
+Oct 27 00:06:21 web02 sshd: session opened for user svc51
+Oct 27 00:06:21 web01 app[1842]: connection from 10.0.112.137 accepted
+Oct 27 00:06:21 web02 kernel: cache miss key=item:314
+Oct 27 00:06:23 db-primary app[1842]: session opened for user svc495
+Oct 27 00:06:23 batch-7 worker[913]: connection from 10.0.43.39 accepted
+Oct 27 00:06:25 db-primary nginx: GET /api/v2/items?id=76641 200 283ms
+Oct 27 00:06:25 batch-7 app[1842]: timeout after 1432ms waiting for upstream
+Oct 27 00:06:27 db-primary worker[913]: job 35814 finished in 180.00s
+Oct 27 00:06:29 db-primary nginx: cache miss key=item:724
+Oct 27 00:06:32 batch-7 nginx: connection from 10.0.252.65 accepted
+Oct 27 00:06:33 db-primary nginx: job 55648 finished in 686.00s
+Oct 27 00:06:35 web01 sshd: cache miss key=item:920
+Oct 27 00:06:38 batch-7 sshd: connection from 10.0.2.58 accepted
+Oct 27 00:06:39 cache-1 nginx: connection from 10.0.253.172 accepted
+Oct 27 00:06:42 web01 app[1842]: session opened for user svc544
+Oct 27 00:06:43 batch-7 nginx: session opened for user svc180
+Oct 27 00:06:46 db-primary sshd: job 96876 finished in 99.00s
+Oct 27 00:06:48 cache-1 worker[913]: session opened for user svc667
+Oct 27 00:06:51 db-primary app[1842]: job 46501 finished in 339.00s
+Oct 27 00:06:52 batch-7 kernel: timeout after 7304ms waiting for upstream
+Oct 27 00:06:52 web01 cron: cache miss key=item:711
+Oct 27 00:06:52 cache-1 cron: timeout after 934ms waiting for upstream
+Oct 27 00:06:54 db-primary sshd: GET /api/v2/items?id=98625 200 116ms
+Oct 27 00:06:55 db-primary cron: timeout after 5064ms waiting for upstream
+Oct 27 00:06:55 db-primary cron: connection from 10.0.155.201 accepted
+Oct 27 00:06:57 cache-1 app[1842]: connection from 10.0.213.86 accepted
+Oct 27 00:06:57 web01 sshd: cache miss key=item:526
+Oct 27 00:06:58 batch-7 app[1842]: cache miss key=item:39
+Oct 27 00:07:01 batch-7 app[1842]: session opened for user svc762
+Oct 27 00:07:03 web01 sshd: cache miss key=item:42
+Oct 27 00:07:06 cache-1 sshd: job 16642 finished in 857.00s
+Oct 27 00:07:06 web02 nginx: session opened for user svc632
+Oct 27 00:07:07 db-primary app[1842]: job 231 finished in 439.00s
+Oct 27 00:07:10 web01 kernel: timeout after 8357ms waiting for upstream
+Oct 27 00:07:12 web02 nginx: timeout after 5278ms waiting for upstream
+Oct 27 00:07:12 batch-7 sshd: job 46841 finished in 888.00s
+Oct 27 00:07:14 web01 app[1842]: cache miss key=item:45
+Oct 27 00:07:15 db-primary worker[913]: job 47633 finished in 126.00s
+Oct 27 00:07:15 web02 nginx: cache miss key=item:250
+Oct 27 00:07:18 web02 cron: job 77621 finished in 227.00s
+Oct 27 00:07:20 web01 cron: job 30878 finished in 863.00s
+Oct 27 00:07:21 batch-7 nginx: job 2891 finished in 273.00s
+Oct 27 00:07:22 web01 worker[913]: cache miss key=item:848
+Oct 27 00:07:23 batch-7 cron: cache miss key=item:546
+Oct 27 00:07:24 batch-7 kernel: cache miss key=item:636
+Oct 27 00:07:26 batch-7 app[1842]: timeout after 7367ms waiting for upstream
+Oct 27 00:07:29 batch-7 cron: job 80058 finished in 168.00s
+Oct 27 00:07:32 batch-7 kernel: connection from 10.0.219.103 accepted
+Oct 27 00:07:32 cache-1 sshd: GET /api/v2/items?id=65523 200 922ms
+Oct 27 00:07:33 db-primary app[1842]: session opened for user svc253
+Oct 27 00:07:35 db-primary worker[913]: connection from 10.0.214.94 accepted
+Oct 27 00:07:36 db-primary worker[913]: timeout after 2287ms waiting for upstream
+Oct 27 00:07:38 web02 kernel: GET /api/v2/items?id=57170 200 120ms
+Oct 27 00:07:39 web01 worker[913]: session opened for user svc312
+Oct 27 00:07:42 web01 kernel: cache miss key=item:350
+Oct 27 00:07:43 web02 kernel: job 87422 finished in 275.00s
+Oct 27 00:07:44 cache-1 sshd: GET /api/v2/items?id=83171 200 706ms
+Oct 27 00:07:44 web01 nginx: session opened for user svc269
+Oct 27 00:07:46 web02 kernel: connection from 10.0.128.228 accepted
+Oct 27 00:07:49 cache-1 app[1842]: job 76919 finished in 154.00s
+Oct 27 00:07:49 batch-7 nginx: session opened for user svc761
+Oct 27 00:07:49 batch-7 app[1842]: cache miss key=item:705
+Oct 27 00:07:50 batch-7 kernel: timeout after 2373ms waiting for upstream
+Oct 27 00:07:52 db-primary nginx: session opened for user svc982
+Oct 27 00:07:52 db-primary sshd: timeout after 3158ms waiting for upstream
+Oct 27 00:07:52 web02 cron: session opened for user svc229
+Oct 27 00:07:55 web01 kernel: timeout after 8818ms waiting for upstream
+Oct 27 00:07:56 web01 nginx: timeout after 3109ms waiting for upstream
+Oct 27 00:07:57 db-primary app[1842]: cache miss key=item:512
+Oct 27 00:07:58 web02 nginx: timeout after 6504ms waiting for upstream
+Oct 27 00:07:59 web01 app[1842]: connection from 10.0.130.170 accepted
+Oct 27 00:08:02 web02 app[1842]: cache miss key=item:779
+Oct 27 00:08:04 web02 sshd: connection from 10.0.203.194 accepted
+Oct 27 00:08:07 web02 worker[913]: session opened for user svc607
+Oct 27 00:08:07 batch-7 sshd: connection from 10.0.240.8 accepted
+Oct 27 00:08:10 web02 cron: job 99593 finished in 906.00s
+Oct 27 00:08:10 web02 app[1842]: timeout after 5409ms waiting for upstream
+Oct 27 00:08:11 batch-7 nginx: timeout after 3287ms waiting for upstream
+Oct 27 00:08:14 db-primary worker[913]: session opened for user svc554
+Oct 27 00:08:15 db-primary nginx: session opened for user svc4
+Oct 27 00:08:17 cache-1 kernel: cache miss key=item:250
+Oct 27 00:08:20 cache-1 kernel: GET /api/v2/items?id=84548 200 848ms
+Oct 27 00:08:21 web02 app[1842]: cache miss key=item:142
+Oct 27 00:08:22 web01 worker[913]: job 14240 finished in 195.00s
+Oct 27 00:08:23 web01 sshd: connection from 10.0.102.117 accepted
+Oct 27 00:08:26 db-primary kernel: session opened for user svc84
+Oct 27 00:08:28 web02 app[1842]: cache miss key=item:655
+Oct 27 00:08:31 web01 cron: timeout after 8746ms waiting for upstream
+Oct 27 00:08:34 web01 nginx: session opened for user svc52
+Oct 27 00:08:36 web01 worker[913]: connection from 10.0.124.31 accepted
+Oct 27 00:08:38 batch-7 worker[913]: timeout after 2591ms waiting for upstream
+Oct 27 00:08:38 web02 app[1842]: job 94554 finished in 861.00s
+Oct 27 00:08:39 web02 app[1842]: job 52817 finished in 748.00s
+Oct 27 00:08:40 web01 app[1842]: timeout after 2172ms waiting for upstream
+Oct 27 00:08:41 db-primary kernel: session opened for user svc467
+Oct 27 00:08:43 batch-7 nginx: connection from 10.0.106.124 accepted
+Oct 27 00:08:46 web01 kernel: timeout after 4573ms waiting for upstream
+Oct 27 00:08:47 web01 app[1842]: cache miss key=item:391
+Oct 27 00:08:50 web01 sshd: GET /api/v2/items?id=52739 200 755ms
+Oct 27 00:08:52 web02 app[1842]: cache miss key=item:819
+Oct 27 00:08:53 cache-1 sshd: GET /api/v2/items?id=25009 200 958ms
+Oct 27 00:08:54 web01 cron: session opened for user svc803
+Oct 27 00:08:54 db-primary kernel: job 86636 finished in 506.00s
+Oct 27 00:08:57 batch-7 worker[913]: job 63374 finished in 901.00s
+Oct 27 00:08:59 cache-1 nginx: GET /api/v2/items?id=48792 200 937ms
+Oct 27 00:09:02 batch-7 app[1842]: connection from 10.0.114.249 accepted
+Oct 27 00:09:04 db-primary cron: GET /api/v2/items?id=12754 200 504ms
+Oct 27 00:09:05 batch-7 app[1842]: job 17727 finished in 659.00s
+Oct 27 00:09:08 cache-1 sshd: GET /api/v2/items?id=59560 200 105ms
+Oct 27 00:09:10 batch-7 nginx: job 55615 finished in 102.00s
+Oct 27 00:09:10 web01 worker[913]: connection from 10.0.101.94 accepted
+Oct 27 00:09:10 web01 cron: GET /api/v2/items?id=77018 200 953ms
+Oct 27 00:09:11 cache-1 cron: job 27375 finished in 693.00s
+Oct 27 00:09:11 batch-7 cron: timeout after 1598ms waiting for upstream
+Oct 27 00:09:12 cache-1 worker[913]: GET /api/v2/items?id=9715 200 32ms
+Oct 27 00:09:13 db-primary worker[913]: session opened for user svc132
+Oct 27 00:09:14 batch-7 cron: cache miss key=item:197
+Oct 27 00:09:16 db-primary cron: cache miss key=item:199
+Oct 27 00:09:16 batch-7 kernel: cache miss key=item:462
+Oct 27 00:09:16 web02 worker[913]: job 39845 finished in 56.00s
+Oct 27 00:09:17 db-primary app[1842]: session opened for user svc335
+Oct 27 00:09:18 cache-1 sshd: timeout after 1954ms waiting for upstream
+Oct 27 00:09:19 db-primary nginx: connection from 10.0.201.48 accepted
+Oct 27 00:09:19 db-primary nginx: session opened for user svc144
+Oct 27 00:09:21 web02 app[1842]: timeout after 5451ms waiting for upstream
+Oct 27 00:09:23 db-primary kernel: job 51693 finished in 795.00s
+Oct 27 00:09:26 web01 nginx: GET /api/v2/items?id=30944 200 726ms
+Oct 27 00:09:29 batch-7 worker[913]: cache miss key=item:887
+Oct 27 00:09:32 cache-1 sshd: job 75314 finished in 876.00s
+Oct 27 00:09:33 cache-1 kernel: timeout after 6414ms waiting for upstream
+Oct 27 00:09:35 batch-7 cron: cache miss key=item:608
+Oct 27 00:09:38 web01 app[1842]: GET /api/v2/items?id=3191 200 703ms
+Oct 27 00:09:39 batch-7 worker[913]: cache miss key=item:527
+Oct 27 00:09:39 cache-1 sshd: timeout after 6988ms waiting for upstream
+Oct 27 00:09:42 cache-1 worker[913]: session opened for user svc571
+Oct 27 00:09:42 batch-7 sshd: GET /api/v2/items?id=49715 200 698ms
+Oct 27 00:09:45 db-primary worker[913]: job 26252 finished in 508.00s
+Oct 27 00:09:46 db-primary kernel: job 99054 finished in 39.00s
+Oct 27 00:09:47 web02 sshd: cache miss key=item:337
+Oct 27 00:09:50 batch-7 app[1842]: timeout after 718ms waiting for upstream
+Oct 27 00:09:52 batch-7 app[1842]: GET /api/v2/items?id=33327 200 121ms
+Oct 27 00:09:52 batch-7 kernel: session opened for user svc119
+Oct 27 00:09:52 batch-7 sshd: cache miss key=item:941
+Oct 27 00:09:54 batch-7 worker[913]: GET /api/v2/items?id=525 200 221ms
+Oct 27 00:09:55 web02 worker[913]: job 90353 finished in 572.00s
+Oct 27 00:09:55 web02 nginx: GET /api/v2/items?id=72604 200 397ms
+Oct 27 00:09:58 web01 worker[913]: job 94811 finished in 603.00s
+Oct 27 00:09:58 web01 sshd: timeout after 5312ms waiting for upstream
+Oct 27 00:09:59 batch-7 kernel: timeout after 7584ms waiting for upstream
+Oct 27 00:10:02 web02 worker[913]: connection from 10.0.225.166 accepted
+Oct 27 00:10:03 web01 sshd: connection from 10.0.8.59 accepted
+Oct 27 00:10:06 cache-1 app[1842]: timeout after 2133ms waiting for upstream
+Oct 27 00:10:06 web01 cron: job 47153 finished in 434.00s
+Oct 27 00:10:07 db-primary cron: cache miss key=item:656
+Oct 27 00:10:07 batch-7 kernel: GET /api/v2/items?id=99477 200 881ms
+Oct 27 00:10:07 cache-1 worker[913]: connection from 10.0.86.15 accepted
+Oct 27 00:10:07 web02 sshd: job 90333 finished in 96.00s
+Oct 27 00:10:10 web02 app[1842]: job 69822 finished in 440.00s
+Oct 27 00:10:12 batch-7 sshd: timeout after 7101ms waiting for upstream
+Oct 27 00:10:15 web02 app[1842]: job 54790 finished in 71.00s
+Oct 27 00:10:15 cache-1 worker[913]: job 3924 finished in 45.00s
+Oct 27 00:10:16 web02 worker[913]: connection from 10.0.166.110 accepted
+Oct 27 00:10:18 web01 kernel: session opened for user svc898
+Oct 27 00:10:18 web01 sshd: connection from 10.0.242.186 accepted
+Oct 27 00:10:21 web01 kernel: job 98856 finished in 857.00s
+Oct 27 00:10:22 batch-7 nginx: cache miss key=item:267
+Oct 27 00:10:24 web02 app[1842]: job 73778 finished in 794.00s
+Oct 27 00:10:24 batch-7 cron: cache miss key=item:470
+Oct 27 00:10:26 batch-7 kernel: timeout after 4501ms waiting for upstream
+Oct 27 00:10:27 db-primary cron: session opened for user svc799
+Oct 27 00:10:29 web02 kernel: connection from 10.0.61.16 accepted
+Oct 27 00:10:30 web02 app[1842]: cache miss key=item:830
+Oct 27 00:10:33 db-primary worker[913]: session opened for user svc211
+Oct 27 00:10:36 web01 cron: cache miss key=item:80
+Oct 27 00:10:39 web02 worker[913]: job 10041 finished in 462.00s
+Oct 27 00:10:40 batch-7 app[1842]: cache miss key=item:993
+Oct 27 00:10:42 web02 worker[913]: connection from 10.0.52.107 accepted
+Oct 27 00:10:44 db-primary nginx: GET /api/v2/items?id=26921 200 53ms
+Oct 27 00:10:45 web01 cron: session opened for user svc192
+Oct 27 00:10:47 web01 kernel: job 30753 finished in 60.00s
+Oct 27 00:10:48 web02 cron: session opened for user svc871
+Oct 27 00:10:51 batch-7 cron: job 25430 finished in 481.00s
+Oct 27 00:10:52 db-primary cron: GET /api/v2/items?id=23890 200 531ms
+Oct 27 00:10:53 cache-1 sshd: cache miss key=item:70
+Oct 27 00:10:56 cache-1 sshd: GET /api/v2/items?id=18336 200 924ms
+Oct 27 00:10:57 web01 sshd: cache miss key=item:293
+Oct 27 00:10:59 db-primary kernel: cache miss key=item:322
+Oct 27 00:11:00 db-primary app[1842]: connection from 10.0.99.73 accepted
+Oct 27 00:11:03 web02 worker[913]: session opened for user svc908
+Oct 27 00:11:03 web01 sshd: cache miss key=item:799
+Oct 27 00:11:05 web01 sshd: GET /api/v2/items?id=74904 200 400ms
+Oct 27 00:11:05 db-primary sshd: job 61182 finished in 206.00s
+Oct 27 00:11:06 batch-7 app[1842]: cache miss key=item:437
+Oct 27 00:11:07 web01 nginx: cache miss key=item:302
+Oct 27 00:11:07 batch-7 app[1842]: timeout after 1327ms waiting for upstream
+Oct 27 00:11:10 web01 kernel: connection from 10.0.3.2 accepted
+Oct 27 00:11:11 db-primary worker[913]: cache miss key=item:420
+Oct 27 00:11:14 web02 cron: GET /api/v2/items?id=31081 200 233ms
+Oct 27 00:11:17 cache-1 nginx: GET /api/v2/items?id=67298 200 880ms
+Oct 27 00:11:18 web02 worker[913]: GET /api/v2/items?id=52699 200 369ms
+Oct 27 00:11:19 web01 sshd: connection from 10.0.224.9 accepted
+Oct 27 00:11:20 web01 worker[913]: connection from 10.0.8.74 accepted
+Oct 27 00:11:22 db-primary nginx: job 43869 finished in 74.00s
+Oct 27 00:11:23 web02 nginx: job 19033 finished in 926.00s
+Oct 27 00:11:23 web01 nginx: GET /api/v2/items?id=48254 200 60ms
+Oct 27 00:11:24 batch-7 sshd: session opened for user svc382
+Oct 27 00:11:25 cache-1 nginx: job 643 finished in 554.00s
+Oct 27 00:11:26 cache-1 nginx: connection from 10.0.164.74 accepted
+Oct 27 00:11:29 web01 worker[913]: session opened for user svc552
+Oct 27 00:11:31 web01 kernel: session opened for user svc501
+Oct 27 00:11:34 batch-7 app[1842]: cache miss key=item:479
+Oct 27 00:11:36 db-primary kernel: timeout after 7188ms waiting for upstream
+Oct 27 00:11:38 cache-1 app[1842]: timeout after 5680ms waiting for upstream
+Oct 27 00:11:39 cache-1 nginx: timeout after 1245ms waiting for upstream
+Oct 27 00:11:42 web01 kernel: cache miss key=item:472
+Oct 27 00:11:45 db-primary worker[913]: timeout after 8733ms waiting for upstream
+Oct 27 00:11:45 db-primary sshd: timeout after 5504ms waiting for upstream
+Oct 27 00:11:46 db-primary sshd: session opened for user svc422
+Oct 27 00:11:47 web02 nginx: cache miss key=item:149
+Oct 27 00:11:49 web02 app[1842]: cache miss key=item:807
+Oct 27 00:11:49 web01 nginx: session opened for user svc909
+Oct 27 00:11:51 cache-1 app[1842]: cache miss key=item:880
+Oct 27 00:11:51 web01 cron: timeout after 7429ms waiting for upstream
+Oct 27 00:11:53 cache-1 worker[913]: session opened for user svc58
+Oct 27 00:11:56 cache-1 app[1842]: timeout after 8230ms waiting for upstream
+Oct 27 00:11:58 cache-1 nginx: cache miss key=item:279
+Oct 27 00:12:01 web01 nginx: session opened for user svc301
+Oct 27 00:12:03 db-primary kernel: timeout after 7250ms waiting for upstream
+Oct 27 00:12:03 web01 app[1842]: connection from 10.0.26.147 accepted
+Oct 27 00:12:04 web01 cron: session opened for user svc179
+Oct 27 00:12:05 db-primary kernel: GET /api/v2/items?id=50585 200 12ms
+Oct 27 00:12:05 web02 nginx: session opened for user svc402
+Oct 27 00:12:06 cache-1 cron: session opened for user svc522
+Oct 27 00:12:09 web02 kernel: cache miss key=item:460
+Oct 27 00:12:10 web01 sshd: job 61997 finished in 161.00s
+Oct 27 00:12:10 cache-1 cron: cache miss key=item:619
+Oct 27 00:12:13 db-primary kernel: job 79360 finished in 404.00s
+Oct 27 00:12:16 db-primary nginx: GET /api/v2/items?id=75795 200 234ms
+Oct 27 00:12:18 cache-1 app[1842]: job 48266 finished in 586.00s
+Oct 27 00:12:18 web01 app[1842]: connection from 10.0.247.185 accepted
+Oct 27 00:12:18 batch-7 app[1842]: job 6982 finished in 349.00s
+Oct 27 00:12:20 batch-7 cron: session opened for user svc620
+Oct 27 00:12:21 db-primary kernel: job 82721 finished in 856.00s
+Oct 27 00:12:23 batch-7 kernel: timeout after 362ms waiting for upstream
+Oct 27 00:12:24 db-primary nginx: timeout after 4081ms waiting for upstream
+Oct 27 00:12:26 web02 cron: timeout after 7081ms waiting for upstream
+Oct 27 00:12:29 web01 kernel: job 81674 finished in 501.00s
+Oct 27 00:12:31 cache-1 kernel: session opened for user svc611
+Oct 27 00:12:33 db-primary nginx: cache miss key=item:970
+Oct 27 00:12:35 db-primary cron: GET /api/v2/items?id=81798 200 325ms
+Oct 27 00:12:35 cache-1 kernel: timeout after 5524ms waiting for upstream
+Oct 27 00:12:37 batch-7 app[1842]: GET /api/v2/items?id=57323 200 451ms
+Oct 27 00:12:38 web02 nginx: session opened for user svc894
+Oct 27 00:12:40 cache-1 app[1842]: session opened for user svc192
+Oct 27 00:12:41 batch-7 cron: job 49650 finished in 177.00s
+Oct 27 00:12:42 web01 nginx: session opened for user svc486
+Oct 27 00:12:42 db-primary cron: connection from 10.0.165.206 accepted
+Oct 27 00:12:45 batch-7 nginx: job 35819 finished in 303.00s
+Oct 27 00:12:46 batch-7 cron: timeout after 2399ms waiting for upstream
+Oct 27 00:12:48 cache-1 sshd: job 57692 finished in 943.00s
+Oct 27 00:12:48 batch-7 cron: job 90015 finished in 410.00s
+Oct 27 00:12:51 batch-7 kernel: cache miss key=item:574
+Oct 27 00:12:52 batch-7 worker[913]: GET /api/v2/items?id=79435 200 255ms
+Oct 27 00:12:52 web02 cron: session opened for user svc872
+Oct 27 00:12:53 web02 worker[913]: GET /api/v2/items?id=83740 200 199ms
+Oct 27 00:12:55 batch-7 nginx: timeout after 5946ms waiting for upstream
+Oct 27 00:12:55 cache-1 kernel: timeout after 7859ms waiting for upstream
+Oct 27 00:12:58 cache-1 app[1842]: session opened for user svc743
+Oct 27 00:13:01 web01 kernel: session opened for user svc969
+Oct 27 00:13:03 cache-1 worker[913]: session opened for user svc834
+Oct 27 00:13:03 batch-7 kernel: cache miss key=item:144
+Oct 27 00:13:05 web01 kernel: GET /api/v2/items?id=95703 200 525ms
+Oct 27 00:13:05 web02 cron: timeout after 3021ms waiting for upstream
+Oct 27 00:13:08 web01 app[1842]: session opened for user svc798
+Oct 27 00:13:08 cache-1 app[1842]: connection from 10.0.196.250 accepted
+Oct 27 00:13:10 web02 kernel: session opened for user svc272
+Oct 27 00:13:10 batch-7 worker[913]: GET /api/v2/items?id=66694 200 75ms
+Oct 27 00:13:11 web01 nginx: GET /api/v2/items?id=46378 200 238ms
+Oct 27 00:13:12 db-primary worker[913]: session opened for user svc612
+Oct 27 00:13:13 web01 cron: GET /api/v2/items?id=28414 200 174ms
+Oct 27 00:13:14 db-primary kernel: timeout after 8167ms waiting for upstream
+Oct 27 00:13:15 db-primary app[1842]: GET /api/v2/items?id=89973 200 332ms
+Oct 27 00:13:18 batch-7 worker[913]: timeout after 3418ms waiting for upstream
+Oct 27 00:13:18 web01 sshd: cache miss key=item:243
+Oct 27 00:13:19 db-primary kernel: job 46396 finished in 892.00s
+Oct 27 00:13:22 cache-1 kernel: job 84893 finished in 817.00s
+Oct 27 00:13:22 web02 nginx: timeout after 3840ms waiting for upstream
+Oct 27 00:13:25 db-primary app[1842]: timeout after 1076ms waiting for upstream
+Oct 27 00:13:28 cache-1 worker[913]: GET /api/v2/items?id=87666 200 730ms
+Oct 27 00:13:29 db-primary app[1842]: cache miss key=item:238
+Oct 27 00:13:29 batch-7 app[1842]: job 49880 finished in 905.00s
+Oct 27 00:13:30 web01 sshd: session opened for user svc950
+Oct 27 00:13:32 web02 cron: job 51321 finished in 605.00s
+Oct 27 00:13:32 web01 kernel: job 52899 finished in 501.00s
+Oct 27 00:13:34 cache-1 cron: timeout after 838ms waiting for upstream
+Oct 27 00:13:36 db-primary cron: GET /api/v2/items?id=73690 200 269ms
+Oct 27 00:13:37 web02 nginx: job 93601 finished in 686.00s
+Oct 27 00:13:37 web01 kernel: session opened for user svc576
+Oct 27 00:13:39 web01 nginx: job 88711 finished in 528.00s
+Oct 27 00:13:42 cache-1 nginx: timeout after 7238ms waiting for upstream
+Oct 27 00:13:42 web02 sshd: GET /api/v2/items?id=69447 200 898ms
+Oct 27 00:13:45 batch-7 app[1842]: cache miss key=item:381
+Oct 27 00:13:45 web01 worker[913]: session opened for user svc727
+Oct 27 00:13:45 db-primary kernel: job 35768 finished in 242.00s
+Oct 27 00:13:46 cache-1 nginx: job 83853 finished in 572.00s
+Oct 27 00:13:46 web02 sshd: connection from 10.0.41.70 accepted
+Oct 27 00:13:46 batch-7 nginx: session opened for user svc881
+Oct 27 00:13:47 web02 sshd: job 36981 finished in 574.00s
+Oct 27 00:13:47 db-primary nginx: timeout after 8861ms waiting for upstream
+Oct 27 00:13:48 web01 sshd: GET /api/v2/items?id=65137 200 943ms
+Oct 27 00:13:48 web02 kernel: GET /api/v2/items?id=44328 200 989ms
+Oct 27 00:13:51 cache-1 kernel: GET /api/v2/items?id=81602 200 86ms
+Oct 27 00:13:53 db-primary app[1842]: session opened for user svc398
+Oct 27 00:13:55 batch-7 app[1842]: connection from 10.0.82.14 accepted
+Oct 27 00:13:56 web01 kernel: timeout after 4563ms waiting for upstream
+Oct 27 00:13:58 web02 worker[913]: timeout after 7877ms waiting for upstream
+Oct 27 00:14:01 web01 cron: timeout after 3576ms waiting for upstream
+Oct 27 00:14:04 db-primary cron: session opened for user svc768
+Oct 27 00:14:06 batch-7 cron: GET /api/v2/items?id=23162 200 569ms
+Oct 27 00:14:07 web01 cron: session opened for user svc931
+Oct 27 00:14:08 cache-1 app[1842]: cache miss key=item:592
+Oct 27 00:14:09 db-primary kernel: connection from 10.0.6.33 accepted
+Oct 27 00:14:11 db-primary worker[913]: job 40898 finished in 513.00s
+Oct 27 00:14:11 web02 worker[913]: GET /api/v2/items?id=98390 200 498ms
+Oct 27 00:14:13 db-primary worker[913]: cache miss key=item:929
+Oct 27 00:14:15 db-primary cron: job 47064 finished in 682.00s
+Oct 27 00:14:18 batch-7 sshd: connection from 10.0.189.235 accepted
+Oct 27 00:14:21 db-primary worker[913]: connection from 10.0.63.253 accepted
+Oct 27 00:14:22 cache-1 app[1842]: GET /api/v2/items?id=68082 200 838ms
+Oct 27 00:14:23 cache-1 nginx: session opened for user svc934
+Oct 27 00:14:25 cache-1 kernel: session opened for user svc93
+Oct 27 00:14:25 batch-7 sshd: timeout after 4982ms waiting for upstream
+Oct 27 00:14:26 cache-1 nginx: session opened for user svc15
+Oct 27 00:14:29 web01 cron: cache miss key=item:218
+Oct 27 00:14:30 web02 app[1842]: timeout after 3279ms waiting for upstream
+Oct 27 00:14:32 web01 cron: connection from 10.0.50.38 accepted
+Oct 27 00:14:34 web01 nginx: job 37672 finished in 957.00s
+Oct 27 00:14:36 web01 cron: GET /api/v2/items?id=88850 200 421ms
+Oct 27 00:14:39 web02 app[1842]: session opened for user svc589
+Oct 27 00:14:40 db-primary nginx: GET /api/v2/items?id=36659 200 714ms
+Oct 27 00:14:42 web01 cron: job 66320 finished in 520.00s
+Oct 27 00:14:45 cache-1 app[1842]: job 62927 finished in 264.00s
+Oct 27 00:14:45 web02 kernel: GET /api/v2/items?id=13722 200 852ms
+Oct 27 00:14:46 web01 cron: timeout after 7034ms waiting for upstream
+Oct 27 00:14:49 web02 app[1842]: connection from 10.0.67.70 accepted
+Oct 27 00:14:52 batch-7 sshd: timeout after 6602ms waiting for upstream
+Oct 27 00:14:53 db-primary nginx: GET /api/v2/items?id=69716 200 717ms
+Oct 27 00:14:53 db-primary nginx: session opened for user svc732
+Oct 27 00:14:54 cache-1 worker[913]: cache miss key=item:547
+Oct 27 00:14:56 db-primary worker[913]: job 19448 finished in 511.00s
+Oct 27 00:14:59 db-primary sshd: timeout after 2512ms waiting for upstream
+Oct 27 00:15:01 web01 sshd: cache miss key=item:434
+Oct 27 00:15:03 web01 kernel: GET /api/v2/items?id=52833 200 437ms
+Oct 27 00:15:03 db-primary sshd: timeout after 2468ms waiting for upstream
+Oct 27 00:15:04 batch-7 app[1842]: connection from 10.0.91.129 accepted
+Oct 27 00:15:06 db-primary sshd: connection from 10.0.134.11 accepted
+Oct 27 00:15:09 batch-7 app[1842]: job 57006 finished in 887.00s
+Oct 27 00:15:09 batch-7 nginx: session opened for user svc578
+Oct 27 00:15:11 db-primary kernel: connection from 10.0.231.153 accepted
+Oct 27 00:15:12 cache-1 nginx: session opened for user svc287
+Oct 27 00:15:15 batch-7 sshd: timeout after 2451ms waiting for upstream
+Oct 27 00:15:17 batch-7 app[1842]: cache miss key=item:352
+Oct 27 00:15:19 web01 nginx: session opened for user svc135
+Oct 27 00:15:20 batch-7 app[1842]: connection from 10.0.203.127 accepted
+Oct 27 00:15:20 cache-1 kernel: session opened for user svc219
+Oct 27 00:15:22 web01 sshd: timeout after 5843ms waiting for upstream
+Oct 27 00:15:25 batch-7 kernel: cache miss key=item:806
+Oct 27 00:15:27 cache-1 cron: timeout after 2020ms waiting for upstream
+Oct 27 00:15:29 db-primary nginx: job 52382 finished in 20.00s
+Oct 27 00:15:30 db-primary sshd: session opened for user svc539
+Oct 27 00:15:32 web01 cron: session opened for user svc895
+Oct 27 00:15:34 batch-7 kernel: connection from 10.0.15.99 accepted
+Oct 27 00:15:37 web01 sshd: job 4289 finished in 213.00s
+Oct 27 00:15:40 batch-7 nginx: cache miss key=item:701
+Oct 27 00:15:41 db-primary sshd: GET /api/v2/items?id=16160 200 510ms
+Oct 27 00:15:44 cache-1 worker[913]: job 16146 finished in 50.00s
+Oct 27 00:15:47 web02 cron: session opened for user svc6
+Oct 27 00:15:48 cache-1 worker[913]: cache miss key=item:672
+Oct 27 00:15:51 db-primary kernel: session opened for user svc587
+Oct 27 00:15:53 web02 sshd: timeout after 111ms waiting for upstream
+Oct 27 00:15:53 cache-1 app[1842]: session opened for user svc788
+Oct 27 00:15:53 db-primary app[1842]: job 26145 finished in 380.00s
+Oct 27 00:15:56 cache-1 app[1842]: GET /api/v2/items?id=47603 200 732ms
+Oct 27 00:15:57 db-primary kernel: connection from 10.0.136.75 accepted
+Oct 27 00:15:57 db-primary worker[913]: session opened for user svc699
+Oct 27 00:15:58 web02 app[1842]: GET /api/v2/items?id=63102 200 107ms
+Oct 27 00:15:59 web02 app[1842]: connection from 10.0.0.32 accepted
+Oct 27 00:16:02 cache-1 kernel: connection from 10.0.58.138 accepted
+Oct 27 00:16:02 web01 nginx: timeout after 7541ms waiting for upstream
+Oct 27 00:16:05 web01 sshd: cache miss key=item:48
+Oct 27 00:16:08 cache-1 app[1842]: connection from 10.0.224.111 accepted
+Oct 27 00:16:11 web01 cron: cache miss key=item:629
+Oct 27 00:16:14 web01 cron: connection from 10.0.4.174 accepted
+Oct 27 00:16:15 batch-7 cron: cache miss key=item:833
+Oct 27 00:16:17 db-primary nginx: session opened for user svc808
+Oct 27 00:16:18 web01 worker[913]: timeout after 2139ms waiting for upstream
+Oct 27 00:16:20 web02 cron: timeout after 8338ms waiting for upstream
+Oct 27 00:16:22 db-primary worker[913]: job 68544 finished in 876.00s
+Oct 27 00:16:23 cache-1 sshd: cache miss key=item:128
+Oct 27 00:16:24 db-primary sshd: timeout after 7148ms waiting for upstream
+Oct 27 00:16:27 web01 sshd: job 32252 finished in 863.00s
+Oct 27 00:16:27 web01 sshd: timeout after 206ms waiting for upstream
+Oct 27 00:16:27 cache-1 app[1842]: job 69860 finished in 209.00s
+Oct 27 00:16:27 web01 kernel: session opened for user svc541
+Oct 27 00:16:29 batch-7 worker[913]: timeout after 3204ms waiting for upstream
+Oct 27 00:16:32 web01 cron: session opened for user svc974
+Oct 27 00:16:33 batch-7 nginx: job 84204 finished in 444.00s
+Oct 27 00:16:33 db-primary nginx: timeout after 8823ms waiting for upstream
+Oct 27 00:16:36 batch-7 sshd: GET /api/v2/items?id=4613 200 454ms
+Oct 27 00:16:39 web02 sshd: session opened for user svc138
+Oct 27 00:16:39 web01 cron: connection from 10.0.1.237 accepted
+Oct 27 00:16:42 web02 cron: timeout after 4091ms waiting for upstream
+Oct 27 00:16:44 db-primary cron: cache miss key=item:193
+Oct 27 00:16:46 cache-1 sshd: job 59849 finished in 15.00s
+Oct 27 00:16:48 db-primary nginx: session opened for user svc292
+Oct 27 00:16:48 cache-1 worker[913]: cache miss key=item:640
+Oct 27 00:16:51 batch-7 kernel: session opened for user svc937
+Oct 27 00:16:51 db-primary nginx: job 71506 finished in 75.00s
+Oct 27 00:16:53 db-primary sshd: session opened for user svc552
+Oct 27 00:16:56 batch-7 sshd: timeout after 8561ms waiting for upstream
+Oct 27 00:16:56 cache-1 nginx: GET /api/v2/items?id=19105 200 366ms
+Oct 27 00:16:58 cache-1 worker[913]: timeout after 6437ms waiting for upstream
+Oct 27 00:16:59 web01 nginx: cache miss key=item:998
+Oct 27 00:17:02 db-primary sshd: job 8708 finished in 420.00s
+Oct 27 00:17:02 web01 nginx: job 66224 finished in 309.00s
+Oct 27 00:17:05 web01 nginx: timeout after 1013ms waiting for upstream
+Oct 27 00:17:06 db-primary worker[913]: session opened for user svc585
+Oct 27 00:17:07 cache-1 worker[913]: timeout after 6527ms waiting for upstream
+Oct 27 00:17:09 cache-1 nginx: cache miss key=item:391
+Oct 27 00:17:11 db-primary sshd: GET /api/v2/items?id=59399 200 284ms
+Oct 27 00:17:12 cache-1 worker[913]: connection from 10.0.176.114 accepted
+Oct 27 00:17:14 web02 app[1842]: timeout after 8011ms waiting for upstream
+Oct 27 00:17:14 web02 sshd: cache miss key=item:141
+Oct 27 00:17:15 web01 nginx: job 48623 finished in 145.00s
+Oct 27 00:17:18 web01 sshd: connection from 10.0.39.42 accepted
+Oct 27 00:17:21 web02 nginx: timeout after 3135ms waiting for upstream
+Oct 27 00:17:24 cache-1 worker[913]: timeout after 286ms waiting for upstream
+Oct 27 00:17:27 batch-7 worker[913]: job 54583 finished in 23.00s
+Oct 27 00:17:27 cache-1 sshd: connection from 10.0.58.197 accepted
+Oct 27 00:17:29 cache-1 nginx: timeout after 7834ms waiting for upstream
+Oct 27 00:17:31 web02 cron: job 12907 finished in 284.00s
+Oct 27 00:17:31 web01 app[1842]: job 50712 finished in 88.00s
+Oct 27 00:17:34 db-primary kernel: timeout after 6370ms waiting for upstream
+Oct 27 00:17:34 batch-7 worker[913]: GET /api/v2/items?id=98170 200 704ms
+Oct 27 00:17:36 batch-7 app[1842]: cache miss key=item:245
+Oct 27 00:17:38 web02 cron: cache miss key=item:523
+Oct 27 00:17:40 batch-7 nginx: job 32234 finished in 688.00s
+Oct 27 00:17:42 cache-1 nginx: cache miss key=item:672
+Oct 27 00:17:42 web02 cron: job 96957 finished in 707.00s
+Oct 27 00:17:43 web01 worker[913]: connection from 10.0.150.219 accepted
+Oct 27 00:17:43 cache-1 cron: connection from 10.0.92.213 accepted
+Oct 27 00:17:45 batch-7 worker[913]: timeout after 7284ms waiting for upstream
+Oct 27 00:17:46 cache-1 cron: timeout after 6798ms waiting for upstream
+Oct 27 00:17:48 batch-7 worker[913]: job 2298 finished in 860.00s
+Oct 27 00:17:48 db-primary cron: cache miss key=item:759
+Oct 27 00:17:51 cache-1 app[1842]: timeout after 143ms waiting for upstream
+Oct 27 00:17:51 web02 kernel: GET /api/v2/items?id=18853 200 442ms
+Oct 27 00:17:52 web02 nginx: timeout after 8101ms waiting for upstream
+Oct 27 00:17:53 batch-7 app[1842]: GET /api/v2/items?id=3693 200 155ms
+Oct 27 00:17:56 cache-1 sshd: job 31700 finished in 303.00s
+Oct 27 00:17:56 batch-7 kernel: timeout after 1244ms waiting for upstream
+Oct 27 00:17:59 batch-7 kernel: connection from 10.0.161.180 accepted
+Oct 27 00:17:59 cache-1 app[1842]: connection from 10.0.135.149 accepted
+Oct 27 00:18:01 cache-1 nginx: GET /api/v2/items?id=56224 200 958ms
+Oct 27 00:18:02 web01 cron: GET /api/v2/items?id=83518 200 879ms
+Oct 27 00:18:02 web01 kernel: session opened for user svc226
+Oct 27 00:18:03 web02 sshd: session opened for user svc938
+Oct 27 00:18:04 cache-1 sshd: session opened for user svc731
+Oct 27 00:18:04 web02 worker[913]: session opened for user svc16
+Oct 27 00:18:05 batch-7 cron: GET /api/v2/items?id=53707 200 668ms
+Oct 27 00:18:07 db-primary kernel: job 4238 finished in 686.00s
+Oct 27 00:18:10 cache-1 sshd: timeout after 5669ms waiting for upstream
+Oct 27 00:18:11 db-primary sshd: cache miss key=item:55
+Oct 27 00:18:13 batch-7 nginx: connection from 10.0.85.81 accepted
+Oct 27 00:18:16 batch-7 worker[913]: connection from 10.0.48.145 accepted
+Oct 27 00:18:18 cache-1 cron: connection from 10.0.175.20 accepted
+Oct 27 00:18:20 db-primary cron: cache miss key=item:673
+Oct 27 00:18:20 db-primary nginx: cache miss key=item:731
+Oct 27 00:18:23 web02 cron: timeout after 5543ms waiting for upstream
+Oct 27 00:18:25 web02 nginx: GET /api/v2/items?id=26895 200 565ms
+Oct 27 00:18:25 db-primary sshd: job 16435 finished in 992.00s
+Oct 27 00:18:28 web02 worker[913]: timeout after 2096ms waiting for upstream
+Oct 27 00:18:30 db-primary sshd: job 50357 finished in 353.00s
+Oct 27 00:18:31 web02 nginx: timeout after 5254ms waiting for upstream
+Oct 27 00:18:32 cache-1 cron: cache miss key=item:39
+Oct 27 00:18:33 db-primary kernel: job 87735 finished in 407.00s
+Oct 27 00:18:34 batch-7 cron: timeout after 5963ms waiting for upstream
+Oct 27 00:18:34 batch-7 kernel: session opened for user svc225
+Oct 27 00:18:35 cache-1 cron: job 41269 finished in 175.00s
+Oct 27 00:18:35 batch-7 sshd: cache miss key=item:860
+Oct 27 00:18:35 web01 nginx: job 37374 finished in 155.00s
+Oct 27 00:18:35 web02 sshd: connection from 10.0.40.219 accepted
+Oct 27 00:18:37 cache-1 worker[913]: cache miss key=item:265
+Oct 27 00:18:40 db-primary worker[913]: job 14272 finished in 623.00s
+Oct 27 00:18:43 web02 worker[913]: timeout after 2072ms waiting for upstream
+Oct 27 00:18:43 db-primary app[1842]: job 88437 finished in 460.00s
+Oct 27 00:18:46 web02 app[1842]: GET /api/v2/items?id=2797 200 664ms
+Oct 27 00:18:47 batch-7 sshd: job 8882 finished in 494.00s
+Oct 27 00:18:50 web01 kernel: job 3817 finished in 267.00s
+Oct 27 00:18:52 cache-1 kernel: GET /api/v2/items?id=5631 200 245ms
+Oct 27 00:18:53 batch-7 worker[913]: session opened for user svc765
+Oct 27 00:18:54 db-primary app[1842]: GET /api/v2/items?id=76543 200 541ms
+Oct 27 00:18:55 batch-7 sshd: cache miss key=item:721
+Oct 27 00:18:57 cache-1 app[1842]: cache miss key=item:559
+Oct 27 00:18:59 db-primary worker[913]: job 50386 finished in 27.00s
+Oct 27 00:19:02 batch-7 sshd: timeout after 3667ms waiting for upstream
+Oct 27 00:19:03 web02 kernel: GET /api/v2/items?id=53288 200 540ms
+Oct 27 00:19:05 batch-7 sshd: GET /api/v2/items?id=40398 200 707ms
+Oct 27 00:19:07 cache-1 app[1842]: job 60953 finished in 760.00s
+Oct 27 00:19:08 db-primary app[1842]: session opened for user svc794
+Oct 27 00:19:09 batch-7 sshd: GET /api/v2/items?id=59047 200 19ms
+Oct 27 00:19:12 batch-7 cron: GET /api/v2/items?id=72099 200 594ms
+Oct 27 00:19:13 web01 sshd: job 30326 finished in 234.00s
+Oct 27 00:19:13 db-primary nginx: session opened for user svc777
+Oct 27 00:19:14 db-primary sshd: session opened for user svc294
+Oct 27 00:19:16 web01 app[1842]: job 50444 finished in 317.00s
+Oct 27 00:19:17 db-primary app[1842]: connection from 10.0.195.81 accepted
+Oct 27 00:19:17 batch-7 kernel: job 53162 finished in 60.00s
+Oct 27 00:19:17 batch-7 app[1842]: cache miss key=item:431
+Oct 27 00:19:17 cache-1 kernel: job 57710 finished in 606.00s
+Oct 27 00:19:20 batch-7 worker[913]: cache miss key=item:687
+Oct 27 00:19:20 web02 worker[913]: session opened for user svc173
+Oct 27 00:19:21 batch-7 kernel: session opened for user svc101
+Oct 27 00:19:22 db-primary cron: session opened for user svc745
+Oct 27 00:19:23 cache-1 worker[913]: timeout after 7227ms waiting for upstream
+Oct 27 00:19:23 web01 kernel: GET /api/v2/items?id=3903 200 681ms
+Oct 27 00:19:26 web01 worker[913]: GET /api/v2/items?id=97472 200 70ms
+Oct 27 00:19:28 web02 kernel: cache miss key=item:972
+Oct 27 00:19:31 web02 kernel: session opened for user svc63
+Oct 27 00:19:31 web02 app[1842]: cache miss key=item:30
+Oct 27 00:19:31 web02 sshd: connection from 10.0.178.64 accepted
+Oct 27 00:19:32 web01 sshd: job 10668 finished in 362.00s
+Oct 27 00:19:35 web01 kernel: session opened for user svc537
+Oct 27 00:19:37 db-primary worker[913]: session opened for user svc562
+Oct 27 00:19:38 db-primary app[1842]: cache miss key=item:211
+Oct 27 00:19:40 web02 worker[913]: cache miss key=item:273
+Oct 27 00:19:41 batch-7 sshd: timeout after 2895ms waiting for upstream
+Oct 27 00:19:44 web02 sshd: connection from 10.0.85.108 accepted
+Oct 27 00:19:46 cache-1 sshd: timeout after 5238ms waiting for upstream
+Oct 27 00:19:49 db-primary nginx: connection from 10.0.231.163 accepted
+Oct 27 00:19:49 web02 kernel: job 2406 finished in 996.00s
+Oct 27 00:19:50 web02 kernel: connection from 10.0.173.111 accepted
+Oct 27 00:19:52 web01 app[1842]: session opened for user svc908
+Oct 27 00:19:53 web01 worker[913]: job 58188 finished in 382.00s
+Oct 27 00:19:56 web01 sshd: job 21743 finished in 108.00s
+Oct 27 00:19:59 db-primary cron: session opened for user svc956
+Oct 27 00:20:01 web01 sshd: session opened for user svc212
+Oct 27 00:20:02 cache-1 nginx: GET /api/v2/items?id=57515 200 673ms
+Oct 27 00:20:03 web01 cron: session opened for user svc726
+Oct 27 00:20:05 cache-1 worker[913]: cache miss key=item:937
+Oct 27 00:20:07 batch-7 app[1842]: session opened for user svc355
+Oct 27 00:20:07 batch-7 cron: job 83835 finished in 377.00s
+Oct 27 00:20:07 web01 worker[913]: session opened for user svc60
+Oct 27 00:20:09 web02 nginx: job 67588 finished in 794.00s
+Oct 27 00:20:09 batch-7 sshd: timeout after 6066ms waiting for upstream
+Oct 27 00:20:11 db-primary worker[913]: connection from 10.0.213.11 accepted
+Oct 27 00:20:11 db-primary cron: GET /api/v2/items?id=7206 200 495ms
+Oct 27 00:20:14 web02 worker[913]: session opened for user svc492
+Oct 27 00:20:17 web02 kernel: session opened for user svc26
+Oct 27 00:20:19 db-primary worker[913]: session opened for user svc930
+Oct 27 00:20:19 db-primary kernel: timeout after 787ms waiting for upstream
+Oct 27 00:20:20 web01 sshd: connection from 10.0.74.105 accepted
+Oct 27 00:20:22 cache-1 nginx: GET /api/v2/items?id=11024 200 656ms
+Oct 27 00:20:22 cache-1 kernel: cache miss key=item:918
+Oct 27 00:20:23 web02 kernel: job 86722 finished in 427.00s
+Oct 27 00:20:24 cache-1 nginx: cache miss key=item:566
+Oct 27 00:20:26 web01 kernel: session opened for user svc812
+Oct 27 00:20:27 web02 worker[913]: job 58471 finished in 818.00s
+Oct 27 00:20:29 web01 sshd: timeout after 3327ms waiting for upstream
+Oct 27 00:20:32 batch-7 worker[913]: timeout after 2030ms waiting for upstream
+Oct 27 00:20:33 batch-7 cron: cache miss key=item:459
+Oct 27 00:20:34 web02 sshd: job 10828 finished in 912.00s
+Oct 27 00:20:34 batch-7 nginx: connection from 10.0.66.237 accepted
+Oct 27 00:20:35 batch-7 sshd: session opened for user svc294
+Oct 27 00:20:37 web02 sshd: GET /api/v2/items?id=14870 200 509ms
+Oct 27 00:20:39 db-primary sshd: session opened for user svc645
+Oct 27 00:20:41 db-primary app[1842]: timeout after 2366ms waiting for upstream
+Oct 27 00:20:42 batch-7 cron: GET /api/v2/items?id=17578 200 766ms
+Oct 27 00:20:44 web02 app[1842]: cache miss key=item:87
+Oct 27 00:20:45 web01 worker[913]: cache miss key=item:231
+Oct 27 00:20:46 db-primary worker[913]: connection from 10.0.111.68 accepted
+Oct 27 00:20:47 db-primary cron: job 27675 finished in 991.00s
+Oct 27 00:20:47 web01 kernel: timeout after 3777ms waiting for upstream
+Oct 27 00:20:50 web01 kernel: GET /api/v2/items?id=84764 200 194ms
+Oct 27 00:20:51 db-primary cron: session opened for user svc810
+Oct 27 00:20:52 cache-1 sshd: session opened for user svc957
+Oct 27 00:20:55 cache-1 cron: connection from 10.0.252.5 accepted
+Oct 27 00:20:58 web01 nginx: timeout after 599ms waiting for upstream
+Oct 27 00:21:01 cache-1 cron: job 97695 finished in 517.00s
+Oct 27 00:21:04 db-primary sshd: timeout after 5467ms waiting for upstream
+Oct 27 00:21:06 web02 kernel: connection from 10.0.184.71 accepted
+Oct 27 00:21:09 db-primary nginx: cache miss key=item:916
+Oct 27 00:21:09 web02 app[1842]: cache miss key=item:390
+Oct 27 00:21:12 cache-1 app[1842]: session opened for user svc392
+Oct 27 00:21:15 web01 worker[913]: cache miss key=item:361
+Oct 27 00:21:15 web01 kernel: timeout after 3432ms waiting for upstream
+Oct 27 00:21:15 web02 cron: connection from 10.0.37.238 accepted
+Oct 27 00:21:16 web02 worker[913]: session opened for user svc132
+Oct 27 00:21:16 db-primary sshd: session opened for user svc331
+Oct 27 00:21:19 db-primary kernel: cache miss key=item:570
+Oct 27 00:21:20 web01 nginx: job 80149 finished in 816.00s
+Oct 27 00:21:23 cache-1 nginx: cache miss key=item:67
+Oct 27 00:21:25 cache-1 nginx: timeout after 570ms waiting for upstream
+Oct 27 00:21:27 batch-7 cron: GET /api/v2/items?id=18363 200 769ms
+Oct 27 00:21:30 web02 worker[913]: cache miss key=item:429
+Oct 27 00:21:31 web02 kernel: cache miss key=item:930
+Oct 27 00:21:31 db-primary nginx: cache miss key=item:892
+Oct 27 00:21:32 web01 sshd: cache miss key=item:480
+Oct 27 00:21:34 db-primary sshd: session opened for user svc176
+Oct 27 00:21:34 web02 app[1842]: connection from 10.0.2.215 accepted
+Oct 27 00:21:34 web01 sshd: GET /api/v2/items?id=5177 200 103ms
+Oct 27 00:21:36 cache-1 cron: timeout after 3249ms waiting for upstream
+Oct 27 00:21:36 batch-7 cron: cache miss key=item:305
+Oct 27 00:21:37 web02 kernel: timeout after 2583ms waiting for upstream
+Oct 27 00:21:40 cache-1 sshd: GET /api/v2/items?id=41648 200 509ms
+Oct 27 00:21:41 batch-7 kernel: connection from 10.0.34.9 accepted
+Oct 27 00:21:44 cache-1 sshd: job 96338 finished in 977.00s
+Oct 27 00:21:46 cache-1 sshd: job 99764 finished in 151.00s
+Oct 27 00:21:46 db-primary nginx: connection from 10.0.102.80 accepted
+Oct 27 00:21:49 web01 app[1842]: connection from 10.0.193.33 accepted
+Oct 27 00:21:49 cache-1 worker[913]: GET /api/v2/items?id=8293 200 862ms
+Oct 27 00:21:51 web01 kernel: cache miss key=item:101
+Oct 27 00:21:53 batch-7 kernel: timeout after 492ms waiting for upstream
+Oct 27 00:21:54 web01 worker[913]: GET /api/v2/items?id=90731 200 126ms
+Oct 27 00:21:56 db-primary nginx: connection from 10.0.167.209 accepted
+Oct 27 00:21:56 cache-1 cron: job 76288 finished in 396.00s
+Oct 27 00:21:57 batch-7 worker[913]: cache miss key=item:474
+Oct 27 00:21:59 web02 sshd: job 31639 finished in 664.00s
+Oct 27 00:22:00 db-primary kernel: session opened for user svc88
+Oct 27 00:22:01 db-primary nginx: GET /api/v2/items?id=95206 200 538ms
+Oct 27 00:22:02 batch-7 nginx: timeout after 4198ms waiting for upstream
+Oct 27 00:22:03 web01 cron: timeout after 3399ms waiting for upstream
+Oct 27 00:22:03 web01 sshd: connection from 10.0.20.178 accepted
+Oct 27 00:22:06 web02 worker[913]: job 86350 finished in 894.00s
+Oct 27 00:22:09 cache-1 nginx: timeout after 4196ms waiting for upstream
+Oct 27 00:22:09 web01 kernel: session opened for user svc818
+Oct 27 00:22:11 batch-7 worker[913]: timeout after 8682ms waiting for upstream
+Oct 27 00:22:13 cache-1 kernel: connection from 10.0.98.180 accepted
+Oct 27 00:22:13 batch-7 kernel: GET /api/v2/items?id=25585 200 766ms
+Oct 27 00:22:14 cache-1 sshd: cache miss key=item:663
+Oct 27 00:22:14 web02 cron: session opened for user svc857
+Oct 27 00:22:17 db-primary cron: GET /api/v2/items?id=43174 200 308ms
+Oct 27 00:22:20 cache-1 nginx: timeout after 8566ms waiting for upstream
+Oct 27 00:22:23 batch-7 app[1842]: cache miss key=item:497
+Oct 27 00:22:23 db-primary app[1842]: timeout after 5721ms waiting for upstream
+Oct 27 00:22:23 cache-1 app[1842]: GET /api/v2/items?id=25932 200 453ms
+Oct 27 00:22:25 db-primary cron: cache miss key=item:451
+Oct 27 00:22:25 cache-1 kernel: GET /api/v2/items?id=9159 200 988ms
+Oct 27 00:22:27 cache-1 cron: GET /api/v2/items?id=24979 200 207ms
+Oct 27 00:22:30 batch-7 app[1842]: timeout after 6338ms waiting for upstream
+Oct 27 00:22:31 web01 app[1842]: GET /api/v2/items?id=4914 200 451ms
+Oct 27 00:22:31 cache-1 worker[913]: job 67946 finished in 238.00s
+Oct 27 00:22:31 web01 app[1842]: GET /api/v2/items?id=70498 200 159ms
+Oct 27 00:22:32 cache-1 kernel: GET /api/v2/items?id=90643 200 65ms
+Oct 27 00:22:35 db-primary app[1842]: cache miss key=item:411
+Oct 27 00:22:37 batch-7 nginx: GET /api/v2/items?id=70419 200 721ms
+Oct 27 00:22:37 batch-7 kernel: connection from 10.0.167.212 accepted
+Oct 27 00:22:39 batch-7 sshd: timeout after 1491ms waiting for upstream
+Oct 27 00:22:42 web02 worker[913]: cache miss key=item:347
+Oct 27 00:22:42 web01 nginx: timeout after 1628ms waiting for upstream
+Oct 27 00:22:42 cache-1 kernel: GET /api/v2/items?id=36222 200 625ms
+Oct 27 00:22:44 cache-1 app[1842]: session opened for user svc52
+Oct 27 00:22:44 cache-1 app[1842]: session opened for user svc968
+Oct 27 00:22:47 db-primary app[1842]: job 71837 finished in 718.00s
+Oct 27 00:22:49 web02 nginx: job 91433 finished in 147.00s
+Oct 27 00:22:52 cache-1 kernel: cache miss key=item:524
+Oct 27 00:22:55 cache-1 sshd: connection from 10.0.247.87 accepted
+Oct 27 00:22:55 db-primary sshd: connection from 10.0.29.174 accepted
+Oct 27 00:22:57 web02 kernel: job 36194 finished in 471.00s
+Oct 27 00:22:59 web02 worker[913]: GET /api/v2/items?id=11519 200 530ms
+Oct 27 00:23:02 web01 worker[913]: timeout after 8184ms waiting for upstream
+Oct 27 00:23:03 cache-1 worker[913]: cache miss key=item:445
+Oct 27 00:23:06 cache-1 app[1842]: GET /api/v2/items?id=53932 200 735ms
+Oct 27 00:23:07 db-primary sshd: job 61324 finished in 466.00s
+Oct 27 00:23:08 db-primary cron: connection from 10.0.38.108 accepted
+Oct 27 00:23:11 cache-1 kernel: GET /api/v2/items?id=36036 200 532ms
+Oct 27 00:23:11 web02 sshd: job 22749 finished in 201.00s
+Oct 27 00:23:13 batch-7 app[1842]: connection from 10.0.137.217 accepted
+Oct 27 00:23:15 db-primary app[1842]: cache miss key=item:7
+Oct 27 00:23:18 web02 app[1842]: cache miss key=item:403
+Oct 27 00:23:19 web02 nginx: connection from 10.0.178.113 accepted
+Oct 27 00:23:20 web02 cron: job 45162 finished in 319.00s
+Oct 27 00:23:20 web01 app[1842]: connection from 10.0.105.198 accepted
+Oct 27 00:23:23 cache-1 cron: job 48307 finished in 360.00s
+Oct 27 00:23:24 batch-7 sshd: GET /api/v2/items?id=68653 200 756ms
+Oct 27 00:23:25 web01 app[1842]: GET /api/v2/items?id=55066 200 992ms
+Oct 27 00:23:26 batch-7 worker[913]: job 42215 finished in 107.00s
+Oct 27 00:23:28 batch-7 worker[913]: session opened for user svc798
+Oct 27 00:23:31 batch-7 app[1842]: connection from 10.0.233.162 accepted
+Oct 27 00:23:34 cache-1 cron: timeout after 6530ms waiting for upstream
+Oct 27 00:23:36 web01 cron: timeout after 1883ms waiting for upstream
+Oct 27 00:23:37 cache-1 sshd: session opened for user svc189
+Oct 27 00:23:37 batch-7 cron: cache miss key=item:647
+Oct 27 00:23:37 batch-7 worker[913]: cache miss key=item:913
+Oct 27 00:23:39 db-primary nginx: job 25968 finished in 878.00s
+Oct 27 00:23:39 db-primary kernel: job 24554 finished in 422.00s
+Oct 27 00:23:40 web02 cron: timeout after 4988ms waiting for upstream
+Oct 27 00:23:40 cache-1 worker[913]: session opened for user svc990
+Oct 27 00:23:42 cache-1 kernel: job 78639 finished in 362.00s
+Oct 27 00:23:42 db-primary worker[913]: cache miss key=item:442
+Oct 27 00:23:45 db-primary kernel: connection from 10.0.205.189 accepted
+Oct 27 00:23:45 cache-1 worker[913]: session opened for user svc936
+Oct 27 00:23:46 batch-7 kernel: session opened for user svc405
+Oct 27 00:23:46 db-primary worker[913]: job 71007 finished in 741.00s
+Oct 27 00:23:49 batch-7 cron: connection from 10.0.3.46 accepted
+Oct 27 00:23:51 web02 kernel: session opened for user svc794
+Oct 27 00:23:54 db-primary worker[913]: GET /api/v2/items?id=44332 200 921ms
+Oct 27 00:23:55 web01 app[1842]: connection from 10.0.148.209 accepted
+Oct 27 00:23:57 db-primary sshd: session opened for user svc219
+Oct 27 00:23:58 web01 nginx: GET /api/v2/items?id=84900 200 984ms
+Oct 27 00:23:59 batch-7 sshd: cache miss key=item:525
+Oct 27 00:24:02 batch-7 kernel: session opened for user svc325
+Oct 27 00:24:05 batch-7 worker[913]: connection from 10.0.40.118 accepted
+Oct 27 00:24:07 batch-7 kernel: cache miss key=item:376
+Oct 27 00:24:10 web01 cron: GET /api/v2/items?id=28695 200 85ms
+Oct 27 00:24:11 web02 nginx: session opened for user svc412
+Oct 27 00:24:11 web02 nginx: job 45697 finished in 430.00s
+Oct 27 00:24:13 web02 kernel: cache miss key=item:775
+Oct 27 00:24:14 web02 kernel: timeout after 5562ms waiting for upstream
+Oct 27 00:24:16 web01 cron: connection from 10.0.241.45 accepted
+Oct 27 00:24:19 cache-1 sshd: job 91630 finished in 615.00s
+Oct 27 00:24:21 db-primary worker[913]: cache miss key=item:660
+Oct 27 00:24:23 web02 app[1842]: timeout after 3279ms waiting for upstream
+Oct 27 00:24:26 db-primary app[1842]: GET /api/v2/items?id=65003 200 90ms
+Oct 27 00:24:28 web01 app[1842]: timeout after 3280ms waiting for upstream
+Oct 27 00:24:29 cache-1 worker[913]: cache miss key=item:398
+Oct 27 00:24:32 web01 worker[913]: GET /api/v2/items?id=54642 200 581ms
+Oct 27 00:24:33 web02 app[1842]: GET /api/v2/items?id=44208 200 571ms
+Oct 27 00:24:33 web01 sshd: connection from 10.0.50.54 accepted
+Oct 27 00:24:36 cache-1 nginx: GET /api/v2/items?id=82425 200 742ms
+Oct 27 00:24:37 web01 app[1842]: job 78913 finished in 188.00s
+Oct 27 00:24:40 db-primary app[1842]: GET /api/v2/items?id=63381 200 764ms
+Oct 27 00:24:42 web01 kernel: timeout after 6538ms waiting for upstream
+Oct 27 00:24:45 db-primary app[1842]: session opened for user svc887
+Oct 27 00:24:45 cache-1 worker[913]: cache miss key=item:77
+Oct 27 00:24:48 web02 kernel: session opened for user svc695
+Oct 27 00:24:48 cache-1 cron: session opened for user svc125
+Oct 27 00:24:49 web01 nginx: cache miss key=item:212
+Oct 27 00:24:52 db-primary nginx: timeout after 7906ms waiting for upstream
+Oct 27 00:24:52 web02 app[1842]: GET /api/v2/items?id=63895 200 27ms
+Oct 27 00:24:52 web02 cron: cache miss key=item:493
+Oct 27 00:24:53 batch-7 worker[913]: job 87771 finished in 560.00s
+Oct 27 00:24:55 cache-1 worker[913]: job 80503 finished in 41.00s
+Oct 27 00:24:57 db-primary nginx: cache miss key=item:177
+Oct 27 00:24:59 web02 app[1842]: timeout after 4259ms waiting for upstream
+Oct 27 00:25:01 cache-1 kernel: GET /api/v2/items?id=5027 200 998ms
+Oct 27 00:25:01 db-primary worker[913]: session opened for user svc275
+Oct 27 00:25:03 cache-1 worker[913]: timeout after 643ms waiting for upstream
+Oct 27 00:25:05 cache-1 sshd: session opened for user svc741
+Oct 27 00:25:05 cache-1 cron: session opened for user svc444
+Oct 27 00:25:06 batch-7 sshd: cache miss key=item:540
+Oct 27 00:25:08 db-primary cron: timeout after 213ms waiting for upstream
+Oct 27 00:25:09 web02 cron: timeout after 6713ms waiting for upstream
+Oct 27 00:25:10 web01 cron: cache miss key=item:127
+Oct 27 00:25:13 web01 nginx: connection from 10.0.124.80 accepted
+Oct 27 00:25:14 batch-7 kernel: job 53798 finished in 287.00s
+Oct 27 00:25:15 web01 worker[913]: job 26683 finished in 722.00s
+Oct 27 00:25:18 cache-1 app[1842]: session opened for user svc287
+Oct 27 00:25:20 batch-7 nginx: cache miss key=item:467
+Oct 27 00:25:20 web02 nginx: connection from 10.0.115.139 accepted
+Oct 27 00:25:23 db-primary app[1842]: connection from 10.0.97.30 accepted
+Oct 27 00:25:24 db-primary worker[913]: session opened for user svc850
+Oct 27 00:25:26 web01 nginx: GET /api/v2/items?id=97823 200 422ms
+Oct 27 00:25:28 web01 kernel: cache miss key=item:640
+Oct 27 00:25:28 cache-1 worker[913]: GET /api/v2/items?id=24220 200 144ms
+Oct 27 00:25:30 web01 cron: cache miss key=item:776
+Oct 27 00:25:32 web01 sshd: timeout after 665ms waiting for upstream
+Oct 27 00:25:35 web01 sshd: session opened for user svc120
+Oct 27 00:25:35 web02 sshd: job 4550 finished in 106.00s
+Oct 27 00:25:35 cache-1 nginx: cache miss key=item:598
+Oct 27 00:25:35 web02 app[1842]: job 49421 finished in 926.00s
+Oct 27 00:25:35 batch-7 app[1842]: session opened for user svc906
+Oct 27 00:25:38 db-primary sshd: session opened for user svc314
+Oct 27 00:25:41 db-primary nginx: connection from 10.0.134.229 accepted
+Oct 27 00:25:44 web01 app[1842]: job 99743 finished in 121.00s
+Oct 27 00:25:44 batch-7 sshd: timeout after 2472ms waiting for upstream
+Oct 27 00:25:46 web02 worker[913]: job 74902 finished in 383.00s
+Oct 27 00:25:47 batch-7 app[1842]: job 95665 finished in 342.00s
+Oct 27 00:25:47 db-primary nginx: session opened for user svc218
+Oct 27 00:25:47 web01 app[1842]: cache miss key=item:551
+Oct 27 00:25:48 web02 worker[913]: connection from 10.0.49.156 accepted
+Oct 27 00:25:48 db-primary app[1842]: cache miss key=item:74
+Oct 27 00:25:51 web02 kernel: job 25178 finished in 629.00s
+Oct 27 00:25:53 web02 nginx: job 67964 finished in 566.00s
+Oct 27 00:25:55 web02 kernel: GET /api/v2/items?id=73894 200 672ms
+Oct 27 00:25:56 db-primary cron: timeout after 7917ms waiting for upstream
+Oct 27 00:25:59 cache-1 kernel: job 72027 finished in 155.00s
+Oct 27 00:26:00 web01 cron: connection from 10.0.34.231 accepted
+Oct 27 00:26:03 web02 cron: timeout after 235ms waiting for upstream
+Oct 27 00:26:06 web02 nginx: GET /api/v2/items?id=7142 200 592ms
+Oct 27 00:26:07 batch-7 nginx: cache miss key=item:292
+Oct 27 00:26:10 web01 worker[913]: GET /api/v2/items?id=70506 200 788ms
+Oct 27 00:26:13 batch-7 worker[913]: cache miss key=item:272
+Oct 27 00:26:14 web02 app[1842]: job 83179 finished in 23.00s
+Oct 27 00:26:14 db-primary sshd: GET /api/v2/items?id=3377 200 559ms
+Oct 27 00:26:15 web01 sshd: GET /api/v2/items?id=88200 200 529ms
+Oct 27 00:26:15 batch-7 kernel: job 34904 finished in 896.00s
+Oct 27 00:26:18 cache-1 cron: job 97469 finished in 460.00s
+Oct 27 00:26:20 web02 nginx: connection from 10.0.198.131 accepted
+Oct 27 00:26:22 web02 cron: cache miss key=item:624
+Oct 27 00:26:22 cache-1 nginx: connection from 10.0.4.10 accepted
+Oct 27 00:26:23 batch-7 sshd: job 68171 finished in 411.00s
+Oct 27 00:26:26 web01 cron: GET /api/v2/items?id=60527 200 663ms
+Oct 27 00:26:27 cache-1 nginx: GET /api/v2/items?id=58403 200 921ms
+Oct 27 00:26:27 cache-1 sshd: timeout after 3309ms waiting for upstream
+Oct 27 00:26:30 cache-1 cron: cache miss key=item:648
+Oct 27 00:26:32 web01 nginx: job 2484 finished in 536.00s
+Oct 27 00:26:34 web02 sshd: connection from 10.0.78.135 accepted
+Oct 27 00:26:35 cache-1 nginx: session opened for user svc378
+Oct 27 00:26:35 web01 app[1842]: GET /api/v2/items?id=6572 200 954ms
+Oct 27 00:26:38 web02 cron: job 15110 finished in 305.00s
+Oct 27 00:26:38 web02 cron: cache miss key=item:105
+Oct 27 00:26:38 web02 worker[913]: timeout after 7161ms waiting for upstream
+Oct 27 00:26:40 web02 sshd: timeout after 1539ms waiting for upstream
+Oct 27 00:26:42 web02 app[1842]: cache miss key=item:838
+Oct 27 00:26:42 cache-1 cron: job 97490 finished in 823.00s
+Oct 27 00:26:42 db-primary cron: connection from 10.0.171.154 accepted
+Oct 27 00:26:42 web01 kernel: session opened for user svc745
+Oct 27 00:26:43 web02 worker[913]: cache miss key=item:979
+Oct 27 00:26:44 db-primary worker[913]: connection from 10.0.98.136 accepted
+Oct 27 00:26:45 web01 cron: session opened for user svc949
+Oct 27 00:26:46 db-primary kernel: connection from 10.0.187.12 accepted
+Oct 27 00:26:46 cache-1 nginx: cache miss key=item:554
+Oct 27 00:26:46 web02 cron: cache miss key=item:7
+Oct 27 00:26:48 cache-1 app[1842]: cache miss key=item:871
+Oct 27 00:26:51 batch-7 kernel: session opened for user svc995
+Oct 27 00:26:52 cache-1 worker[913]: GET /api/v2/items?id=46115 200 205ms
+Oct 27 00:26:55 db-primary nginx: job 63111 finished in 730.00s
+Oct 27 00:26:56 web02 cron: job 48256 finished in 943.00s
+Oct 27 00:26:59 batch-7 app[1842]: timeout after 5911ms waiting for upstream
+Oct 27 00:27:00 batch-7 worker[913]: timeout after 4768ms waiting for upstream
+Oct 27 00:27:03 web01 nginx: job 91981 finished in 432.00s
+Oct 27 00:27:06 web02 app[1842]: timeout after 5185ms waiting for upstream
+Oct 27 00:27:09 batch-7 worker[913]: job 36009 finished in 281.00s
+Oct 27 00:27:09 cache-1 cron: session opened for user svc324
+Oct 27 00:27:11 batch-7 app[1842]: cache miss key=item:789
+Oct 27 00:27:11 db-primary kernel: cache miss key=item:44
+Oct 27 00:27:11 cache-1 sshd: connection from 10.0.133.121 accepted
+Oct 27 00:27:11 db-primary nginx: cache miss key=item:112
+Oct 27 00:27:11 web02 worker[913]: GET /api/v2/items?id=74434 200 778ms
+Oct 27 00:27:13 batch-7 cron: job 54989 finished in 332.00s
+Oct 27 00:27:16 web02 nginx: GET /api/v2/items?id=76313 200 144ms
+Oct 27 00:27:18 cache-1 cron: cache miss key=item:326
+Oct 27 00:27:19 batch-7 cron: cache miss key=item:376
+Oct 27 00:27:19 cache-1 worker[913]: job 34712 finished in 807.00s
+Oct 27 00:27:19 cache-1 nginx: GET /api/v2/items?id=55400 200 49ms
+Oct 27 00:27:20 batch-7 app[1842]: session opened for user svc161
+Oct 27 00:27:23 db-primary cron: connection from 10.0.221.20 accepted
+Oct 27 00:27:24 web01 app[1842]: timeout after 130ms waiting for upstream
+Oct 27 00:27:26 db-primary sshd: cache miss key=item:178
+Oct 27 00:27:28 cache-1 nginx: session opened for user svc985
+Oct 27 00:27:28 web01 worker[913]: timeout after 5776ms waiting for upstream
+Oct 27 00:27:30 db-primary app[1842]: session opened for user svc770
+Oct 27 00:27:30 batch-7 app[1842]: cache miss key=item:153
+Oct 27 00:27:33 web01 kernel: timeout after 3474ms waiting for upstream
+Oct 27 00:27:33 batch-7 sshd: cache miss key=item:521
+Oct 27 00:27:36 batch-7 kernel: connection from 10.0.51.128 accepted
+Oct 27 00:27:38 batch-7 worker[913]: timeout after 4715ms waiting for upstream
+Oct 27 00:27:38 db-primary sshd: job 74566 finished in 644.00s
+Oct 27 00:27:40 db-primary kernel: timeout after 292ms waiting for upstream
+Oct 27 00:27:40 db-primary cron: job 71513 finished in 556.00s
+Oct 27 00:27:43 cache-1 app[1842]: cache miss key=item:680
+Oct 27 00:27:43 db-primary cron: session opened for user svc83
+Oct 27 00:27:44 batch-7 cron: cache miss key=item:912
+Oct 27 00:27:44 batch-7 nginx: connection from 10.0.254.182 accepted
+Oct 27 00:27:44 web02 app[1842]: session opened for user svc669
+Oct 27 00:27:44 cache-1 kernel: timeout after 5314ms waiting for upstream
+Oct 27 00:27:44 web01 app[1842]: session opened for user svc407
+Oct 27 00:27:44 batch-7 kernel: job 69397 finished in 502.00s
+Oct 27 00:27:45 cache-1 cron: cache miss key=item:234
+Oct 27 00:27:45 cache-1 cron: session opened for user svc19
+Oct 27 00:27:48 web02 worker[913]: session opened for user svc602
+Oct 27 00:27:50 web01 nginx: GET /api/v2/items?id=67668 200 479ms
+Oct 27 00:27:51 db-primary sshd: cache miss key=item:31
+Oct 27 00:27:51 web01 cron: connection from 10.0.168.121 accepted
+Oct 27 00:27:51 web02 kernel: timeout after 7334ms waiting for upstream
+Oct 27 00:27:51 web01 kernel: cache miss key=item:342
+Oct 27 00:27:53 web01 kernel: session opened for user svc240
+Oct 27 00:27:56 batch-7 worker[913]: job 17959 finished in 374.00s
+Oct 27 00:27:59 batch-7 nginx: job 47894 finished in 28.00s
+Oct 27 00:27:59 cache-1 cron: cache miss key=item:770
+Oct 27 00:27:59 db-primary sshd: timeout after 5481ms waiting for upstream
+Oct 27 00:28:01 web02 sshd: session opened for user svc693
+Oct 27 00:28:03 batch-7 app[1842]: GET /api/v2/items?id=73535 200 121ms
+Oct 27 00:28:04 web02 kernel: connection from 10.0.246.51 accepted
+Oct 27 00:28:04 cache-1 nginx: GET /api/v2/items?id=97479 200 658ms
+Oct 27 00:28:07 web01 worker[913]: job 70879 finished in 474.00s
+Oct 27 00:28:07 batch-7 app[1842]: GET /api/v2/items?id=70290 200 240ms
+Oct 27 00:28:08 cache-1 cron: session opened for user svc607
+Oct 27 00:28:08 db-primary nginx: GET /api/v2/items?id=66345 200 389ms
+Oct 27 00:28:08 batch-7 cron: connection from 10.0.241.109 accepted
+Oct 27 00:28:09 batch-7 kernel: cache miss key=item:709
+Oct 27 00:28:12 batch-7 nginx: GET /api/v2/items?id=85648 200 612ms
+Oct 27 00:28:13 web01 app[1842]: session opened for user svc605
+Oct 27 00:28:14 web02 worker[913]: GET /api/v2/items?id=1589 200 101ms
+Oct 27 00:28:16 cache-1 cron: cache miss key=item:468
+Oct 27 00:28:18 cache-1 kernel: cache miss key=item:205
+Oct 27 00:28:20 db-primary kernel: connection from 10.0.28.96 accepted
+Oct 27 00:28:22 db-primary app[1842]: session opened for user svc837
+Oct 27 00:28:25 batch-7 kernel: session opened for user svc329
+Oct 27 00:28:25 web02 sshd: cache miss key=item:947
+Oct 27 00:28:28 cache-1 kernel: GET /api/v2/items?id=50848 200 190ms
+Oct 27 00:28:31 db-primary kernel: job 32763 finished in 777.00s
+Oct 27 00:28:31 db-primary sshd: connection from 10.0.85.37 accepted
+Oct 27 00:28:33 web02 nginx: session opened for user svc611
+Oct 27 00:28:35 web02 worker[913]: cache miss key=item:99
+Oct 27 00:28:36 db-primary worker[913]: job 15123 finished in 440.00s
+Oct 27 00:28:38 web02 cron: timeout after 3648ms waiting for upstream
+Oct 27 00:28:41 batch-7 cron: session opened for user svc534
+Oct 27 00:28:44 db-primary kernel: GET /api/v2/items?id=50145 200 373ms
+Oct 27 00:28:45 db-primary kernel: job 95814 finished in 301.00s
+Oct 27 00:28:48 web02 kernel: cache miss key=item:473
+Oct 27 00:28:49 web01 nginx: GET /api/v2/items?id=9016 200 888ms
+Oct 27 00:28:51 web02 nginx: cache miss key=item:584
+Oct 27 00:28:52 batch-7 app[1842]: timeout after 5778ms waiting for upstream
+Oct 27 00:28:54 batch-7 worker[913]: job 92484 finished in 356.00s
+Oct 27 00:28:54 batch-7 cron: cache miss key=item:648
+Oct 27 00:28:54 web02 sshd: timeout after 8404ms waiting for upstream
+Oct 27 00:28:54 web01 sshd: cache miss key=item:624
+Oct 27 00:28:57 cache-1 worker[913]: session opened for user svc433
+Oct 27 00:28:57 web02 kernel: session opened for user svc984
+Oct 27 00:28:59 web02 nginx: cache miss key=item:493
+Oct 27 00:29:01 cache-1 sshd: cache miss key=item:630
+Oct 27 00:29:01 web01 kernel: job 14050 finished in 445.00s
+Oct 27 00:29:01 db-primary nginx: job 28943 finished in 691.00s
+Oct 27 00:29:03 web01 app[1842]: connection from 10.0.153.113 accepted
+Oct 27 00:29:04 web01 kernel: cache miss key=item:76
+Oct 27 00:29:07 web02 cron: timeout after 7362ms waiting for upstream
+Oct 27 00:29:09 web01 nginx: job 46632 finished in 258.00s
+Oct 27 00:29:11 cache-1 worker[913]: connection from 10.0.231.118 accepted
+Oct 27 00:29:11 db-primary kernel: session opened for user svc259
+Oct 27 00:29:12 web02 nginx: timeout after 7686ms waiting for upstream
+Oct 27 00:29:12 web01 nginx: job 74489 finished in 66.00s
+Oct 27 00:29:15 cache-1 app[1842]: job 92907 finished in 395.00s
+Oct 27 00:29:17 db-primary kernel: connection from 10.0.85.49 accepted
+Oct 27 00:29:19 db-primary app[1842]: GET /api/v2/items?id=82713 200 232ms
+Oct 27 00:29:21 web01 nginx: session opened for user svc945
+Oct 27 00:29:23 web01 app[1842]: session opened for user svc888
+Oct 27 00:29:25 web02 cron: cache miss key=item:690
+Oct 27 00:29:28 web01 kernel: connection from 10.0.81.250 accepted
+Oct 27 00:29:31 batch-7 worker[913]: connection from 10.0.181.46 accepted
+Oct 27 00:29:33 batch-7 kernel: connection from 10.0.57.104 accepted
+Oct 27 00:29:34 cache-1 kernel: connection from 10.0.184.50 accepted
+Oct 27 00:29:37 cache-1 app[1842]: GET /api/v2/items?id=38885 200 445ms
+Oct 27 00:29:40 batch-7 nginx: timeout after 4342ms waiting for upstream
+Oct 27 00:29:43 cache-1 cron: session opened for user svc475
+Oct 27 00:29:44 batch-7 worker[913]: session opened for user svc608
+Oct 27 00:29:46 web02 kernel: connection from 10.0.18.5 accepted
+Oct 27 00:29:48 batch-7 cron: GET /api/v2/items?id=78437 200 805ms
+Oct 27 00:29:48 db-primary nginx: job 63424 finished in 760.00s
+Oct 27 00:29:50 web02 sshd: cache miss key=item:798
+Oct 27 00:29:52 web01 worker[913]: connection from 10.0.83.64 accepted
+Oct 27 00:29:55 web02 sshd: connection from 10.0.23.28 accepted
+Oct 27 00:29:57 web02 nginx: cache miss key=item:961
+Oct 27 00:29:57 web01 kernel: timeout after 6668ms waiting for upstream
+Oct 27 00:29:57 db-primary sshd: cache miss key=item:103
+Oct 27 00:30:00 db-primary kernel: cache miss key=item:702
+Oct 27 00:30:03 web02 sshd: connection from 10.0.137.133 accepted
+Oct 27 00:30:05 web01 worker[913]: timeout after 6272ms waiting for upstream
+Oct 27 00:30:06 batch-7 app[1842]: timeout after 8191ms waiting for upstream
+Oct 27 00:30:09 web02 kernel: job 18705 finished in 410.00s
+Oct 27 00:30:12 cache-1 cron: connection from 10.0.35.245 accepted
+Oct 27 00:30:15 cache-1 worker[913]: cache miss key=item:4
+Oct 27 00:30:17 web02 cron: session opened for user svc163
+Oct 27 00:30:18 web02 nginx: timeout after 1178ms waiting for upstream
+Oct 27 00:30:19 db-primary nginx: cache miss key=item:976
+Oct 27 00:30:20 db-primary worker[913]: cache miss key=item:45
+Oct 27 00:30:21 cache-1 sshd: connection from 10.0.133.115 accepted
+Oct 27 00:30:23 web01 sshd: timeout after 316ms waiting for upstream
+Oct 27 00:30:26 db-primary app[1842]: connection from 10.0.34.185 accepted
+Oct 27 00:30:28 cache-1 app[1842]: GET /api/v2/items?id=8283 200 673ms
+Oct 27 00:30:29 db-primary kernel: cache miss key=item:701
+Oct 27 00:30:30 batch-7 sshd: cache miss key=item:255
+Oct 27 00:30:31 web01 nginx: session opened for user svc190
+Oct 27 00:30:33 web01 app[1842]: connection from 10.0.144.21 accepted
+Oct 27 00:30:33 web02 app[1842]: job 42226 finished in 36.00s
+Oct 27 00:30:36 db-primary kernel: session opened for user svc4
+Oct 27 00:30:37 web01 nginx: cache miss key=item:629
+Oct 27 00:30:37 db-primary worker[913]: connection from 10.0.15.58 accepted
+Oct 27 00:30:38 db-primary nginx: GET /api/v2/items?id=32692 200 552ms
+Oct 27 00:30:40 cache-1 cron: cache miss key=item:201
+Oct 27 00:30:41 web02 nginx: timeout after 4396ms waiting for upstream
+Oct 27 00:30:44 web01 cron: connection from 10.0.101.187 accepted
+Oct 27 00:30:45 batch-7 nginx: session opened for user svc824
+Oct 27 00:30:45 batch-7 app[1842]: job 82998 finished in 279.00s
+Oct 27 00:30:46 db-primary sshd: job 44831 finished in 794.00s
+Oct 27 00:30:49 web01 worker[913]: job 28071 finished in 119.00s
+Oct 27 00:30:51 batch-7 app[1842]: timeout after 995ms waiting for upstream
+Oct 27 00:30:54 db-primary app[1842]: timeout after 2166ms waiting for upstream
+Oct 27 00:30:56 batch-7 cron: timeout after 6395ms waiting for upstream
+Oct 27 00:30:58 db-primary kernel: GET /api/v2/items?id=56845 200 439ms
+Oct 27 00:31:00 batch-7 kernel: cache miss key=item:318
+Oct 27 00:31:00 web02 cron: job 66594 finished in 74.00s
+Oct 27 00:31:00 web02 cron: timeout after 537ms waiting for upstream
+Oct 27 00:31:02 db-primary nginx: job 95299 finished in 841.00s
+Oct 27 00:31:04 db-primary worker[913]: cache miss key=item:71
+Oct 27 00:31:06 cache-1 kernel: GET /api/v2/items?id=92656 200 799ms
+Oct 27 00:31:09 batch-7 nginx: job 27799 finished in 925.00s
+Oct 27 00:31:12 web02 worker[913]: GET /api/v2/items?id=40310 200 370ms
+Oct 27 00:31:15 cache-1 worker[913]: session opened for user svc912
+Oct 27 00:31:15 web01 app[1842]: session opened for user svc18
+Oct 27 00:31:16 batch-7 worker[913]: timeout after 6045ms waiting for upstream
+Oct 27 00:31:18 batch-7 app[1842]: session opened for user svc846
+Oct 27 00:31:20 db-primary nginx: GET /api/v2/items?id=92415 200 737ms
+Oct 27 00:31:20 web01 nginx: session opened for user svc24
+Oct 27 00:31:22 web02 kernel: cache miss key=item:265
+Oct 27 00:31:25 db-primary worker[913]: cache miss key=item:583
+Oct 27 00:31:25 batch-7 worker[913]: timeout after 2089ms waiting for upstream
+Oct 27 00:31:25 web01 cron: timeout after 8192ms waiting for upstream
+Oct 27 00:31:28 web02 worker[913]: job 44133 finished in 783.00s
+Oct 27 00:31:30 cache-1 worker[913]: GET /api/v2/items?id=12914 200 588ms
+Oct 27 00:31:32 web01 cron: timeout after 8574ms waiting for upstream
+Oct 27 00:31:34 web01 cron: session opened for user svc565
+Oct 27 00:31:35 web02 app[1842]: connection from 10.0.131.30 accepted
+Oct 27 00:31:38 db-primary sshd: cache miss key=item:90
+Oct 27 00:31:39 web02 app[1842]: connection from 10.0.108.246 accepted
+Oct 27 00:31:41 batch-7 app[1842]: GET /api/v2/items?id=22304 200 32ms
+Oct 27 00:31:43 db-primary nginx: GET /api/v2/items?id=59307 200 651ms
+Oct 27 00:31:43 db-primary app[1842]: timeout after 739ms waiting for upstream
+Oct 27 00:31:46 batch-7 worker[913]: connection from 10.0.172.44 accepted
+Oct 27 00:31:47 web02 app[1842]: timeout after 8006ms waiting for upstream
+Oct 27 00:31:48 cache-1 app[1842]: timeout after 6852ms waiting for upstream
+Oct 27 00:31:49 web02 nginx: session opened for user svc887
+Oct 27 00:31:52 cache-1 cron: connection from 10.0.192.104 accepted
+Oct 27 00:31:52 web02 sshd: connection from 10.0.4.246 accepted
+Oct 27 00:31:53 cache-1 worker[913]: timeout after 653ms waiting for upstream
+Oct 27 00:31:53 batch-7 worker[913]: session opened for user svc450
+Oct 27 00:31:54 cache-1 nginx: job 67143 finished in 709.00s
+Oct 27 00:31:55 web01 sshd: job 13719 finished in 445.00s
+Oct 27 00:31:56 web02 nginx: job 27175 finished in 134.00s
+Oct 27 00:31:56 web01 kernel: connection from 10.0.195.245 accepted
+Oct 27 00:31:58 batch-7 cron: connection from 10.0.65.100 accepted
+Oct 27 00:32:01 batch-7 nginx: job 99339 finished in 968.00s
+Oct 27 00:32:03 web01 cron: timeout after 949ms waiting for upstream
+Oct 27 00:32:05 cache-1 worker[913]: timeout after 6251ms waiting for upstream
+Oct 27 00:32:05 web02 worker[913]: session opened for user svc222
+Oct 27 00:32:08 web01 app[1842]: connection from 10.0.157.7 accepted
+Oct 27 00:32:11 db-primary worker[913]: job 96882 finished in 635.00s
+Oct 27 00:32:12 batch-7 app[1842]: session opened for user svc553
+Oct 27 00:32:15 db-primary kernel: cache miss key=item:344
+Oct 27 00:32:15 web02 nginx: session opened for user svc612
+Oct 27 00:32:18 db-primary nginx: timeout after 1237ms waiting for upstream
+Oct 27 00:32:20 db-primary nginx: session opened for user svc967
+Oct 27 00:32:22 web01 worker[913]: connection from 10.0.27.211 accepted
+Oct 27 00:32:25 web02 kernel: session opened for user svc789
+Oct 27 00:32:26 batch-7 sshd: cache miss key=item:370
+Oct 27 00:32:27 web02 app[1842]: job 41642 finished in 227.00s
+Oct 27 00:32:29 batch-7 cron: session opened for user svc843
+Oct 27 00:32:32 db-primary cron: timeout after 4049ms waiting for upstream
+Oct 27 00:32:32 web02 nginx: timeout after 1779ms waiting for upstream
+Oct 27 00:32:32 db-primary app[1842]: job 59996 finished in 857.00s
+Oct 27 00:32:34 web01 worker[913]: GET /api/v2/items?id=50775 200 554ms
+Oct 27 00:32:37 db-primary worker[913]: timeout after 6267ms waiting for upstream
+Oct 27 00:32:38 batch-7 nginx: session opened for user svc965
+Oct 27 00:32:39 web01 cron: cache miss key=item:554
+Oct 27 00:32:39 web01 nginx: connection from 10.0.149.52 accepted
+Oct 27 00:32:40 web01 worker[913]: cache miss key=item:821
+Oct 27 00:32:43 cache-1 nginx: cache miss key=item:984
+Oct 27 00:32:43 web01 sshd: connection from 10.0.26.188 accepted
+Oct 27 00:32:44 db-primary kernel: session opened for user svc154
+Oct 27 00:32:46 db-primary kernel: GET /api/v2/items?id=40912 200 797ms
+Oct 27 00:32:48 cache-1 nginx: GET /api/v2/items?id=51514 200 170ms
+Oct 27 00:32:51 batch-7 sshd: timeout after 432ms waiting for upstream
+Oct 27 00:32:54 cache-1 cron: session opened for user svc711
+Oct 27 00:32:54 web02 sshd: connection from 10.0.171.125 accepted
+Oct 27 00:32:54 web01 kernel: cache miss key=item:61
+Oct 27 00:32:55 web02 app[1842]: connection from 10.0.77.146 accepted
+Oct 27 00:32:55 db-primary sshd: connection from 10.0.159.119 accepted
+Oct 27 00:32:55 web01 nginx: job 67508 finished in 648.00s
+Oct 27 00:32:56 web01 worker[913]: timeout after 2456ms waiting for upstream
+Oct 27 00:32:57 web02 app[1842]: GET /api/v2/items?id=16178 200 322ms
+Oct 27 00:32:57 db-primary nginx: session opened for user svc488
+Oct 27 00:32:59 cache-1 nginx: timeout after 6316ms waiting for upstream
+Oct 27 00:33:02 batch-7 app[1842]: connection from 10.0.18.147 accepted
+Oct 27 00:33:02 cache-1 sshd: job 14717 finished in 769.00s
+Oct 27 00:33:03 web01 kernel: connection from 10.0.77.85 accepted
+Oct 27 00:33:04 db-primary sshd: job 32740 finished in 77.00s
+Oct 27 00:33:05 cache-1 worker[913]: GET /api/v2/items?id=89046 200 459ms
+Oct 27 00:33:07 web01 app[1842]: GET /api/v2/items?id=96710 200 831ms
+Oct 27 00:33:10 db-primary app[1842]: job 11149 finished in 171.00s
+Oct 27 00:33:11 cache-1 kernel: cache miss key=item:214
+Oct 27 00:33:12 web02 app[1842]: job 15419 finished in 75.00s
+Oct 27 00:33:14 web02 app[1842]: job 94820 finished in 808.00s
+Oct 27 00:33:16 batch-7 nginx: GET /api/v2/items?id=84254 200 56ms
+Oct 27 00:33:16 db-primary kernel: GET /api/v2/items?id=54584 200 551ms
+Oct 27 00:33:18 db-primary app[1842]: GET /api/v2/items?id=5473 200 493ms
+Oct 27 00:33:19 batch-7 worker[913]: session opened for user svc601
+Oct 27 00:33:22 batch-7 sshd: GET /api/v2/items?id=35947 200 941ms
+Oct 27 00:33:22 web02 app[1842]: timeout after 1457ms waiting for upstream
+Oct 27 00:33:23 batch-7 app[1842]: session opened for user svc6
+Oct 27 00:33:23 batch-7 cron: cache miss key=item:32
+Oct 27 00:33:23 web02 kernel: job 11716 finished in 511.00s
+Oct 27 00:33:23 web02 app[1842]: session opened for user svc673
+Oct 27 00:33:23 cache-1 kernel: connection from 10.0.204.229 accepted
+Oct 27 00:33:23 web01 kernel: connection from 10.0.101.42 accepted
+Oct 27 00:33:26 web02 nginx: timeout after 3409ms waiting for upstream
+Oct 27 00:33:26 db-primary sshd: job 69939 finished in 651.00s
+Oct 27 00:33:26 cache-1 nginx: session opened for user svc813
+Oct 27 00:33:27 web02 worker[913]: cache miss key=item:114
+Oct 27 00:33:30 cache-1 sshd: cache miss key=item:899
+Oct 27 00:33:32 db-primary app[1842]: cache miss key=item:862
+Oct 27 00:33:34 batch-7 sshd: timeout after 4064ms waiting for upstream
+Oct 27 00:33:35 db-primary kernel: session opened for user svc358
+Oct 27 00:33:35 web01 kernel: session opened for user svc790
+Oct 27 00:33:35 batch-7 kernel: session opened for user svc815
+Oct 27 00:33:35 db-primary kernel: session opened for user svc788
+Oct 27 00:33:35 batch-7 app[1842]: GET /api/v2/items?id=8533 200 688ms
+Oct 27 00:33:35 cache-1 app[1842]: GET /api/v2/items?id=52188 200 248ms
+Oct 27 00:33:36 web01 cron: cache miss key=item:980
+Oct 27 00:33:39 web02 worker[913]: job 80615 finished in 709.00s
+Oct 27 00:33:41 web02 sshd: session opened for user svc447
+Oct 27 00:33:43 db-primary app[1842]: connection from 10.0.42.156 accepted
+Oct 27 00:33:46 web01 kernel: job 9280 finished in 487.00s
+Oct 27 00:33:47 db-primary sshd: job 26577 finished in 639.00s
+Oct 27 00:33:48 batch-7 cron: session opened for user svc83
+Oct 27 00:33:48 cache-1 nginx: cache miss key=item:856
+Oct 27 00:33:48 db-primary worker[913]: session opened for user svc256
+Oct 27 00:33:51 batch-7 nginx: timeout after 7990ms waiting for upstream
+Oct 27 00:33:54 batch-7 cron: connection from 10.0.103.186 accepted
+Oct 27 00:33:54 web01 cron: timeout after 7316ms waiting for upstream
+Oct 27 00:33:57 db-primary sshd: timeout after 3461ms waiting for upstream
+Oct 27 00:34:00 batch-7 nginx: timeout after 2448ms waiting for upstream
+Oct 27 00:34:00 web01 app[1842]: session opened for user svc278
+Oct 27 00:34:01 cache-1 kernel: timeout after 4983ms waiting for upstream
+Oct 27 00:34:02 web02 cron: connection from 10.0.136.252 accepted
+Oct 27 00:34:04 cache-1 worker[913]: GET /api/v2/items?id=60880 200 583ms
+Oct 27 00:34:05 web01 kernel: job 16178 finished in 945.00s
+Oct 27 00:34:06 web01 app[1842]: cache miss key=item:529
+Oct 27 00:34:09 db-primary worker[913]: session opened for user svc555
+Oct 27 00:34:09 web02 app[1842]: job 2174 finished in 646.00s
+Oct 27 00:34:12 db-primary worker[913]: cache miss key=item:458
+Oct 27 00:34:13 batch-7 app[1842]: cache miss key=item:600
+Oct 27 00:34:14 web01 nginx: cache miss key=item:569
+Oct 27 00:34:15 cache-1 worker[913]: job 72138 finished in 603.00s
+Oct 27 00:34:15 web02 nginx: job 52008 finished in 96.00s
+Oct 27 00:34:17 batch-7 cron: timeout after 3806ms waiting for upstream
+Oct 27 00:34:17 batch-7 nginx: GET /api/v2/items?id=11346 200 928ms
+Oct 27 00:34:17 batch-7 nginx: job 87726 finished in 204.00s
+Oct 27 00:34:20 batch-7 nginx: timeout after 3391ms waiting for upstream
+Oct 27 00:34:20 cache-1 app[1842]: session opened for user svc134
+Oct 27 00:34:22 batch-7 kernel: GET /api/v2/items?id=75307 200 20ms
+Oct 27 00:34:22 cache-1 sshd: job 80512 finished in 502.00s
+Oct 27 00:34:25 cache-1 cron: cache miss key=item:248
+Oct 27 00:34:26 db-primary app[1842]: job 68159 finished in 36.00s
+Oct 27 00:34:28 db-primary sshd: connection from 10.0.54.157 accepted
+Oct 27 00:34:30 cache-1 nginx: timeout after 976ms waiting for upstream
+Oct 27 00:34:30 web01 nginx: connection from 10.0.63.109 accepted
+Oct 27 00:34:32 web02 cron: timeout after 7150ms waiting for upstream
+Oct 27 00:34:35 batch-7 kernel: timeout after 1201ms waiting for upstream
+Oct 27 00:34:36 web02 cron: timeout after 7364ms waiting for upstream
+Oct 27 00:34:36 web01 sshd: connection from 10.0.147.35 accepted
+Oct 27 00:34:37 db-primary sshd: job 75274 finished in 544.00s
+Oct 27 00:34:40 web01 nginx: GET /api/v2/items?id=9547 200 483ms
+Oct 27 00:34:41 cache-1 sshd: session opened for user svc450
+Oct 27 00:34:43 cache-1 app[1842]: connection from 10.0.19.13 accepted
+Oct 27 00:34:44 web02 nginx: timeout after 6491ms waiting for upstream
+Oct 27 00:34:44 web01 cron: job 49002 finished in 396.00s
+Oct 27 00:34:47 web02 sshd: timeout after 3454ms waiting for upstream
+Oct 27 00:34:50 web02 cron: cache miss key=item:408
+Oct 27 00:34:52 web01 nginx: job 98524 finished in 696.00s
+Oct 27 00:34:53 web01 sshd: job 48522 finished in 264.00s
+Oct 27 00:34:54 web01 worker[913]: job 78888 finished in 68.00s
+Oct 27 00:34:55 batch-7 worker[913]: cache miss key=item:62
+Oct 27 00:34:58 web02 kernel: job 31353 finished in 966.00s
+Oct 27 00:34:58 cache-1 sshd: session opened for user svc814
+Oct 27 00:35:01 cache-1 app[1842]: connection from 10.0.156.143 accepted
+Oct 27 00:35:04 cache-1 nginx: job 26213 finished in 160.00s
+Oct 27 00:35:06 db-primary sshd: session opened for user svc677
+Oct 27 00:35:08 web02 sshd: connection from 10.0.162.98 accepted
+Oct 27 00:35:08 cache-1 kernel: cache miss key=item:180
+Oct 27 00:35:08 web02 kernel: GET /api/v2/items?id=57590 200 354ms
+Oct 27 00:35:10 cache-1 worker[913]: connection from 10.0.174.142 accepted
+Oct 27 00:35:10 web01 cron: timeout after 5679ms waiting for upstream
+Oct 27 00:35:13 web02 kernel: cache miss key=item:573
+Oct 27 00:35:13 batch-7 kernel: connection from 10.0.231.23 accepted
+Oct 27 00:35:14 web01 worker[913]: GET /api/v2/items?id=58731 200 341ms
+Oct 27 00:35:16 batch-7 nginx: GET /api/v2/items?id=20808 200 999ms
+Oct 27 00:35:19 db-primary worker[913]: GET /api/v2/items?id=71258 200 839ms
+Oct 27 00:35:22 web02 sshd: connection from 10.0.105.133 accepted
+Oct 27 00:35:23 cache-1 nginx: cache miss key=item:784
+Oct 27 00:35:25 web01 cron: GET /api/v2/items?id=46623 200 787ms
+Oct 27 00:35:25 web01 kernel: job 14488 finished in 48.00s
+Oct 27 00:35:26 batch-7 sshd: timeout after 6663ms waiting for upstream
+Oct 27 00:35:26 cache-1 kernel: job 53825 finished in 905.00s
+Oct 27 00:35:26 web01 worker[913]: session opened for user svc101
+Oct 27 00:35:28 web02 nginx: session opened for user svc754
+Oct 27 00:35:31 web01 cron: job 69388 finished in 407.00s
+Oct 27 00:35:31 web01 nginx: connection from 10.0.80.95 accepted
+Oct 27 00:35:34 web01 worker[913]: cache miss key=item:384
+Oct 27 00:35:36 db-primary cron: cache miss key=item:659
+Oct 27 00:35:36 cache-1 app[1842]: timeout after 7624ms waiting for upstream
+Oct 27 00:35:36 batch-7 sshd: job 56381 finished in 521.00s
+Oct 27 00:35:36 cache-1 nginx: job 8587 finished in 102.00s
+Oct 27 00:35:38 batch-7 nginx: GET /api/v2/items?id=42952 200 775ms
+Oct 27 00:35:40 batch-7 kernel: job 20108 finished in 224.00s
+Oct 27 00:35:42 cache-1 sshd: cache miss key=item:194
+Oct 27 00:35:45 web02 sshd: job 27775 finished in 661.00s
+Oct 27 00:35:48 batch-7 sshd: GET /api/v2/items?id=38102 200 493ms
+Oct 27 00:35:48 web01 kernel: GET /api/v2/items?id=89252 200 727ms
+Oct 27 00:35:49 batch-7 worker[913]: job 26684 finished in 868.00s
+Oct 27 00:35:52 web01 sshd: session opened for user svc791
+Oct 27 00:35:54 db-primary kernel: connection from 10.0.245.114 accepted
+Oct 27 00:35:54 batch-7 worker[913]: connection from 10.0.97.185 accepted
+Oct 27 00:35:55 db-primary kernel: cache miss key=item:287
+Oct 27 00:35:57 web02 nginx: job 63776 finished in 233.00s
+Oct 27 00:35:59 cache-1 cron: GET /api/v2/items?id=40035 200 665ms
+Oct 27 00:35:59 web01 sshd: timeout after 6480ms waiting for upstream
+Oct 27 00:35:59 web01 app[1842]: job 40833 finished in 790.00s
+Oct 27 00:35:59 batch-7 sshd: session opened for user svc33
+Oct 27 00:36:00 batch-7 worker[913]: timeout after 6030ms waiting for upstream
+Oct 27 00:36:00 web01 cron: GET /api/v2/items?id=17828 200 633ms
+Oct 27 00:36:02 cache-1 worker[913]: session opened for user svc563
+Oct 27 00:36:03 web01 kernel: job 27158 finished in 119.00s
+Oct 27 00:36:04 batch-7 app[1842]: GET /api/v2/items?id=51589 200 68ms
+Oct 27 00:36:06 web02 kernel: cache miss key=item:758
+Oct 27 00:36:08 batch-7 nginx: timeout after 5116ms waiting for upstream
+Oct 27 00:36:08 web02 cron: cache miss key=item:350
+Oct 27 00:36:09 web02 nginx: GET /api/v2/items?id=37315 200 719ms
+Oct 27 00:36:10 batch-7 worker[913]: timeout after 6649ms waiting for upstream
+Oct 27 00:36:11 batch-7 sshd: connection from 10.0.70.162 accepted
+Oct 27 00:36:14 web01 kernel: job 38877 finished in 694.00s
+Oct 27 00:36:14 cache-1 worker[913]: connection from 10.0.123.67 accepted
+Oct 27 00:36:17 cache-1 kernel: timeout after 1674ms waiting for upstream
+Oct 27 00:36:17 batch-7 app[1842]: connection from 10.0.236.243 accepted
+Oct 27 00:36:20 cache-1 app[1842]: job 34065 finished in 7.00s
+Oct 27 00:36:22 cache-1 worker[913]: job 25969 finished in 748.00s
+Oct 27 00:36:24 web01 cron: GET /api/v2/items?id=90630 200 517ms
+Oct 27 00:36:25 web02 app[1842]: job 54588 finished in 442.00s
+Oct 27 00:36:28 web02 app[1842]: timeout after 3840ms waiting for upstream
+Oct 27 00:36:31 web02 app[1842]: timeout after 2959ms waiting for upstream
+Oct 27 00:36:32 db-primary kernel: cache miss key=item:169
+Oct 27 00:36:35 db-primary sshd: connection from 10.0.133.3 accepted
+Oct 27 00:36:38 web01 app[1842]: timeout after 7843ms waiting for upstream
+Oct 27 00:36:38 web01 cron: cache miss key=item:981
+Oct 27 00:36:40 db-primary worker[913]: GET /api/v2/items?id=11961 200 228ms
+Oct 27 00:36:41 web01 worker[913]: timeout after 4002ms waiting for upstream
+Oct 27 00:36:41 db-primary sshd: cache miss key=item:941
+Oct 27 00:36:42 batch-7 kernel: job 16257 finished in 710.00s
+Oct 27 00:36:44 cache-1 worker[913]: connection from 10.0.21.216 accepted
+Oct 27 00:36:44 batch-7 sshd: timeout after 1852ms waiting for upstream
+Oct 27 00:36:45 web01 worker[913]: connection from 10.0.89.252 accepted
+Oct 27 00:36:47 web02 cron: connection from 10.0.126.157 accepted
+Oct 27 00:36:48 web02 nginx: timeout after 5491ms waiting for upstream
+Oct 27 00:36:50 web01 app[1842]: GET /api/v2/items?id=33719 200 197ms
+Oct 27 00:36:51 web02 nginx: connection from 10.0.65.89 accepted
+Oct 27 00:36:52 cache-1 sshd: GET /api/v2/items?id=17710 200 139ms
+Oct 27 00:36:52 web02 cron: timeout after 7519ms waiting for upstream
+Oct 27 00:36:54 web02 app[1842]: job 36404 finished in 199.00s
+Oct 27 00:36:56 batch-7 kernel: session opened for user svc315
+Oct 27 00:36:58 web02 kernel: cache miss key=item:825
+Oct 27 00:37:00 web01 sshd: connection from 10.0.148.140 accepted
+Oct 27 00:37:00 cache-1 worker[913]: timeout after 6681ms waiting for upstream
+Oct 27 00:37:01 cache-1 kernel: connection from 10.0.69.19 accepted
+Oct 27 00:37:03 web01 nginx: cache miss key=item:448
+Oct 27 00:37:06 cache-1 nginx: job 19856 finished in 465.00s
+Oct 27 00:37:06 web01 kernel: GET /api/v2/items?id=95444 200 114ms
+Oct 27 00:37:08 web01 sshd: job 1444 finished in 274.00s
+Oct 27 00:37:08 db-primary sshd: cache miss key=item:562
+Oct 27 00:37:10 batch-7 worker[913]: connection from 10.0.146.67 accepted
+Oct 27 00:37:11 web02 kernel: timeout after 1640ms waiting for upstream
+Oct 27 00:37:11 web02 sshd: timeout after 1302ms waiting for upstream
+Oct 27 00:37:14 cache-1 nginx: cache miss key=item:313
+Oct 27 00:37:14 cache-1 worker[913]: timeout after 7678ms waiting for upstream
+Oct 27 00:37:17 batch-7 cron: timeout after 7677ms waiting for upstream
+Oct 27 00:37:20 cache-1 app[1842]: session opened for user svc612
+Oct 27 00:37:23 web01 sshd: connection from 10.0.70.228 accepted
+Oct 27 00:37:26 db-primary kernel: session opened for user svc16
+Oct 27 00:37:27 batch-7 kernel: timeout after 8617ms waiting for upstream
+Oct 27 00:37:27 cache-1 cron: cache miss key=item:158
+Oct 27 00:37:27 web01 worker[913]: cache miss key=item:447
+Oct 27 00:37:28 batch-7 nginx: timeout after 7466ms waiting for upstream
+Oct 27 00:37:29 db-primary sshd: timeout after 3884ms waiting for upstream
+Oct 27 00:37:30 web01 worker[913]: GET /api/v2/items?id=20838 200 648ms
+Oct 27 00:37:30 db-primary nginx: cache miss key=item:918
+Oct 27 00:37:30 cache-1 nginx: connection from 10.0.236.155 accepted
+Oct 27 00:37:32 web01 worker[913]: timeout after 6872ms waiting for upstream
+Oct 27 00:37:35 db-primary app[1842]: timeout after 5061ms waiting for upstream
+Oct 27 00:37:36 batch-7 sshd: session opened for user svc399
+Oct 27 00:37:36 db-primary nginx: cache miss key=item:580
+Oct 27 00:37:36 cache-1 app[1842]: connection from 10.0.97.82 accepted
+Oct 27 00:37:36 web01 nginx: job 20470 finished in 457.00s
+Oct 27 00:37:36 db-primary sshd: job 53573 finished in 111.00s
+Oct 27 00:37:39 cache-1 app[1842]: cache miss key=item:642
+Oct 27 00:37:41 batch-7 app[1842]: GET /api/v2/items?id=65495 200 655ms
+Oct 27 00:37:43 web02 sshd: cache miss key=item:971
+Oct 27 00:37:44 batch-7 nginx: GET /api/v2/items?id=74671 200 825ms
+Oct 27 00:37:47 web01 app[1842]: cache miss key=item:549
+Oct 27 00:37:47 batch-7 worker[913]: connection from 10.0.49.134 accepted
+Oct 27 00:37:48 web02 cron: job 98197 finished in 312.00s
+Oct 27 00:37:50 cache-1 kernel: cache miss key=item:272
+Oct 27 00:37:50 cache-1 app[1842]: timeout after 7900ms waiting for upstream
+Oct 27 00:37:51 cache-1 cron: GET /api/v2/items?id=22966 200 859ms
+Oct 27 00:37:54 web02 nginx: connection from 10.0.52.220 accepted
+Oct 27 00:37:57 web02 cron: session opened for user svc944
+Oct 27 00:37:58 web02 nginx: connection from 10.0.139.173 accepted
+Oct 27 00:38:00 cache-1 nginx: GET /api/v2/items?id=18966 200 842ms
+Oct 27 00:38:01 web02 nginx: timeout after 886ms waiting for upstream
+Oct 27 00:38:03 batch-7 worker[913]: session opened for user svc910
+Oct 27 00:38:05 cache-1 app[1842]: connection from 10.0.201.221 accepted
+Oct 27 00:38:07 web01 nginx: job 93562 finished in 89.00s
+Oct 27 00:38:07 batch-7 kernel: session opened for user svc712
+Oct 27 00:38:10 web02 cron: session opened for user svc421
+Oct 27 00:38:11 cache-1 sshd: job 81966 finished in 210.00s
+Oct 27 00:38:14 web01 kernel: GET /api/v2/items?id=60329 200 805ms
+Oct 27 00:38:15 db-primary kernel: GET /api/v2/items?id=10395 200 732ms
+Oct 27 00:38:15 db-primary nginx: cache miss key=item:176
+Oct 27 00:38:17 cache-1 kernel: connection from 10.0.147.49 accepted
+Oct 27 00:38:19 web01 nginx: connection from 10.0.110.228 accepted
+Oct 27 00:38:20 batch-7 kernel: timeout after 8270ms waiting for upstream
+Oct 27 00:38:22 batch-7 nginx: timeout after 3338ms waiting for upstream
+Oct 27 00:38:25 web02 kernel: cache miss key=item:671
+Oct 27 00:38:28 web01 app[1842]: timeout after 7217ms waiting for upstream
+Oct 27 00:38:28 web01 sshd: job 33496 finished in 530.00s
+Oct 27 00:38:30 cache-1 sshd: session opened for user svc459
+Oct 27 00:38:30 web01 worker[913]: session opened for user svc712
+Oct 27 00:38:33 db-primary nginx: session opened for user svc451
+Oct 27 00:38:35 web02 app[1842]: connection from 10.0.244.179 accepted
+Oct 27 00:38:35 web01 cron: job 86980 finished in 395.00s
+Oct 27 00:38:36 db-primary kernel: cache miss key=item:838
+Oct 27 00:38:39 web01 sshd: GET /api/v2/items?id=37842 200 173ms
+Oct 27 00:38:39 batch-7 nginx: job 17526 finished in 670.00s
+Oct 27 00:38:42 db-primary kernel: job 53469 finished in 296.00s
+Oct 27 00:38:44 db-primary cron: connection from 10.0.48.18 accepted
+Oct 27 00:38:44 cache-1 sshd: job 8708 finished in 882.00s
+Oct 27 00:38:45 web01 app[1842]: connection from 10.0.97.137 accepted
+Oct 27 00:38:48 db-primary kernel: job 69077 finished in 575.00s
+Oct 27 00:38:48 db-primary app[1842]: connection from 10.0.71.199 accepted
+Oct 27 00:38:48 batch-7 nginx: cache miss key=item:404
+Oct 27 00:38:48 db-primary kernel: GET /api/v2/items?id=44671 200 414ms
+Oct 27 00:38:48 db-primary kernel: cache miss key=item:316
+Oct 27 00:38:49 db-primary nginx: connection from 10.0.121.63 accepted
+Oct 27 00:38:52 db-primary cron: timeout after 3689ms waiting for upstream
+Oct 27 00:38:53 cache-1 sshd: session opened for user svc976
+Oct 27 00:38:56 db-primary sshd: session opened for user svc498
+Oct 27 00:38:59 cache-1 kernel: cache miss key=item:506
+Oct 27 00:39:00 web02 sshd: GET /api/v2/items?id=49719 200 317ms
+Oct 27 00:39:03 cache-1 app[1842]: timeout after 2762ms waiting for upstream
+Oct 27 00:39:04 cache-1 app[1842]: session opened for user svc100
+Oct 27 00:39:06 batch-7 nginx: session opened for user svc843
+Oct 27 00:39:06 cache-1 kernel: connection from 10.0.220.223 accepted
+Oct 27 00:39:06 web01 worker[913]: connection from 10.0.239.78 accepted
+Oct 27 00:39:08 web01 nginx: session opened for user svc852
+Oct 27 00:39:10 db-primary nginx: timeout after 6808ms waiting for upstream
+Oct 27 00:39:12 cache-1 kernel: session opened for user svc233
+Oct 27 00:39:13 batch-7 worker[913]: session opened for user svc900
+Oct 27 00:39:16 web01 worker[913]: timeout after 3613ms waiting for upstream
+Oct 27 00:39:19 cache-1 app[1842]: session opened for user svc392
+Oct 27 00:39:22 web02 worker[913]: GET /api/v2/items?id=30449 200 362ms
+Oct 27 00:39:25 web01 kernel: GET /api/v2/items?id=35011 200 668ms
+Oct 27 00:39:25 db-primary sshd: job 40596 finished in 448.00s
+Oct 27 00:39:27 web02 nginx: GET /api/v2/items?id=36807 200 265ms
+Oct 27 00:39:28 db-primary worker[913]: GET /api/v2/items?id=86848 200 722ms
+Oct 27 00:39:31 db-primary cron: session opened for user svc452
+Oct 27 00:39:31 batch-7 worker[913]: session opened for user svc281
+Oct 27 00:39:32 web01 app[1842]: cache miss key=item:71
+Oct 27 00:39:35 cache-1 nginx: job 48740 finished in 385.00s
+Oct 27 00:39:35 db-primary app[1842]: job 5164 finished in 948.00s
+Oct 27 00:39:37 db-primary nginx: job 82793 finished in 810.00s
+Oct 27 00:39:38 cache-1 worker[913]: connection from 10.0.60.139 accepted
+Oct 27 00:39:41 web01 kernel: session opened for user svc994
+Oct 27 00:39:42 batch-7 worker[913]: cache miss key=item:872
+Oct 27 00:39:45 web01 nginx: connection from 10.0.161.172 accepted
+Oct 27 00:39:45 web02 cron: connection from 10.0.48.152 accepted
+Oct 27 00:39:47 web02 kernel: GET /api/v2/items?id=31169 200 71ms
+Oct 27 00:39:48 db-primary sshd: connection from 10.0.173.36 accepted
+Oct 27 00:39:49 db-primary worker[913]: connection from 10.0.13.246 accepted
+Oct 27 00:39:50 db-primary sshd: GET /api/v2/items?id=28546 200 253ms
+Oct 27 00:39:53 cache-1 app[1842]: connection from 10.0.202.189 accepted
+Oct 27 00:39:54 web01 app[1842]: job 46881 finished in 184.00s
+Oct 27 00:39:57 web02 nginx: cache miss key=item:700
+Oct 27 00:40:00 db-primary nginx: job 95958 finished in 817.00s
+Oct 27 00:40:01 web02 app[1842]: cache miss key=item:464
+Oct 27 00:40:04 web02 sshd: session opened for user svc466
+Oct 27 00:40:07 cache-1 cron: job 82039 finished in 809.00s
+Oct 27 00:40:08 batch-7 kernel: connection from 10.0.37.51 accepted
+Oct 27 00:40:08 web02 app[1842]: GET /api/v2/items?id=72424 200 83ms
+Oct 27 00:40:10 web02 nginx: cache miss key=item:985
+Oct 27 00:40:12 batch-7 app[1842]: timeout after 7344ms waiting for upstream
+Oct 27 00:40:12 db-primary cron: connection from 10.0.126.29 accepted
+Oct 27 00:40:15 cache-1 worker[913]: job 36444 finished in 600.00s
+Oct 27 00:40:16 web02 nginx: connection from 10.0.94.59 accepted
+Oct 27 00:40:16 web02 worker[913]: cache miss key=item:894
+Oct 27 00:40:16 batch-7 nginx: GET /api/v2/items?id=54781 200 562ms
+Oct 27 00:40:16 web01 app[1842]: GET /api/v2/items?id=11104 200 62ms
+Oct 27 00:40:16 db-primary worker[913]: timeout after 206ms waiting for upstream
+Oct 27 00:40:17 cache-1 nginx: job 18489 finished in 797.00s
+Oct 27 00:40:17 batch-7 sshd: session opened for user svc980
+Oct 27 00:40:20 db-primary nginx: connection from 10.0.117.34 accepted
+Oct 27 00:40:22 db-primary kernel: timeout after 8161ms waiting for upstream
+Oct 27 00:40:22 batch-7 sshd: cache miss key=item:828
+Oct 27 00:40:23 web01 worker[913]: cache miss key=item:237
+Oct 27 00:40:23 batch-7 sshd: cache miss key=item:886
+Oct 27 00:40:23 cache-1 cron: GET /api/v2/items?id=57481 200 111ms
+Oct 27 00:40:24 cache-1 nginx: connection from 10.0.64.111 accepted
+Oct 27 00:40:26 web01 nginx: session opened for user svc381
+Oct 27 00:40:26 web01 cron: session opened for user svc593
+Oct 27 00:40:27 web01 cron: connection from 10.0.31.21 accepted
+Oct 27 00:40:28 cache-1 sshd: cache miss key=item:766
+Oct 27 00:40:30 batch-7 worker[913]: timeout after 1298ms waiting for upstream
+Oct 27 00:40:33 web01 nginx: cache miss key=item:741
+Oct 27 00:40:34 web01 cron: cache miss key=item:580
+Oct 27 00:40:34 cache-1 sshd: timeout after 6375ms waiting for upstream
+Oct 27 00:40:34 cache-1 worker[913]: session opened for user svc528
+Oct 27 00:40:35 web02 nginx: session opened for user svc532
+Oct 27 00:40:35 cache-1 nginx: timeout after 6195ms waiting for upstream
+Oct 27 00:40:37 web02 app[1842]: connection from 10.0.245.55 accepted
+Oct 27 00:40:39 cache-1 worker[913]: GET /api/v2/items?id=77343 200 526ms
+Oct 27 00:40:41 web02 kernel: timeout after 8652ms waiting for upstream
+Oct 27 00:40:42 batch-7 cron: cache miss key=item:321
+Oct 27 00:40:43 db-primary cron: session opened for user svc494
+Oct 27 00:40:43 web02 app[1842]: timeout after 2646ms waiting for upstream
+Oct 27 00:40:46 web02 kernel: job 43295 finished in 786.00s
+Oct 27 00:40:48 cache-1 kernel: connection from 10.0.232.150 accepted
+Oct 27 00:40:50 batch-7 cron: session opened for user svc903
+Oct 27 00:40:53 batch-7 kernel: cache miss key=item:632
+Oct 27 00:40:56 db-primary kernel: GET /api/v2/items?id=22051 200 394ms
+Oct 27 00:40:59 web02 app[1842]: connection from 10.0.205.216 accepted
+Oct 27 00:41:02 cache-1 app[1842]: job 50208 finished in 426.00s
+Oct 27 00:41:03 web02 kernel: job 57937 finished in 701.00s
+Oct 27 00:41:03 cache-1 nginx: job 19942 finished in 863.00s
+Oct 27 00:41:04 web01 nginx: job 52719 finished in 846.00s
+Oct 27 00:41:05 web01 nginx: job 44640 finished in 422.00s
+Oct 27 00:41:07 web01 sshd: session opened for user svc563
+Oct 27 00:41:10 web02 worker[913]: timeout after 5252ms waiting for upstream
+Oct 27 00:41:11 cache-1 app[1842]: GET /api/v2/items?id=70237 200 936ms
+Oct 27 00:41:14 db-primary kernel: cache miss key=item:809
+Oct 27 00:41:15 cache-1 nginx: session opened for user svc502
+Oct 27 00:41:17 web02 sshd: timeout after 8256ms waiting for upstream
+Oct 27 00:41:20 db-primary kernel: connection from 10.0.12.158 accepted
+Oct 27 00:41:22 web01 cron: session opened for user svc401
+Oct 27 00:41:24 web01 sshd: connection from 10.0.133.147 accepted
+Oct 27 00:41:26 web01 cron: job 21179 finished in 191.00s
+Oct 27 00:41:29 web02 kernel: connection from 10.0.168.253 accepted
+Oct 27 00:41:31 db-primary sshd: job 82071 finished in 974.00s
+Oct 27 00:41:34 db-primary sshd: timeout after 5368ms waiting for upstream
+Oct 27 00:41:37 batch-7 cron: connection from 10.0.15.238 accepted
+Oct 27 00:41:37 web02 worker[913]: GET /api/v2/items?id=16783 200 992ms
+Oct 27 00:41:40 cache-1 kernel: cache miss key=item:796
+Oct 27 00:41:40 cache-1 app[1842]: job 71463 finished in 956.00s
+Oct 27 00:41:40 batch-7 sshd: GET /api/v2/items?id=66739 200 569ms
+Oct 27 00:41:43 batch-7 app[1842]: GET /api/v2/items?id=4287 200 649ms
+Oct 27 00:41:46 web02 worker[913]: job 5736 finished in 46.00s
+Oct 27 00:41:46 web01 worker[913]: job 7674 finished in 457.00s
+Oct 27 00:41:49 web01 worker[913]: session opened for user svc895
+Oct 27 00:41:51 cache-1 app[1842]: session opened for user svc566
+Oct 27 00:41:54 web01 sshd: connection from 10.0.119.196 accepted
+Oct 27 00:41:55 cache-1 cron: GET /api/v2/items?id=16997 200 442ms
+Oct 27 00:41:58 cache-1 app[1842]: GET /api/v2/items?id=7543 200 920ms
+Oct 27 00:42:01 web01 worker[913]: cache miss key=item:753
+Oct 27 00:42:04 batch-7 sshd: cache miss key=item:171
+Oct 27 00:42:04 web02 sshd: GET /api/v2/items?id=67747 200 703ms
+Oct 27 00:42:07 web02 nginx: connection from 10.0.26.201 accepted
+Oct 27 00:42:09 web01 sshd: connection from 10.0.253.156 accepted
+Oct 27 00:42:11 batch-7 kernel: connection from 10.0.194.133 accepted
+Oct 27 00:42:12 batch-7 sshd: connection from 10.0.134.77 accepted
+Oct 27 00:42:13 cache-1 kernel: connection from 10.0.245.84 accepted
+Oct 27 00:42:16 batch-7 cron: cache miss key=item:276
+Oct 27 00:42:17 db-primary kernel: GET /api/v2/items?id=2892 200 890ms
+Oct 27 00:42:18 web01 worker[913]: connection from 10.0.233.77 accepted
+Oct 27 00:42:21 db-primary cron: GET /api/v2/items?id=54224 200 818ms
+Oct 27 00:42:23 batch-7 sshd: timeout after 6033ms waiting for upstream
+Oct 27 00:42:23 batch-7 worker[913]: timeout after 6570ms waiting for upstream
+Oct 27 00:42:23 web01 sshd: job 80224 finished in 601.00s
+Oct 27 00:42:24 web01 cron: connection from 10.0.233.101 accepted
+Oct 27 00:42:26 db-primary cron: cache miss key=item:537
+Oct 27 00:42:27 batch-7 kernel: cache miss key=item:297
+Oct 27 00:42:30 web02 nginx: session opened for user svc791
+Oct 27 00:42:33 db-primary app[1842]: job 69835 finished in 94.00s
+Oct 27 00:42:33 web02 kernel: job 83664 finished in 377.00s
+Oct 27 00:42:35 batch-7 sshd: job 74873 finished in 724.00s
+Oct 27 00:42:37 batch-7 cron: connection from 10.0.166.157 accepted
+Oct 27 00:42:39 web01 worker[913]: timeout after 4373ms waiting for upstream
+Oct 27 00:42:39 batch-7 worker[913]: timeout after 2241ms waiting for upstream
+Oct 27 00:42:39 web01 nginx: GET /api/v2/items?id=976 200 647ms
+Oct 27 00:42:41 web02 app[1842]: job 5099 finished in 103.00s
+Oct 27 00:42:42 web01 nginx: job 58571 finished in 932.00s
+Oct 27 00:42:42 db-primary nginx: connection from 10.0.186.143 accepted
+Oct 27 00:42:45 web01 nginx: job 16778 finished in 787.00s
+Oct 27 00:42:46 db-primary nginx: connection from 10.0.137.221 accepted
+Oct 27 00:42:49 web01 app[1842]: cache miss key=item:815
+Oct 27 00:42:52 cache-1 kernel: session opened for user svc583
+Oct 27 00:42:53 db-primary nginx: connection from 10.0.120.184 accepted
+Oct 27 00:42:56 db-primary app[1842]: connection from 10.0.180.51 accepted
+Oct 27 00:42:57 web01 kernel: GET /api/v2/items?id=79232 200 975ms
+Oct 27 00:42:59 batch-7 app[1842]: connection from 10.0.115.163 accepted
+Oct 27 00:43:01 web02 nginx: timeout after 2818ms waiting for upstream
+Oct 27 00:43:01 web02 sshd: session opened for user svc556
+Oct 27 00:43:01 web02 cron: connection from 10.0.118.5 accepted
+Oct 27 00:43:04 web02 kernel: connection from 10.0.93.143 accepted
+Oct 27 00:43:07 db-primary kernel: session opened for user svc3
+Oct 27 00:43:09 db-primary sshd: GET /api/v2/items?id=16292 200 220ms
+Oct 27 00:43:12 web01 sshd: connection from 10.0.217.246 accepted
+Oct 27 00:43:14 cache-1 worker[913]: cache miss key=item:79
+Oct 27 00:43:17 web02 app[1842]: job 40 finished in 15.00s
+Oct 27 00:43:19 web02 app[1842]: connection from 10.0.215.246 accepted
+Oct 27 00:43:22 web02 app[1842]: cache miss key=item:349
+Oct 27 00:43:24 db-primary kernel: job 84274 finished in 993.00s
+Oct 27 00:43:24 web02 worker[913]: timeout after 4666ms waiting for upstream
+Oct 27 00:43:24 cache-1 app[1842]: connection from 10.0.185.206 accepted
+Oct 27 00:43:27 web02 sshd: connection from 10.0.106.168 accepted
+Oct 27 00:43:28 cache-1 cron: session opened for user svc318
+Oct 27 00:43:29 cache-1 cron: GET /api/v2/items?id=96454 200 568ms
+Oct 27 00:43:32 web01 app[1842]: job 27997 finished in 588.00s
+Oct 27 00:43:35 batch-7 sshd: job 81737 finished in 445.00s
+Oct 27 00:43:38 web02 cron: cache miss key=item:752
+Oct 27 00:43:38 batch-7 worker[913]: connection from 10.0.192.199 accepted
+Oct 27 00:43:39 db-primary worker[913]: timeout after 3946ms waiting for upstream
+Oct 27 00:43:39 db-primary sshd: cache miss key=item:882
+Oct 27 00:43:42 cache-1 kernel: timeout after 3507ms waiting for upstream
+Oct 27 00:43:44 db-primary kernel: job 3843 finished in 804.00s
+Oct 27 00:43:46 db-primary sshd: timeout after 8016ms waiting for upstream
+Oct 27 00:43:48 batch-7 app[1842]: session opened for user svc248
+Oct 27 00:43:50 batch-7 sshd: session opened for user svc733
+Oct 27 00:43:51 web01 worker[913]: GET /api/v2/items?id=83027 200 378ms
+Oct 27 00:43:52 web01 sshd: GET /api/v2/items?id=61288 200 673ms
+Oct 27 00:43:55 web01 sshd: connection from 10.0.87.93 accepted
+Oct 27 00:43:58 db-primary cron: session opened for user svc787
+Oct 27 00:43:59 cache-1 nginx: job 53448 finished in 893.00s
+Oct 27 00:43:59 web02 nginx: session opened for user svc606
+Oct 27 00:44:02 web02 worker[913]: cache miss key=item:166
+Oct 27 00:44:03 cache-1 cron: connection from 10.0.126.69 accepted
+Oct 27 00:44:04 web01 worker[913]: job 65492 finished in 134.00s
+Oct 27 00:44:04 batch-7 worker[913]: cache miss key=item:428
+Oct 27 00:44:04 db-primary worker[913]: job 48725 finished in 835.00s
+Oct 27 00:44:04 batch-7 cron: job 4658 finished in 411.00s
+Oct 27 00:44:05 web01 worker[913]: connection from 10.0.73.93 accepted
+Oct 27 00:44:05 web01 kernel: cache miss key=item:660
+Oct 27 00:44:06 web02 nginx: job 85540 finished in 675.00s
+Oct 27 00:44:08 web01 nginx: cache miss key=item:563
+Oct 27 00:44:09 web01 worker[913]: cache miss key=item:384
+Oct 27 00:44:11 cache-1 kernel: GET /api/v2/items?id=42402 200 67ms
+Oct 27 00:44:13 batch-7 nginx: connection from 10.0.177.171 accepted
+Oct 27 00:44:16 web01 cron: connection from 10.0.72.51 accepted
+Oct 27 00:44:16 web01 kernel: connection from 10.0.164.134 accepted
+Oct 27 00:44:17 web01 worker[913]: job 93705 finished in 161.00s
+Oct 27 00:44:20 cache-1 kernel: session opened for user svc727
+Oct 27 00:44:23 db-primary kernel: GET /api/v2/items?id=71877 200 417ms
+Oct 27 00:44:25 db-primary worker[913]: connection from 10.0.62.214 accepted
+Oct 27 00:44:25 db-primary kernel: connection from 10.0.216.158 accepted
+Oct 27 00:44:28 db-primary cron: GET /api/v2/items?id=25827 200 128ms
+Oct 27 00:44:29 db-primary kernel: timeout after 7200ms waiting for upstream
+Oct 27 00:44:31 cache-1 app[1842]: GET /api/v2/items?id=94996 200 845ms
+Oct 27 00:44:33 batch-7 app[1842]: GET /api/v2/items?id=83977 200 437ms
+Oct 27 00:44:33 db-primary app[1842]: session opened for user svc665
+Oct 27 00:44:33 cache-1 worker[913]: job 98218 finished in 656.00s
+Oct 27 00:44:34 db-primary worker[913]: session opened for user svc64
+Oct 27 00:44:37 cache-1 app[1842]: timeout after 6129ms waiting for upstream
+Oct 27 00:44:39 web02 sshd: job 69194 finished in 578.00s
+Oct 27 00:44:41 web02 kernel: GET /api/v2/items?id=44699 200 984ms
+Oct 27 00:44:44 batch-7 app[1842]: session opened for user svc767
+Oct 27 00:44:47 web02 cron: connection from 10.0.152.79 accepted
+Oct 27 00:44:47 web02 cron: connection from 10.0.125.28 accepted
+Oct 27 00:44:49 cache-1 nginx: session opened for user svc86
+Oct 27 00:44:49 web02 sshd: cache miss key=item:394
+Oct 27 00:44:52 web01 nginx: session opened for user svc612
+Oct 27 00:44:52 web02 nginx: job 14782 finished in 641.00s
+Oct 27 00:44:53 batch-7 nginx: connection from 10.0.152.182 accepted
+Oct 27 00:44:54 db-primary kernel: job 67370 finished in 974.00s
+Oct 27 00:44:57 web01 kernel: session opened for user svc683
+Oct 27 00:44:57 web02 worker[913]: timeout after 3177ms waiting for upstream
+Oct 27 00:45:00 batch-7 kernel: job 86552 finished in 127.00s
+Oct 27 00:45:02 web02 nginx: job 2621 finished in 574.00s
+Oct 27 00:45:04 web01 kernel: GET /api/v2/items?id=77837 200 993ms
+Oct 27 00:45:04 batch-7 sshd: GET /api/v2/items?id=59543 200 999ms
+Oct 27 00:45:05 cache-1 nginx: GET /api/v2/items?id=49198 200 533ms
+Oct 27 00:45:06 web01 sshd: cache miss key=item:453
+Oct 27 00:45:09 web02 nginx: GET /api/v2/items?id=45994 200 772ms
+Oct 27 00:45:12 batch-7 worker[913]: GET /api/v2/items?id=89589 200 769ms
+Oct 27 00:45:12 batch-7 kernel: connection from 10.0.43.83 accepted
+Oct 27 00:45:13 web02 nginx: connection from 10.0.122.65 accepted
+Oct 27 00:45:14 cache-1 cron: GET /api/v2/items?id=30846 200 383ms
+Oct 27 00:45:17 web01 app[1842]: timeout after 4281ms waiting for upstream
+Oct 27 00:45:18 db-primary app[1842]: timeout after 5399ms waiting for upstream
+Oct 27 00:45:18 web01 worker[913]: session opened for user svc787
+Oct 27 00:45:20 db-primary worker[913]: connection from 10.0.253.227 accepted
+Oct 27 00:45:21 web01 nginx: connection from 10.0.250.238 accepted
+Oct 27 00:45:24 web01 sshd: session opened for user svc934
+Oct 27 00:45:27 web02 kernel: connection from 10.0.38.183 accepted
+Oct 27 00:45:30 web02 app[1842]: GET /api/v2/items?id=99732 200 681ms
+Oct 27 00:45:31 db-primary app[1842]: session opened for user svc478
+Oct 27 00:45:33 web02 nginx: timeout after 3502ms waiting for upstream
+Oct 27 00:45:34 batch-7 kernel: connection from 10.0.118.253 accepted
+Oct 27 00:45:37 web02 kernel: GET /api/v2/items?id=18418 200 657ms
+Oct 27 00:45:39 web02 kernel: session opened for user svc784
+Oct 27 00:45:40 web02 nginx: cache miss key=item:940
+Oct 27 00:45:43 db-primary cron: cache miss key=item:157
+Oct 27 00:45:44 db-primary app[1842]: cache miss key=item:455
+Oct 27 00:45:47 web02 cron: timeout after 3305ms waiting for upstream
+Oct 27 00:45:47 cache-1 

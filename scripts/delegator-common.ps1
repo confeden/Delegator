@@ -27,7 +27,8 @@ $script:DelegateModelSettingsFile = Join-Path $script:DelegateHome "delegate-mod
 $script:DelegateRouterSettingsFile = Join-Path $script:DelegateHome "delegate-router-settings.json"
 $script:DelegateMetricsFile = Join-Path $script:DelegateHome "delegate-metrics.jsonl"
 $script:DelegateRunsFile = Join-Path $script:DelegateHome "runs.jsonl"
-$script:DelegateCacheFile = Join-Path $script:DelegateHome "response-cache.json"
+$script:DelegateCacheDir = Join-Path $script:DelegateHome "response-cache"
+$script:DelegateLegacyCacheFile = Join-Path $script:DelegateHome "response-cache.json"
 $script:DelegateUsageLogFile = Join-Path $script:DelegateHome "usage.jsonl"
 $script:DelegateCooldownsFile = Join-Path $script:DelegateHome "cooldowns.json"
 $script:DelegatePolicyFile = Join-Path $PSScriptRoot "DELEGATOR.md"
@@ -146,6 +147,44 @@ function Get-DelegatorRatingConfidence {
 # proxy applies. Precedence: env DELEGATOR_PROXY ("off" disables, any other
 # non-empty value forces that proxy) > <RT>\proxy.json {"enabled":true,"url":...}.
 # Loopback traffic (delegator-core on 127.0.0.1) must NEVER use this proxy.
+# A proxy row that refuses connections is worse than no proxy: every call through
+# it fails and the provider is unusable for the whole run (ROADMAP P16 - the Opera
+# proxy on 127.0.0.1:1371 is dead whenever Opera is closed). Reachability is
+# probed once a minute per URL; a dead URL is skipped, so the next enabled row or
+# a direct connection is used instead.
+$script:ProxyReachableCache = @{}
+
+function Test-ProxyReachable {
+    param([string]$Url)
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
+    $now = [DateTime]::UtcNow
+    if ($script:ProxyReachableCache.ContainsKey($Url)) {
+        $cached = $script:ProxyReachableCache[$Url]
+        if (($now - $cached.at).TotalSeconds -lt 60) { return [bool]$cached.ok }
+    }
+    $ok = $false
+    try {
+        $uri = [System.Uri]$Url
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $pending = $client.BeginConnect($uri.Host, $uri.Port, $null, $null)
+            if ($pending.AsyncWaitHandle.WaitOne(1500) -and $client.Connected) {
+                $client.EndConnect($pending)
+                $ok = $true
+            }
+        } finally {
+            $client.Close()
+        }
+    } catch {
+        $ok = $false
+    }
+    if (-not $ok) {
+        [Console]::Error.WriteLine("[Delegator] прокси $Url не отвечает - идём без него")
+    }
+    $script:ProxyReachableCache[$Url] = [pscustomobject]@{ ok = $ok; at = $now }
+    return $ok
+}
+
 function Get-DelegateProxy {
     param([string]$Provider)
     $override = [string]$env:DELEGATOR_PROXY
@@ -168,7 +207,8 @@ function Get-DelegateProxy {
                         $flagName = "use_for_" + $Provider
                         if ($entry.PSObject.Properties[$flagName] -and -not [bool]$entry.$flagName) { continue }
                     }
-                    return ([string]$entry.url).Trim()
+                    $candidate = ([string]$entry.url).Trim()
+                    if (Test-ProxyReachable $candidate) { return $candidate }
                 }
                 return $null
             }
@@ -645,6 +685,8 @@ function Invoke-DelegateGarbageCollect {
             Write-DelegateMetric -Stage "gc" -Status "ok" -Extra "deleted=$deleted"
         }
 
+        Invoke-ResponseCacheTrim
+
         # ── Log rotation: keep metrics and runs files from growing unbounded ──
         Invoke-DelegateLogRotation
     } catch {}
@@ -700,36 +742,9 @@ function Test-ResponseConfidence {
 # ── Semantic Response Cache ──
 $script:CacheMaxEntries = 200
 $script:CacheTTLHours = 24
+$script:CacheMaxEntryChars = 512000
 $script:CacheSimilarityThreshold = 0.92
 $script:CacheSimilarityThresholdGeneral = 0.88
-
-function Read-ResponseCache {
-    if (-not (Test-Path -LiteralPath $script:DelegateCacheFile)) { return @() }
-    try {
-        $raw = Get-Content -LiteralPath $script:DelegateCacheFile -Raw
-        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
-        $parsed = $raw | ConvertFrom-Json
-        if ($null -eq $parsed) { return @() }
-        if ($parsed -is [array]) { return $parsed }
-        # Single-object JSON: wrap in array
-        if ($parsed.PSObject.Properties["promptHash"]) { return @($parsed) }
-        return @()
-    } catch { return @() }
-}
-
-function Write-ResponseCache {
-    param([array]$Entries)
-    Ensure-DelegateDir $script:DelegateHome
-    # Keep only last N entries
-    $trimmed = @($Entries | Select-Object -Last $script:CacheMaxEntries)
-    # Force JSON array even for single entry
-    $json = if ($trimmed.Count -eq 1) {
-        "[" + ($trimmed[0] | ConvertTo-Json -Depth 6 -Compress) + "]"
-    } else {
-        $trimmed | ConvertTo-Json -Depth 6
-    }
-    Write-Utf8NoBom -Path $script:DelegateCacheFile -Text $json
-}
 
 function Get-PromptHash {
     # `Variant` separates answers that the same prompt must not share: a
@@ -744,22 +759,28 @@ function Get-PromptHash {
     return [BitConverter]::ToString($hash).Replace("-", "").Substring(0, 16)
 }
 
+function Get-CachedResponsePath {
+    param([string]$PromptHash)
+    return Join-Path $script:DelegateCacheDir "$PromptHash.json"
+}
+
 function Find-CachedResponse {
+    # One file per prompt, so a lookup reads nothing but its own answer. The single JSON this replaces
+    # reached 484 MB in 16 entries and cost every non-web request 9.5 s to read (measured).
     param(
         [string]$PromptHash,
         [string]$Domain
     )
-    $cache = Read-ResponseCache
-    if ($cache.Count -eq 0) { return $null }
-
-    $cutoff = (Get-Date).AddHours(-$script:CacheTTLHours).ToString("o")
-    foreach ($entry in $cache) {
-        if ($entry.promptHash -eq $PromptHash -and $entry.timestamp -gt $cutoff) {
-            Write-DelegateMetric -Stage "cache-hit" -Model $entry.model -Status "ok" -Domain $Domain -Extra "hash=$PromptHash"
-            return $entry.response
-        }
-    }
-    return $null
+    $path = Get-CachedResponsePath $PromptHash
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    try {
+        $file = Get-Item -LiteralPath $path
+        if ($file.LastWriteTime -lt (Get-Date).AddHours(-$script:CacheTTLHours)) { return $null }
+        $entry = [System.IO.File]::ReadAllText($path, [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+        if ([string]::IsNullOrWhiteSpace([string]$entry.response)) { return $null }
+        Write-DelegateMetric -Stage "cache-hit" -Model $entry.model -Status "ok" -Domain $Domain -Extra "hash=$PromptHash"
+        return [string]$entry.response
+    } catch { return $null }
 }
 
 function Add-CachedResponse {
@@ -770,17 +791,27 @@ function Add-CachedResponse {
         [string]$Domain
     )
     if ([string]::IsNullOrWhiteSpace($Response) -or $Response.Length -lt 2) { return }
-    $cache = Read-ResponseCache
-    # Don't cache duplicate hashes
-    $cache = @($cache | Where-Object { $_.promptHash -ne $PromptHash })
-    $cache += [pscustomobject]@{
-        promptHash = $PromptHash
-        response   = $Response
-        model      = $Model
-        domain     = $Domain
-        timestamp  = (Get-Date).ToString("o")
+    if ($Response.Length -gt $script:CacheMaxEntryChars) { return }
+    try {
+        Ensure-DelegateDir $script:DelegateCacheDir
+        $json = [pscustomobject]@{ response = $Response; model = $Model; domain = $Domain } | ConvertTo-Json -Depth 3 -Compress
+        Write-Utf8NoBom -Path (Get-CachedResponsePath $PromptHash) -Text $json
+    } catch {}
+}
+
+function Invoke-ResponseCacheTrim {
+    # Called by the daily GC: drop what the TTL already hides, then the oldest beyond the entry cap.
+    if (Test-Path -LiteralPath $script:DelegateLegacyCacheFile) {
+        Remove-Item -LiteralPath $script:DelegateLegacyCacheFile -Force -ErrorAction SilentlyContinue
     }
-    Write-ResponseCache $cache
+    if (-not (Test-Path -LiteralPath $script:DelegateCacheDir)) { return }
+    $cutoff = (Get-Date).AddHours(-$script:CacheTTLHours)
+    $files = @(Get-ChildItem -LiteralPath $script:DelegateCacheDir -Filter "*.json" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+    for ($i = 0; $i -lt $files.Count; $i++) {
+        if ($i -ge $script:CacheMaxEntries -or $files[$i].LastWriteTime -lt $cutoff) {
+            Remove-Item -LiteralPath $files[$i].FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ── Dynamic Profiles Discovery ──

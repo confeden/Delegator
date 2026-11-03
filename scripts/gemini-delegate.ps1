@@ -539,6 +539,44 @@ function Get-ModelAttempts {
         Select-Object -Unique)
 }
 
+# A proxy row that refuses connections is worse than no proxy: every call through
+# it fails and the provider is unusable for the whole run (ROADMAP P16 - the Opera
+# proxy on 127.0.0.1:1371 is dead whenever Opera is closed). Reachability is
+# probed once a minute per URL; a dead URL is skipped, so the next enabled row or
+# a direct connection is used instead.
+$script:ProxyReachableCache = @{}
+
+function Test-ProxyReachable {
+    param([string]$Url)
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
+    $now = [DateTime]::UtcNow
+    if ($script:ProxyReachableCache.ContainsKey($Url)) {
+        $cached = $script:ProxyReachableCache[$Url]
+        if (($now - $cached.at).TotalSeconds -lt 60) { return [bool]$cached.ok }
+    }
+    $ok = $false
+    try {
+        $uri = [System.Uri]$Url
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $pending = $client.BeginConnect($uri.Host, $uri.Port, $null, $null)
+            if ($pending.AsyncWaitHandle.WaitOne(1500) -and $client.Connected) {
+                $client.EndConnect($pending)
+                $ok = $true
+            }
+        } finally {
+            $client.Close()
+        }
+    } catch {
+        $ok = $false
+    }
+    if (-not $ok) {
+        [Console]::Error.WriteLine("[Delegator] прокси $Url не отвечает - идём без него")
+    }
+    $script:ProxyReachableCache[$Url] = [pscustomobject]@{ ok = $ok; at = $now }
+    return $ok
+}
+
 function Get-DelegateProxy {
     param([string]$Provider)
     # DEV_CONTRACTS section 7a: effective outbound proxy for MODEL traffic, or $null.
@@ -564,7 +602,8 @@ function Get-DelegateProxy {
                         $flagName = "use_for_" + $Provider
                         if ($entry.PSObject.Properties[$flagName] -and -not [bool]$entry.$flagName) { continue }
                     }
-                    return ([string]$entry.url).Trim()
+                    $candidate = ([string]$entry.url).Trim()
+                    if (Test-ProxyReachable $candidate) { return $candidate }
                 }
                 return $null
             }
@@ -777,6 +816,12 @@ function Get-FailurePolicy {
         return [pscustomobject]@{ status = "model_or_request_error"; cooldown = 0; tryNextAccount = $false; errorClass = "context_overflow"; dailyQuota = $false }
     }
     if ($Result.statusCode -ge 500) {
+        # "This model is currently experiencing high demand" is about the MODEL, not the key:
+        # a second key hits the same wall (run l8xb: three tries in 15 s). Move to the next model
+        # at once and keep this one cooling for 5 min, so the next request falls to a lighter model.
+        if ($Result.error -match "(?i)high demand|overloaded|unavailable|capacity") {
+            return [pscustomobject]@{ status = "provider_error"; cooldown = 300; tryNextAccount = $false; errorClass = "server"; dailyQuota = $false; capacity = $true }
+        }
         return [pscustomobject]@{ status = "provider_error"; cooldown = 60; tryNextAccount = $true; errorClass = "server"; dailyQuota = $false }
     }
     if ($Result.statusCode -eq 0) {
@@ -871,7 +916,7 @@ function Run-Ask {
             if ($modelPolicy.dailyQuota) {
                 Set-ModelCooldown -ModelId $currentModel -Reason $modelPolicy.errorClass -Seconds 0 -StatusCode $modelStatusCode -UntilUtc (Get-NextPacificMidnightUtc)
             } else {
-                $cooldownSec = Get-ModelCooldownSeconds -ErrorClass $modelPolicy.errorClass -RetryAfterSec $modelRetryAfter
+                $cooldownSec = if ($modelPolicy.capacity) { 300 } else { Get-ModelCooldownSeconds -ErrorClass $modelPolicy.errorClass -RetryAfterSec $modelRetryAfter }
                 if ($cooldownSec -gt 0) {
                     Set-ModelCooldown -ModelId $currentModel -Reason $modelPolicy.errorClass -Seconds $cooldownSec -StatusCode $modelStatusCode
                 }

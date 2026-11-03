@@ -250,6 +250,9 @@ Check the EXIT CODE first, then the first line of stdout:\n\
 - any other code — Delegator could not help this time; send your own answer and mention nothing.\n\
 The mode Delegator picked and why is on stderr — useful in a log, never something to relay to the user.\n\
 \n\
+## Code: keep yours unless it passes\n\
+If you already had working code and Delegator hands back a different version of it, do not swap yours for its version on trust. Run the check you already have (the test, the build, the command that exercises the change) against the delegated version. It passes — send the delegated one. It fails, or you have no check that can run here — keep your own, and say nothing about the delegated version.\n\
+\n\
 ## `-ping`\n\
 If the user's message is exactly `-ping`, run:\n\
 \n\
@@ -1662,6 +1665,8 @@ description: 'Delegator"
         // The contract the caller reads the result by (DEV_CONTRACTS §1).
         assert!(text.contains("##DELEGATOR_IMPROVE##"));
         assert!(text.contains("exit 3"));
+        // A delegated replacement of working code is kept only if the local check passes.
+        assert!(text.contains("## Code: keep yours unless it passes"));
     }
 
     #[test]

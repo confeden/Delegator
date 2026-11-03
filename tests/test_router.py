@@ -179,7 +179,7 @@ def test_an_undeclared_caller_routes_exactly_as_before():
 
 
 def test_a_weak_caller_gets_the_swarm_instead_of_one_model():
-    task = "Напиши функцию на Python, которая разбирает cron-выражение и проверяет совпадение. " * 6
+    task = "Напиши функцию на Python, которая разбирает cron-выражение и проверяет совпадение. " * 20
     base = router.decide(task)
     assert base.mode == router.MODE_DELEGATE
     assert len(task) >= router.AMPLIFY_TASK_CHARS

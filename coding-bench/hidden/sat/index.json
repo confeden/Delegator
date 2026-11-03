@@ -1,306 +1,378 @@
 [
-  {
-    "expected": "UNSAT",
-    "family": "factoring",
-    "file": "01_factoring.cnf",
-    "tier": "easy",
-    "n": 913,
-    "m": 3063,
-    "source": "01_factor_24_UNSAT.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "sudoku",
-    "file": "02_sudoku.cnf",
-    "tier": "easy",
-    "n": 4096,
-    "m": 123914,
-    "source": "02_sudoku16_10.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "parity",
-    "file": "03_parity.cnf",
-    "tier": "easy",
-    "n": 70,
-    "m": 308,
-    "source": "03_parity3_70_7000.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "factoring",
-    "file": "04_factoring.cnf",
-    "tier": "easy",
-    "n": 1261,
-    "m": 4245,
-    "source": "04_factor_28_SAT.cnf"
-  },
-  {
-    "file": "05_random3.cnf",
-    "expected": "UNSAT",
-    "family": "random3",
-    "n": 100,
-    "m": 426,
-    "tier": "v1.4",
-    "source": "05_r3_n100_1.cnf"
-  },
-  {
-    "file": "06_random3.cnf",
-    "expected": "UNSAT",
-    "family": "random3",
-    "n": 175,
-    "m": 745,
-    "tier": "v1.4",
-    "source": "06_r3_n175_0.cnf"
-  },
-  {
-    "file": "07_random3.cnf",
-    "expected": "SAT",
-    "family": "random3",
-    "n": 300,
-    "m": 1278,
-    "tier": "v1.4",
-    "source": "07_r3_n300_1.cnf"
-  },
-  {
-    "file": "08_planted3.cnf",
-    "expected": "SAT",
-    "family": "planted3",
-    "n": 5000,
-    "m": 21000,
-    "tier": "v1.4",
-    "source": "08_planted_n5000.cnf"
-  },
-  {
-    "file": "09_planted3.cnf",
-    "expected": "SAT",
-    "family": "planted3",
-    "n": 20000,
-    "m": 84000,
-    "tier": "v1.4",
-    "source": "09_planted_n20000.cnf"
-  },
-  {
-    "file": "10_color3.cnf",
-    "expected": "SAT",
-    "family": "color3",
-    "n": 600,
-    "m": 2177,
-    "tier": "v1.4",
-    "source": "10_color3_v200.cnf"
-  },
-  {
-    "file": "11_random5.cnf",
-    "expected": "SAT",
-    "family": "random5",
-    "n": 60,
-    "m": 1260,
-    "tier": "v1.4",
-    "source": "11_r5_n60.cnf"
-  },
-  {
-    "file": "12_random3.cnf",
-    "expected": "SAT",
-    "family": "random3",
-    "n": 220,
-    "m": 937,
-    "strong_seconds": 117.3,
-    "tier": "v1.4",
-    "source": "12_r3_n220_x0.cnf"
-  },
-  {
-    "file": "13_random3.cnf",
-    "expected": "SAT",
-    "family": "random3",
-    "n": 240,
-    "m": 1022,
-    "strong_seconds": 13.1,
-    "tier": "v1.4",
-    "source": "13_r3_n240_x1.cnf"
-  },
-  {
-    "file": "14_random3.cnf",
-    "expected": "SAT",
-    "family": "random3",
-    "n": 280,
-    "m": 1192,
-    "strong_seconds": 47.9,
-    "tier": "v1.4",
-    "source": "14_r3_n280_x1.cnf"
-  },
-  {
-    "file": "15_color3.cnf",
-    "expected": "SAT",
-    "family": "color3",
-    "n": 1200,
-    "m": 4357,
-    "strong_seconds": 16.2,
-    "tier": "v1.4",
-    "source": "15_color3_v400.cnf"
-  },
-  {
-    "file": "16_color3.cnf",
-    "expected": "SAT",
-    "family": "color3",
-    "n": 1500,
-    "m": 5450,
-    "strong_seconds": 27.0,
-    "tier": "v1.4",
-    "source": "16_color3_v500.cnf"
-  },
-  {
-    "file": "17_random3.cnf",
-    "expected": "UNSAT",
-    "family": "random3",
-    "n": 240,
-    "m": 1022,
-    "strong_seconds": 171.5,
-    "tier": "v1.4",
-    "source": "17_r3_n240_x0.cnf"
-  },
-  {
-    "file": "18_php.cnf",
-    "expected": "UNSAT",
-    "family": "php",
-    "n": 72,
-    "m": 297,
-    "strong_seconds": 54.8,
-    "tier": "v1.4",
-    "source": "18_php_9_8.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "19_random3.cnf",
-    "tier": "hard",
-    "n": 210,
-    "m": 894,
-    "source": "19_r3_210_21009.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "random3",
-    "file": "20_random3.cnf",
-    "tier": "hard",
-    "n": 300,
-    "m": 1278,
-    "source": "20_r3_300_30001.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "random3",
-    "file": "21_random3.cnf",
-    "tier": "hard",
-    "n": 350,
-    "m": 1491,
-    "source": "21_r3_350_35002.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "random3",
-    "file": "22_random3.cnf",
-    "tier": "hard",
-    "n": 400,
-    "m": 1704,
-    "source": "22_r3_400_40002.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "coloring",
-    "file": "23_coloring.cnf",
-    "tier": "hard",
-    "n": 900,
-    "m": 3270,
-    "source": "23_color3_300_30000.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "24_random3.cnf",
-    "tier": "hard",
-    "n": 200,
-    "m": 852,
-    "source": "24_r3_200_20000.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "25_random3.cnf",
-    "tier": "hard",
-    "n": 200,
-    "m": 852,
-    "source": "25_r3_200_20002.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "26_random3.cnf",
-    "tier": "hard",
-    "n": 210,
-    "m": 894,
-    "source": "26_r3_210_21001.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "random3",
-    "file": "27_random3.cnf",
-    "tier": "hard",
-    "n": 350,
-    "m": 1491,
-    "source": "27_r3_350_35000.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "28_random3.cnf",
-    "tier": "ceiling",
-    "n": 220,
-    "m": 937,
-    "source": "28_r3_220_22001.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "random3",
-    "file": "29_random3.cnf",
-    "tier": "ceiling",
-    "n": 230,
-    "m": 979,
-    "source": "29_r3_230_23003.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "coloring",
-    "file": "30_coloring.cnf",
-    "tier": "ceiling",
-    "n": 1200,
-    "m": 4357,
-    "source": "30_color3_400_40000.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "coloring",
-    "file": "31_coloring.cnf",
-    "tier": "ceiling",
-    "n": 1500,
-    "m": 5450,
-    "source": "31_color3_500_50000.cnf"
-  },
-  {
-    "expected": "SAT",
-    "family": "random3",
-    "file": "32_random3.cnf",
-    "tier": "ceiling",
-    "n": 500,
-    "m": 2130,
-    "source": "32_r3_500_50001.cnf"
-  },
-  {
-    "expected": "UNSAT",
-    "family": "php",
-    "file": "33_php.cnf",
-    "tier": "ceiling",
-    "n": 90,
-    "m": 415,
-    "source": "33_php_10_9.cnf"
-  }
+ {
+  "expected": "UNSAT",
+  "family": "factoring",
+  "file": "01_factoring.cnf",
+  "tier": "easy",
+  "n": 913,
+  "m": 3063,
+  "source": "01_factor_24_UNSAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "sudoku",
+  "file": "02_sudoku.cnf",
+  "tier": "easy",
+  "n": 4096,
+  "m": 123914,
+  "source": "02_sudoku16_10.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "parity",
+  "file": "03_parity.cnf",
+  "tier": "easy",
+  "n": 70,
+  "m": 308,
+  "source": "03_parity3_70_7000.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "factoring",
+  "file": "04_factoring.cnf",
+  "tier": "easy",
+  "n": 1261,
+  "m": 4245,
+  "source": "04_factor_28_SAT.cnf"
+ },
+ {
+  "file": "05_random3.cnf",
+  "expected": "UNSAT",
+  "family": "random3",
+  "n": 100,
+  "m": 426,
+  "tier": "v1.4",
+  "source": "05_r3_n100_1.cnf"
+ },
+ {
+  "file": "06_random3.cnf",
+  "expected": "UNSAT",
+  "family": "random3",
+  "n": 175,
+  "m": 745,
+  "tier": "v1.4",
+  "source": "06_r3_n175_0.cnf"
+ },
+ {
+  "file": "07_random3.cnf",
+  "expected": "SAT",
+  "family": "random3",
+  "n": 300,
+  "m": 1278,
+  "tier": "v1.4",
+  "source": "07_r3_n300_1.cnf"
+ },
+ {
+  "file": "08_planted3.cnf",
+  "expected": "SAT",
+  "family": "planted3",
+  "n": 5000,
+  "m": 21000,
+  "tier": "v1.4",
+  "source": "08_planted_n5000.cnf"
+ },
+ {
+  "file": "09_planted3.cnf",
+  "expected": "SAT",
+  "family": "planted3",
+  "n": 20000,
+  "m": 84000,
+  "tier": "v1.4",
+  "source": "09_planted_n20000.cnf"
+ },
+ {
+  "file": "10_color3.cnf",
+  "expected": "SAT",
+  "family": "color3",
+  "n": 600,
+  "m": 2177,
+  "tier": "v1.4",
+  "source": "10_color3_v200.cnf"
+ },
+ {
+  "file": "11_random5.cnf",
+  "expected": "SAT",
+  "family": "random5",
+  "n": 60,
+  "m": 1260,
+  "tier": "v1.4",
+  "source": "11_r5_n60.cnf"
+ },
+ {
+  "file": "12_random3.cnf",
+  "expected": "SAT",
+  "family": "random3",
+  "n": 220,
+  "m": 937,
+  "strong_seconds": 117.3,
+  "tier": "v1.4",
+  "source": "12_r3_n220_x0.cnf"
+ },
+ {
+  "file": "13_random3.cnf",
+  "expected": "SAT",
+  "family": "random3",
+  "n": 240,
+  "m": 1022,
+  "strong_seconds": 13.1,
+  "tier": "v1.4",
+  "source": "13_r3_n240_x1.cnf"
+ },
+ {
+  "file": "14_random3.cnf",
+  "expected": "SAT",
+  "family": "random3",
+  "n": 280,
+  "m": 1192,
+  "strong_seconds": 47.9,
+  "tier": "v1.4",
+  "source": "14_r3_n280_x1.cnf"
+ },
+ {
+  "file": "15_color3.cnf",
+  "expected": "SAT",
+  "family": "color3",
+  "n": 1200,
+  "m": 4357,
+  "strong_seconds": 16.2,
+  "tier": "v1.4",
+  "source": "15_color3_v400.cnf"
+ },
+ {
+  "file": "16_color3.cnf",
+  "expected": "SAT",
+  "family": "color3",
+  "n": 1500,
+  "m": 5450,
+  "strong_seconds": 27.0,
+  "tier": "v1.4",
+  "source": "16_color3_v500.cnf"
+ },
+ {
+  "file": "17_random3.cnf",
+  "expected": "UNSAT",
+  "family": "random3",
+  "n": 240,
+  "m": 1022,
+  "strong_seconds": 171.5,
+  "tier": "v1.4",
+  "source": "17_r3_n240_x0.cnf"
+ },
+ {
+  "file": "18_php.cnf",
+  "expected": "UNSAT",
+  "family": "php",
+  "n": 72,
+  "m": 297,
+  "strong_seconds": 54.8,
+  "tier": "v1.4",
+  "source": "18_php_9_8.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "19_random3.cnf",
+  "tier": "hard",
+  "n": 210,
+  "m": 894,
+  "source": "19_r3_210_21009.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "20_random3.cnf",
+  "tier": "hard",
+  "n": 300,
+  "m": 1278,
+  "source": "20_r3_300_30001.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "21_random3.cnf",
+  "tier": "hard",
+  "n": 350,
+  "m": 1491,
+  "source": "21_r3_350_35002.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "22_random3.cnf",
+  "tier": "hard",
+  "n": 400,
+  "m": 1704,
+  "source": "22_r3_400_40002.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "coloring",
+  "file": "23_coloring.cnf",
+  "tier": "hard",
+  "n": 900,
+  "m": 3270,
+  "source": "23_color3_300_30000.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "24_random3.cnf",
+  "tier": "hard",
+  "n": 200,
+  "m": 852,
+  "source": "24_r3_200_20000.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "25_random3.cnf",
+  "tier": "hard",
+  "n": 200,
+  "m": 852,
+  "source": "25_r3_200_20002.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "26_random3.cnf",
+  "tier": "hard",
+  "n": 210,
+  "m": 894,
+  "source": "26_r3_210_21001.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "27_random3.cnf",
+  "tier": "hard",
+  "n": 350,
+  "m": 1491,
+  "source": "27_r3_350_35000.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "28_random3.cnf",
+  "tier": "ceiling",
+  "n": 220,
+  "m": 937,
+  "source": "28_r3_220_22001.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "29_random3.cnf",
+  "tier": "ceiling",
+  "n": 230,
+  "m": 979,
+  "source": "29_r3_230_23003.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "coloring",
+  "file": "30_coloring.cnf",
+  "tier": "ceiling",
+  "n": 1200,
+  "m": 4357,
+  "source": "30_color3_400_40000.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "coloring",
+  "file": "31_coloring.cnf",
+  "tier": "ceiling",
+  "n": 1500,
+  "m": 5450,
+  "source": "31_color3_500_50000.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "32_random3.cnf",
+  "tier": "ceiling",
+  "n": 500,
+  "m": 2130,
+  "source": "32_r3_500_50001.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "php",
+  "file": "33_php.cnf",
+  "tier": "ceiling",
+  "n": 90,
+  "m": 415,
+  "source": "33_php_10_9.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "34_random3.cnf",
+  "tier": "v1.6",
+  "n": 210,
+  "m": 895,
+  "source": "r3_n210_s9106_UNSAT.cnf"
+ },
+ {
+  "expected": "UNSAT",
+  "family": "random3",
+  "file": "35_random3.cnf",
+  "tier": "v1.6",
+  "n": 210,
+  "m": 895,
+  "source": "r3_n210_s9107_UNSAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "36_random3.cnf",
+  "tier": "v1.6",
+  "n": 230,
+  "m": 955,
+  "source": "r3_n230_s11303_SAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "37_random3.cnf",
+  "tier": "v1.6",
+  "n": 250,
+  "m": 1038,
+  "source": "r3_n250_s11502_SAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "38_random3.cnf",
+  "tier": "v1.6",
+  "n": 240,
+  "m": 996,
+  "source": "r3_n240_s11403_SAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "39_random3.cnf",
+  "tier": "v1.6",
+  "n": 220,
+  "m": 913,
+  "source": "r3_n220_s11203_SAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "40_random3.cnf",
+  "tier": "v1.6",
+  "n": 260,
+  "m": 1079,
+  "source": "r3_n260_s11601_SAT.cnf"
+ },
+ {
+  "expected": "SAT",
+  "family": "random3",
+  "file": "41_random3.cnf",
+  "tier": "v1.6",
+  "n": 240,
+  "m": 996,
+  "source": "r3_n240_s11401_SAT.cnf"
+ }
 ]

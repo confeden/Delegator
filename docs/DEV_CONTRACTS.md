@@ -385,7 +385,7 @@ Plumbing (triage/extract/planner) keeps using the WEAKEST enabled model.
 
 ## 10. Benchmark (`-benchmark`, public)
 
-A coding benchmark (v1.5) that the IDE agent runs from its chat; the core is NOT involved. Package:
+A coding benchmark (v1.7) that the IDE agent runs from its chat; the core is NOT involved. Package:
 `coding-bench/` in the repo, installed to `<install>\runtime\coding-bench\` (`start.py`, `grade_run.py`, `template/`,
 `hidden/`); runs and results are written to `<RT>\coding-bench\{runs,results}` (RT = the data dir, where the logs are); agent protocol: `scripts/BENCHMARK.md` -> `<RT>\BENCHMARK.md`.
 
@@ -399,7 +399,7 @@ Web checkbox is on and the extension is connected (`Run-Assist`, before the rout
 Flow: `python start.py --mode native|delegator "<model>"` copies `template/` into `runs/<mode>-<model>-<stamp>-<id>/`
 (three tasks: routing 35, compress 35, sat 30; 15 min each; `bench.py begin|check|status|finish`);
 `finish` publishes `REPORT.md` and runs `grade_run.py` (5-10 min, serialised by a lock file, timings depend on the
-machine), which writes `results/<model-slug>/<arm>/<run>__v1.5__grade.json` + `.md`, rebuilds `SUMMARY_v1.5.md`, copies `results/<model-slug>` to
+machine), which writes `results/<model-slug>/<arm>/<run>__v1.7__grade.json` + `.md` (`flags`, `work_minutes` optional for older files), rebuilds `SUMMARY_v1.5.md`, copies `results/<model-slug>` to
 `Desktop\Delegator-benchmark\<model-slug>` (one folder, one subfolder per arm - carry it to another PC) and deletes the run folder (the archive lives in `runs_archive/`, outside the agent's reach by
 convention only). The grading is mechanical (D11).
 
@@ -411,7 +411,8 @@ that window is counted), `graded_at`. The GUI tab «Бенчмарк» only read
 
 The in-flight flag `<RT>enchmark-active.json` ({run, mode, model, started}) is written by `start.py`,
 refreshed by `bench.py begin|check` and removed by `finish`; the 6 h staleness rule of the `bench` flag below
-still holds. Reports of different benchmark versions are not comparable (I6). The installer ships a private CPython 3.12 (`scripts/build-pyembed.py` -> `<install>untime\python\python.exe`, no `_pth` file,
+still holds. Reports of different benchmark versions are not comparable (I6). The installer ships a private CPython 3.12 (`scripts/build-pyembed.py` -> `<install>
+untime\python\python.exe`, no `_pth` file,
 ~14 MB / +6.4 MB installer); tasks, `bench.py` and the graders run on it, with `PYTHONNOUSERSITE=1`.
 
 ## 11. Mechanical draft check (`improve`, §8)
@@ -665,3 +666,35 @@ Returning those defects as DATA on stdout rather than as stderr prose needs P5.
 mode, and `delegate-metrics.jsonl` gets `caller=…;callerDpr=…;bestDpr=…` on the `route` record. A
 tier without the two numbers that produced it is an assertion, not evidence — and the benchmark
 grades the CHOICE by replaying it.
+
+## 14. Web doors (0.10.0)
+
+Signed-in chat tabs in the user's Chrome, driven by `extensions/gemini-web-bridge`. Table: `DOORS` in
+`delegator_core/providers/web_doors.py`, in strength order: Gemini (D16), Kimi, Z.ai, Qwen, DeepSeek,
+Tencent Hy, Rudder. A door is on through its `<id>_web_enabled` flag in config.json.
+
+- `POST /api/web/ask {text, files?, model?, reasoning?, timeout_sec?, light?}` -> `{text, model, provider,
+  door, seconds, errors}`, or 503 with the reasons. The leader runs alone for `hedge_delay_sec` (40 / 75 /
+  120 s by prompt size), then the next door joins it, at most two at once; a failure hands over at once. The
+  first good answer wins, but a weaker door's answer waits up to 15 s for a stronger door still running.
+  The losers are cancelled. Attachments go to Gemini only.
+- `POST /api/web/panel {text, size?, reasoning?, timeout_sec?}` -> `{answers: [{text, model, door, seconds}]}`:
+  the strongest doors at once, for `boost`.
+- `GET /api/web/doors` -> `{connected, paused, seen_age, wanted, doors: [{id, label, url, enabled, strength,
+  auth, auth_label, auth_at, resting_sec, rest_reason, last_error, last_seconds}]}`. `auth` is `unknown`,
+  `checking`, `signed_in` or `signed_out`.
+- `POST /api/web/login {door}` -> `{queued, url}`. `queued: false` = no extension called in lately, so the GUI
+  opens `url` in the default browser itself.
+- `POST /api/web/auth {door, state, label}`: the extension's report, from what the page shows. A site's
+  sign-in button or sign-in path means `signed_out`; a composer without one means `signed_in`.
+- Extension side: `GET /api/web-door/wait?known=a,b` (the ONE long poll for all doors, -> `{wanted, login, turns,
+  extension_version}`; Chrome allows 6 connections per host, and a poll per door starved the last doors),
+  `GET /api/web-door/{id}/live?id=` (false = stop this turn), `POST /api/web-door/{id}/phase {phase}`,
+  `POST /api/web-door/{id}/result {request_id, text, error, used}`.
+- A door's error text starts with its class: `LOGIN` -> `signed_out`, 30 min rest; `QUOTA` -> 3 h; `SLOW` -> 20 min;
+  anything else -> 5 min. A success clears the rest. State persists in `<RT>\web-doors.json`.
+- `POST /api/route`: the router in-process, same payload and result as `--route`. The exe stays for when the
+  core is down.
+
+Budgets: `assist` 540 s in total (the hook tells agents to allow 10 minutes), `improve` 240 s (past it the caller
+keeps its draft), one web turn 300 s (benchmark 570 s, improve 180 s). Past the budget the ladder stops asking.

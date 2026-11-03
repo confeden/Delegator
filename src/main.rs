@@ -85,7 +85,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         viewport: egui::ViewportBuilder::default()
             .with_title(concat!("Delegator v", env!("CARGO_PKG_VERSION")))
             .with_icon(window_icon)
-            .with_inner_size([810.0, 555.0])
+            // Starts where the API provider row ends (the last button is TokenHarbor.ai);
+            // the user can still narrow it down to 650.
+            .with_inner_size([980.0, 555.0])
             .with_min_inner_size([650.0, 420.0])
             .with_visible(!start_in_background),
         ..Default::default()
