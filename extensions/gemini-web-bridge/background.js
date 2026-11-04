@@ -692,15 +692,27 @@ async function reloadIfOutdated(shipped) {
 
 // Wakes the extension when Delegator gets (or finishes) work for a door, or when «Войти» is pressed.
 // Also tells the core the extension is alive, whichever doors are switched on.
+const seenTurns = new Set();
+let unconfirmedTurns = [];
+
 async function watchDoors() {
   let known = [];
   for (;;) {
     try {
-      const response = await fetch(`${CORE}/api/web-door/wait?known=${encodeURIComponent(known.join(","))}`, { cache: "no-store" });
+      const ack = encodeURIComponent(unconfirmedTurns.join(","));
+      const response = await fetch(`${CORE}/api/web-door/wait?known=${encodeURIComponent(known.join(","))}&ack=${ack}`, { cache: "no-store" });
+      unconfirmedTurns = [];
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const { wanted = [], login = [], turns = [], extension_version: shipped = "" } = await response.json();
       for (const door of login) void openLogin(door);
-      for (const { door, ...task } of turns) enqueueTurn(door, task);
+      for (const { door, ...task } of turns) {
+        unconfirmedTurns.push(task.request_id);
+        // A confirmation that was lost brings the same turn back: it must not run twice.
+        if (seenTurns.has(task.request_id)) continue;
+        seenTurns.add(task.request_id);
+        if (seenTurns.size > 200) seenTurns.delete(seenTurns.values().next().value);
+        enqueueTurn(door, task);
+      }
       // Reloading drops everything held in memory, so it waits for a moment with nothing in hand.
       if (!turns.length && !login.length && !doorsRunning.size && !loginWatches.size) await reloadIfOutdated(shipped);
       if (wanted.join(",") !== known.join(",")) {

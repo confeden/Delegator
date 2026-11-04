@@ -49,6 +49,7 @@ from .router import route_payload
 from .providers.web_doors import (
     DOOR_BY_ID,
     GEMINI,
+    SHARED_MODEL_DOORS,
     WebDoors,
     clean_used_label,
     hedge_delay_sec,
@@ -1335,19 +1336,28 @@ def create_app() -> FastAPI:
         """How the race asks one door: Gemini through its own bridge, the rest through theirs."""
 
         async def ask(door, timeout_sec: float) -> ProviderResult:
-            if door.id == GEMINI.id:
+            if door.id in SHARED_MODEL_DOORS:
                 chosen_model, chosen_reasoning = gemini_web_choice()
                 # A short plain question does not need the top level, unless the user picked one by hand.
                 if light and chosen_reasoning == "best":
                     chosen_reasoning = "medium"
-                return await core.gemini_web.request(
-                    mode="delegate",
+                if door.id == GEMINI.id:
+                    return await core.gemini_web.request(
+                        mode="delegate",
+                        text=text,
+                        model=model or chosen_model,
+                        reasoning=reasoning or chosen_reasoning,
+                        timeout_sec=timeout_sec,
+                        files=files,
+                        no_lite=no_lite,
+                    )
+                return await core.web_doors.ask_studio(
                     text=text,
                     model=model or chosen_model,
                     reasoning=reasoning or chosen_reasoning,
                     timeout_sec=timeout_sec,
-                    files=files,
                     no_lite=no_lite,
+                    debug=debug,
                 )
             return await core.web_doors.bridges[door.id].request(
                 text=text, mode="delegate", timeout_sec=timeout_sec, debug=debug,
@@ -1466,10 +1476,12 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/web-door/wait")
-    async def web_door_wait(known: str = "") -> dict:
+    async def web_door_wait(known: str = "", ack: str = "") -> dict:
         """Long-poll for the extension: which door tabs are wanted, and which logins were requested."""
         core: AppState = app.state.core
-        return await core.web_doors.wait_change([item for item in known.split(",") if item])
+        return await core.web_doors.wait_change(
+            [item for item in known.split(",") if item], ack=[item for item in ack.split(",") if item],
+        )
 
     @app.get("/api/web-door/{door_id}/live")
     def web_door_live(door_id: str, id: str = "") -> dict[str, bool]:

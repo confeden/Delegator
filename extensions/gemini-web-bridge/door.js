@@ -8,6 +8,9 @@
 
   const SITES = {
     aistudio: {
+      modelOpener: "ms-model-selector button,button.model-selector-card",
+      sharedChoice: true,
+      quotaText: /(quota|rate limit|resource.?exhausted|billing|exceeded|upgrade to)/i,
       composer: "ms-prompt-box textarea,ms-chunk-input textarea,textarea[aria-label]",
       send: "ms-run-button button,button[aria-label*='Run'],button[type='submit']",
       answer: "ms-chat-turn:has([data-turn-role='Model']) .turn-content",
@@ -22,9 +25,17 @@
       modelLabel: /^Gemini[\w .-]*$/i,
     },
     kimi: {
+      modelOpener: ".current-model",
+      picker: ".current-model",
+      // K3.1 Pro and K2.8 on a free account answer with a subscription dialog ("Too many people are
+      // chatting"): measured both. Instant is what such an account really gets.
+      models: [/^Instant/i],
+      rows: "button.model-item",
       composer: ".chat-input-editor",
       send: ".send-button-container",
       answer: ".markdown-container",
+      // Kimi renders its reasoning with the same markdown class, and it can come last on the page.
+      notAnswer: ".thinking-container,.toolcall-container,.toolcall-content",
       user: ".segment-user,[class*='user-content'],[class*='user-message']",
       strip: "[class*='think'],[class*='reason']",
       modelLabel: /^K\d[\w.]*$/,
@@ -32,6 +43,7 @@
     zai: {
       composer: "#chat-input",
       send: "#send-message-button",
+      sendHidesWhileBusy: true,
       answer: ".chat-assistant",
       user: ".chat-user",
       strip: ".thinking-chain-container,[class*='thinking']",
@@ -74,12 +86,21 @@
 
   const LOGIN_TEXT = /^(log ?in|sign ?in|sign ?up|войти|вход|登录|注册)$/i;
   const LIMIT_TEXT = /(rate limit|too many|limit (reached|exceeded)|reached your|usage limit|try again later|upgrade to|лимит|слишком много|次数|频繁|额度|上限)/i;
-  const STOP_LABEL = /(^|\b)(stop|停止|останов)/i;
+  const STOP_LABEL = /^(stop|стоп|停止|останов)/i;
   const FENCE = "`".repeat(3);
+  // AI Studio's rows carry the model's id. Same choices as the Gemini page, by the shared setting.
+  const STUDIO_MODELS = {
+    argon: /gemini-\d[\w.]*-argon/i,
+    "3.1-pro": /gemini-3\.1-pro(?!-image)/i,
+    "3.8-flash": /gemini-3\.8-flash(?![\w-])/i,
+    "3.5-flash-lite": /gemini-3\.5-flash-lite(?![\w-])/i,
+  };
+  const STUDIO_LEVELS = { best: /^high/i, high: /^high/i, medium: /^medium/i, low: /^low/i };
   const STABLE_MS = 7000;
+  const BUSY_CEILING_MS = 30000;
   // Measured on AI Studio: a page's "Thinking" label stood for 12 s and went back as the whole answer.
   // A short "answer" that is really the site saying no. Only short text counts: a real answer may discuss limits.
-  const BUSY_TEXT = /(at capacity|over capacity|try again later|switch to another model|too many requests|server is busy|服务器繁忙|稍后再试)/i;
+  const BUSY_TEXT = /(at capacity|over capacity|try again later|switch to another model|too many requests|server is busy|something went wrong|i encountered an error|что-то пошло не так|服务器繁忙|稍后再试)/i;
   const THINKING_ONLY = /^(thinking|thought process|thoughts|думаю|размышления|思考中?)[\s.…]*$/i;
   const DEAD_AFTER_MS = 120000;
 
@@ -117,10 +138,29 @@
     return notice ? notice.slice(0, 160) : "";
   }
 
+  // A dialog that asks for money instead of answering: the turn will never finish behind it.
+  function paywall() {
+    const text = query("[role='dialog'],[class*='modal'],[class*='paywall']")
+      .map(labelOf).find((value) => value && /(upgrade your plan|too many people|subscription|subscribe|paid plan|out of (credits|messages)|подписк)/i.test(value));
+    return text ? text.slice(0, 160) : "";
+  }
+
   function isGenerating() {
     return query("button,[role='button']").some((element) => STOP_LABEL.test(element.getAttribute("aria-label") || element.getAttribute("title") || ""))
       || query("ms-run-button button,[class*='run-button']").some((element) => /^stop\b|останов/i.test((element.innerText || "").trim()))
       || query("[class*='stop-button'],[class*='stopButton'],[class*='send-button--stop']").length > 0;
+  }
+
+  // The send control enabled while the composer is empty is a stop button, on most sites with no label to
+  // say so. Used as a hint with a ceiling (BUSY_CEILING_MS), because a site may simply leave it enabled.
+  function sendBusy(site) {
+    const composer = findComposer(site);
+    if (composer && composerLength(composer) > 0) return false;
+    const control = query(site.send).at(-1);
+    if (!control && site.sendHidesWhileBusy) return true;
+    const button = control?.closest?.("button,[role='button']") || control;
+    return Boolean(button) && !button.disabled && button.getAttribute("aria-disabled") !== "true"
+      && !/disabled/i.test(String(button.className?.baseVal ?? button.className ?? ""));
   }
 
   // innerText flattens the answer: code loses its fences, lists their bullets. Rebuilt from the DOM.
@@ -135,6 +175,8 @@
       const monaco = [...node.querySelectorAll(".view-line")]
         .sort((a, b) => parseFloat(a.style.top || 0) - parseFloat(b.style.top || 0));
       const lines = monaco.length ? monaco : [...node.querySelectorAll(".cm-line")];
+      const whole = (node.textContent || "").trim();
+      if (!lines.length && /^\$[^\n]*\$$/.test(whole)) return whole;
       const code = lines.length
         ? lines.map((line) => line.textContent.replace(/\u00a0/g, " ")).join("\n")
         : (node.querySelector("code") || node).textContent.replace(/\n+$/, "");
@@ -191,7 +233,7 @@
   // The answer node: the site's own selector, which names the assistant's side only. Text is not a
   // filter here: "2+2" is a fair prompt, and "2+2 = 4" contains it.
   function lastAnswer(site) {
-    const nodes = query(site.answer);
+    const nodes = query(site.answer).filter((element) => !site.notAnswer || !element.closest(site.notAnswer));
     // Outermost only: a broad selector also matches parts of the answer (a code block's own markdown
     // class), and the last of those would stand in for the whole answer.
     const outer = nodes.filter((element) => !nodes.some((other) => other !== element && other.contains(element)));
@@ -218,6 +260,7 @@
       `ответ(${site.answer}) ${query(site.answer).length}`,
       `пользователь ${query(site.user).length}`,
       `генерирует ${isGenerating()}`,
+      `диалоги ${query("[role='dialog'],[class*='modal'],[class*='dialog'],[class*='paywall'],[class*='upgrade']").map((element) => (element.innerText || "").replace(/\s+/g, " ").slice(0, 70)).filter(Boolean).slice(0, 3).join(" / ") || "нет"}`,
     ];
     const bubble = promptHead && [...document.querySelectorAll("body *")].reverse()
       .find((element) => element.children.length <= 2 && (element.textContent || "").includes(promptHead) && element !== composer);
@@ -253,13 +296,15 @@
     const composer = findComposer(site);
     if (!composer) throw new Error("На странице нет поля ввода.");
     setComposerText(composer, text);
-    await sleep(300);
+    const settled = Date.now() + 1500;
+    while (composerLength(composer) === 0 && Date.now() < settled) await sleep(100);
     if (composerLength(composer) > 0) return composer;
     // A rich editor that ignores execCommand takes a real paste.
     const transfer = new DataTransfer();
     transfer.setData("text/plain", text);
     composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
-    await sleep(300);
+    const pasted = Date.now() + 1000;
+    while (composerLength(composer) === 0 && Date.now() < pasted) await sleep(100);
     if (composerLength(composer) > 0) return composer;
     await trusted("begin");
     composer.focus();
@@ -284,7 +329,7 @@
     const waitSent = async (ms) => {
       const until = Date.now() + ms;
       while (Date.now() < until) {
-        if (wasSent() || loginWall()) return true;
+        if (wasSent()) return true;
         await sleep(150);
       }
       return false;
@@ -317,6 +362,8 @@
     composer.focus();
     await trusted("key", { key: "Enter" });
     if (await waitSent(2500)) return;
+    if (paywall()) throw new Error(`QUOTA: ${paywall()}`);
+    if (loginWall()) throw new Error(`LOGIN: сайт просит войти. ${pageFacts(site, promptHead)}`);
     throw new Error(`Страница не приняла запрос: ни кнопка, ни Enter его не отправили. ${pageFacts(site, promptHead)}`);
   }
 
@@ -344,33 +391,83 @@
   // and the reply reports what really ran.
   async function chooseModel(site) {
     if (!site.picker || !site.models?.length) return;
-    const picker = query(site.picker)[0];
-    if (!picker) return;
-    const current = (picker.innerText || "").replace(/\s+/g, " ").trim();
-    if (site.models[0].test(current)) return;
-    openMenu(picker);
-    await sleep(600);
-    if (!menuRows().length) {
-      await trustedClickOn(picker);
-      await sleep(800);
-    }
-    const rows = menuRows();
+    // The picker renders after the composer does, later still in a background tab.
+    const until = Date.now() + 5000;
+    while (!query(site.picker).length && Date.now() < until) await sleep(150);
+    const pickerText = () => (query(site.picker)[0]?.innerText || "").replace(/\s+/g, " ").trim();
     const rowText = (element) => (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
-    menuSeen = rows.map(rowText).map((text) => text.slice(0, 40)).slice(0, 12).join(" | ");
+    const rowsOf = () => (site.rows ? query(site.rows) : menuRows());
+    if (!query(site.picker).length || site.models[0].test(pickerText())) return;
     for (const pattern of site.models) {
+      if (pattern.test(pickerText())) return;
+      if (!rowsOf().length) {
+        openMenu(query(site.picker)[0]);
+        await sleep(600);
+      }
+      if (!rowsOf().length) {
+        await trustedClickOn(query(site.picker)[0]).catch(() => {});
+        await sleep(800);
+      }
+      const rows = rowsOf();
+      menuSeen = rows.map(rowText).map((text) => text.slice(0, 40)).slice(0, 12).join(" | ");
       const row = rows.find((element) => pattern.test(rowText(element)));
-      if (row) {
-        row.click();
-        await sleep(300);
-        if (!site.models[0].test(rowText(query(site.picker)[0]))) {
-          await trustedClickOn(row).catch(() => {});
-          await sleep(300);
-        }
-        return;
+      if (!row) continue;
+      row.click();
+      await sleep(400);
+      if (!pattern.test(pickerText())) {
+        await trustedClickOn(row).catch(() => {});
+        await sleep(400);
+      }
+      if (pattern.test(pickerText())) return;
+      await trusted("key", { key: "Escape" }).catch(() => {});
+      await sleep(300);
+    }
+    if (rowsOf().length) {
+      await trusted("key", { key: "Escape" }).catch(() => {});
+      await sleep(200);
+    }
+  }
+
+  // Model and thinking level by the choice shared with Gemini. A model the page does not offer is the
+  // core's business (next rung); a level it does not offer is not worth failing a turn for.
+  async function chooseStudioModel(site, task) {
+    const pattern = STUDIO_MODELS[task.model];
+    if (!pattern) return "";
+    const cardOf = () => query(site.modelOpener)[0];
+    const card = cardOf();
+    if (!card) throw new Error(`UNAVAILABLE: в AI Studio нет выбора модели. ${pageFacts(site, "")}`);
+    if (!pattern.test(card.innerText || "")) {
+      openMenu(card);
+      await sleep(800);
+      const rows = query("ms-model-carousel-row");
+      const row = rows.find((element) => pattern.test(element.innerText || ""));
+      if (!row) {
+        await trusted("key", { key: "Escape" }).catch(() => {});
+        throw new Error(`UNAVAILABLE: в AI Studio нет модели ${task.model}.`);
+      }
+      (row.querySelector("button") || row).click();
+      await sleep(600);
+      if (!pattern.test(cardOf()?.innerText || "")) {
+        await trustedClickOn(row).catch(() => {});
+        await sleep(600);
+      }
+      if (!pattern.test(cardOf()?.innerText || "")) {
+        throw new Error(`UNAVAILABLE: AI Studio не переключился на модель ${task.model}.`);
       }
     }
-    await trusted("key", { key: "Escape" }).catch(() => {});
-    await sleep(200);
+    const level = STUDIO_LEVELS[task.reasoning];
+    const select = query("mat-select[aria-label='Thinking Level'],ms-thinking-level-setting mat-select")[0];
+    if (level && select && !level.test((select.innerText || "").trim())) {
+      openMenu(select);
+      await sleep(400);
+      const option = query("mat-option,[role='option']").find((element) => level.test((element.innerText || "").trim()));
+      if (option) option.click();
+      else await trusted("key", { key: "Escape" }).catch(() => {});
+      await sleep(300);
+    }
+    const name = (cardOf()?.innerText || "").split("\n")[0].trim();
+    const shown = (query("mat-select[aria-label='Thinking Level'],ms-thinking-level-setting mat-select")[0]?.innerText || "").trim();
+    return [name, shown].filter(Boolean).join(" · ");
   }
 
   async function chooseToggles(site) {
@@ -397,16 +494,20 @@
 
   async function waitForAnswer(site, promptHead, maxWaitMs, prompt) {
     const started = Date.now();
-    const deadline = started + Math.min(Math.max(Number(maxWaitMs) || 360000, 60000), 900000);
+    const deadline = turnStartedAt + Math.min(Math.max(Number(maxWaitMs) || 360000, 60000), 900000);
     let lifeAt = Date.now();
     const observer = new MutationObserver(() => { lifeAt = Date.now(); });
     observer.observe(document.body, { subtree: true, childList: true, characterData: true });
     let best = "";
     let changedAt = Date.now();
     let wallSince = 0;
+    let beatAt = Date.now();
+    const quietNow = () => Date.now() - lifeAt;
     try {
       while (Date.now() < deadline) {
         if (aborted) throw new Error("ABORTED: другая дверь ответила раньше.");
+        const thinking = query("button,[role='button'],span").some((element) => element.children.length === 0 && /^(thinking|думает|思考中)[\s.…]*$/i.test((element.textContent || "").trim()));
+        if (thinking) lifeAt = Date.now();
         const node = lastAnswer(site);
         const raw = node ? answerText(site, node) : "";
         const text = THINKING_ONLY.test(raw) || raw === prompt ? "" : raw;
@@ -421,20 +522,30 @@
           } else {
             wallSince = 0;
           }
-          const notice = limitNotice();
+          if (Date.now() - started > 5000 && query("button,[role='button']").some((element) => /^(повторить|retry|try again|regenerate)$/i.test(labelOf(element)))) {
+            throw new Error(`SLOW: сайт предлагает повторить запрос. ${pageFacts(site, promptHead)}`);
+          }
+          const notice = limitNotice() || paywall();
           if (notice) throw new Error(`QUOTA: ${notice}`);
         }
         if (best && site.failure?.test(best)) throw new Error(`Сайт вернул ошибку: ${best.slice(0, 200)}`);
         if (best && best.length < 300 && BUSY_TEXT.test(best)) throw new Error(`SLOW: сайт занят: ${best.slice(0, 200)}`);
+        if (best && sendBusy(site)) busySeen = true;
+        if (Date.now() - beatAt >= 15000) {
+          beatAt = Date.now();
+          void phase(`жду ответ: ${best.length} симв., тишина ${Math.round(quietNow() / 1000)} с; ${pageFacts(site, promptHead).slice(0, 260)}`);
+        }
+        if (best && !generatingSeen) {
+          generatingSeen = query("button,[role='button'],ms-run-button button").slice(-10).map(controlShape).join(" | ").slice(0, 1200);
+        }
         const quiet = Date.now() - changedAt;
         // A one-word answer gets a longer look: it may be the first word of a slow stream.
         const needed = best.length < 40 ? STABLE_MS * 2 : STABLE_MS;
-        if (best && quiet >= needed && !isGenerating() && !site.running?.()) return best;
+        if (best && site.quotaText?.test(best) && best.length < 400) throw new Error(`QUOTA: ${best.slice(0, 200)}`);
+        const stopped = !isGenerating() && !site.running?.() && !thinking;
+        if (best && quiet >= needed && stopped && (!sendBusy(site) || quiet >= BUSY_CEILING_MS)) return best;
         // A page that says it is thinking is alive, however still it sits: GLM-5.3 thought for over two
         // minutes with nothing moving. The race's own hedge covers the wait.
-        if (!best && query("button,[role='button'],span").some((element) => element.children.length === 0 && /^(thinking|думает|思考中)/i.test((element.textContent || "").trim()))) {
-          lifeAt = Date.now();
-        }
         if (Date.now() - lifeAt >= DEAD_AFTER_MS) {
           if (best) return best;
           throw new Error(`SLOW: нет признаков жизни ${Math.round(DEAD_AFTER_MS / 1000)} с. ${pageFacts(site, promptHead)}`);
@@ -473,6 +584,46 @@
       await sleep(250);
     }
     throw new Error(`На странице не появилось поле ввода. ${pageFacts(site, "")}`);
+  }
+
+  let generatingSeen = "";
+  let turnStartedAt = Date.now();
+  let busySeen = false;
+
+  function controlShape(element) {
+    return `${element.tagName.toLowerCase()}.${String(element.className?.baseVal ?? element.className ?? "").trim().split(/\s+/).slice(0, 3).join(".").slice(0, 50)}[${(element.getAttribute("aria-label") || "").slice(0, 30)}]"${(element.innerText || "").replace(/\s+/g, " ").trim().slice(0, 40)}"`;
+  }
+
+  // For a door that has no picker in SITES yet: what near the composer looks like one, and what opens.
+  async function probeControls(site) {
+    // The picker renders after the composer does, later still in a background tab.
+    const until = Date.now() + 5000;
+    while (site.modelOpener && !query(site.modelOpener).length && Date.now() < until) await sleep(150);
+    const hint = /model|thinking|reason|level|mode|effort|expert|deep/i;
+    const lines = query("button,[role='button'],[role='combobox'],mat-select,ms-model-selector,ms-thinking-level-setting,[class*='model'],[class*='Model'],[class*='current']")
+      .filter((element) => hint.test(`${element.tagName} ${element.className} ${element.getAttribute("aria-label") || ""}`))
+      .slice(0, 14).map(controlShape);
+    const composer = findComposer(site);
+    let area = composer;
+    for (let up = 0; up < 5 && area?.parentElement; up++) area = area.parentElement;
+    if (area) {
+      lines.push(`NEAR COMPOSER ${[...area.querySelectorAll("button,[role='button'],[role='switch'],[role='radio'],[role='tab'],[role='combobox']")].filter(visible).map(controlShape).slice(0, 12).join(" | ")}`);
+    }
+    lines.push(`WITH TEXT ${query("button,[role='button'],[role='switch'],[role='radio'],[role='tab'],label")
+      .filter((element) => (element.innerText || "").trim().length > 1 && (element.innerText || "").trim().length < 30)
+      .map((element) => `${String(element.className || "").split(/\s+/)[0].slice(0, 24)}"${element.innerText.trim().replace(/\s+/g, " ")}"`).slice(-16).join(" | ")}`);
+    const opener = query(site.modelOpener || "")[0];
+    if (opener) {
+      openMenu(opener);
+      await sleep(900);
+      const rows = query("[role='option'],[role='menuitem'],[role='menuitemradio'],[role='radio'],[role='listitem'],ms-model-carousel-row,button[class*='model'],[class*='model-item'],[class*='models-'] [class*='item'],[class*='dropdown'] [class*='item'],[class*='popover'] [class*='item']")
+        .slice(0, 24).map(controlShape);
+      lines.push(`OPENED ${controlShape(opener)}`, ...rows);
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+      await trusted("key", { key: "Escape" }).catch(() => {});
+      await sleep(400);
+    }
+    return lines.join("\n");
   }
 
   // For checking a site by hand when its markup changes (`debug` on /api/web/ask): the shape of the
@@ -526,6 +677,7 @@
     if (!site) throw new Error(`Неизвестный сайт: ${door}.`);
     aborted = false;
     currentDoor = door;
+    turnStartedAt = Date.now();
     void phase("драйвер запущен");
     // Focus emulation for the whole turn, as for Gemini: a background page lays out and streams as if
     // it were in front. Not fatal: a page that does not need it still works.
@@ -534,7 +686,9 @@
     await waitReady(site);
     await ensureFreshChat(site);
     void phase("выбор модели");
+    const controls = task.debug ? await probeControls(site) : "";
     await chooseModel(site);
+    const sharedLabel = site.sharedChoice ? await chooseStudioModel(site, task) : "";
     await chooseToggles(site);
     const text = String(task.text || "");
     // The first line only: pages collapse or restyle what follows it.
@@ -542,11 +696,12 @@
     void phase("ввод запроса");
     const composer = await typePrompt(site, text);
     void phase("отправка");
+    if (paywall()) throw new Error(`QUOTA: ${paywall()}`);
     await pressSend(site, composer, promptHead, text);
     void phase("жду ответ");
     const answer = await waitForAnswer(site, promptHead, task.max_wait_ms, text.trim());
-    const used = usedLabel(site, doorLabel);
-    return { text: task.debug ? `${answer}\n=== DOM ===\n${answerSkeleton(site, promptHead)}` : answer, used };
+    const used = sharedLabel || usedLabel(site, doorLabel);
+    return { text: task.debug ? `${answer}\n=== DOM ===\n${controls}\n--- busy while generating ${busySeen}, at the end ${sendBusy(site)}\n--- while generating: ${generatingSeen}\n${answerSkeleton(site, promptHead)}` : answer, used };
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

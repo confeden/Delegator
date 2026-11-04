@@ -66,6 +66,21 @@ def web_fallback_order() -> tuple[str, ...]:
     if flash > pro:
         return ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
     return ("argon", "3.1-pro", "3.8-flash", "3.5-flash-lite")
+def model_ladder(model: str, *, no_lite: bool = False) -> list[str]:
+    """The models to try, in order, for what «Интеграция → Web» says. One list for Gemini and AI Studio."""
+    wanted = model.split("/", 1)[1] if model.startswith("gemini-web/") else model
+    order = web_fallback_order()
+    if wanted == "best":
+        ladder = ["best", *order]
+    elif wanted in order:
+        ladder = list(order[order.index(wanted):])
+    else:
+        ladder = [wanted]
+    if no_lite:
+        ladder = [entry for entry in ladder if entry != "3.5-flash-lite"] or ladder
+    return ladder
+
+
 MAX_ALIVE_WAIT_SEC = 360  # ceiling for a model that keeps showing signs of life
 QUOTA_COOLDOWN_SEC = 3 * 3600  # a spent quota resets on a daily scale; retry the strong model after this
 SLOW_COOLDOWN_SEC = 20 * 60  # a model that stalled on one prompt is not asked again straight away
@@ -182,16 +197,7 @@ class GeminiWebBridge:
         spent one rests for a while so the following requests do not pay for the
         same refusal again. Any other failure is raised as it is.
         """
-        wanted = model.split("/", 1)[1] if model.startswith("gemini-web/") else model
-        order = web_fallback_order()
-        if wanted == "best":
-            ladder = ["best", *order]
-        elif wanted in order:
-            ladder = list(order[order.index(wanted):])
-        else:
-            ladder = [wanted]
-        if no_lite:
-            ladder = [entry for entry in ladder if entry != "3.5-flash-lite"] or ladder
+        ladder = model_ladder(model, no_lite=no_lite)
         now = time.monotonic()
         resting = {key for key, until in self.exhausted.items() if until > now}
         candidates = [entry for entry in ladder if entry not in resting] or ladder[-1:]

@@ -667,17 +667,19 @@ mode, and `delegate-metrics.jsonl` gets `caller=…;callerDpr=…;bestDpr=…` o
 tier without the two numbers that produced it is an assertion, not evidence — and the benchmark
 grades the CHOICE by replaying it.
 
-## 14. Web doors (0.10.0)
+## 14. Web doors (0.9.38)
 
 Signed-in chat tabs in the user's Chrome, driven by `extensions/gemini-web-bridge`. Table: `DOORS` in
-`delegator_core/providers/web_doors.py`, in strength order: Gemini (D16), Kimi, Z.ai, Qwen, DeepSeek,
+`delegator_core/providers/web_doors.py`, in strength order: Gemini (D16), AI Studio, Z.ai, Qwen, DeepSeek, Kimi,
 Tencent Hy, Rudder. A door is on through its `<id>_web_enabled` flag in config.json.
 
 - `POST /api/web/ask {text, files?, model?, reasoning?, timeout_sec?, light?}` -> `{text, model, provider,
-  door, seconds, errors}`, or 503 with the reasons. The leader runs alone for `hedge_delay_sec` (40 / 75 /
-  120 s by prompt size), then the next door joins it, at most two at once; a failure hands over at once. The
-  first good answer wins, but a weaker door's answer waits up to 15 s for a stronger door still running.
-  The losers are cancelled. Attachments go to Gemini only.
+  door, seconds, errors}`, or 503 with the reasons. Doors within 8 DPR points of the strongest ready one are one tier and its fastest leads (`avg_seconds`).
+  The leader runs alone for `hedge_delay_sec` (25 / 50 /
+  90 s by prompt size), then the next door joins it, at most two at once; a failure hands over at once. The
+  first good answer wins; only an answer from a clearly weaker door waits up to 15 s for a stronger one.
+  The losers are cancelled. Attachments go to Gemini only. Gemini and AI Studio share `gemini_web_model` and
+  `gemini_web_reasoning`, each with its own memory of spent models (`model_ladder`).
 - `POST /api/web/panel {text, size?, reasoning?, timeout_sec?}` -> `{answers: [{text, model, door, seconds}]}`:
   the strongest doors at once, for `boost`.
 - `GET /api/web/doors` -> `{connected, paused, seen_age, wanted, doors: [{id, label, url, enabled, strength,
@@ -687,8 +689,8 @@ Tencent Hy, Rudder. A door is on through its `<id>_web_enabled` flag in config.j
   opens `url` in the default browser itself.
 - `POST /api/web/auth {door, state, label}`: the extension's report, from what the page shows. A site's
   sign-in button or sign-in path means `signed_out`; a composer without one means `signed_in`.
-- Extension side: `GET /api/web-door/wait?known=a,b` (the ONE long poll for all doors, -> `{wanted, login, turns,
-  extension_version}`; Chrome allows 6 connections per host, and a poll per door starved the last doors),
+- Extension side: `GET /api/web-door/wait?known=a,b` (the ONE long poll for all doors, `&ack=` confirms the turns of the last reply and an unconfirmed
+  turn goes out once more after 8 s, -> `{wanted, login, turns, extension_version}`; Chrome allows 6 connections per host, and a poll per door starved the last doors),
   `GET /api/web-door/{id}/live?id=` (false = stop this turn), `POST /api/web-door/{id}/phase {phase}`,
   `POST /api/web-door/{id}/result {request_id, text, error, used}`.
 - A door's error text starts with its class: `LOGIN` -> `signed_out`, 30 min rest; `QUOTA` -> 3 h; `SLOW` -> 20 min;

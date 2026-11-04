@@ -911,17 +911,7 @@ impl DelegatorApp {
     /// Second column of «Интеграция»: the web chats Delegator can hand a task to.
     /// Gemini is the first; Qwen and the rest get their own block under it.
     fn draw_web_column(&mut self, ui: &mut egui::Ui) {
-        const WEB_DOORS: [(&str, &str, &str); 7] = [
-            (
-                "aistudio",
-                "AI Studio",
-                "aistudio.google.com. Тот же аккаунт Google, но свои лимиты: выручает, когда Gemini исчерпан.",
-            ),
-            (
-                "kimi",
-                "Kimi (K3)",
-                "kimi.ai. Текст задач уходит на сайт в Китае.",
-            ),
+        const WEB_DOORS: [(&str, &str, &str); 6] = [
             (
                 "zai",
                 "Z.ai (GLM-5.3)",
@@ -936,6 +926,11 @@ impl DelegatorApp {
                 "deepseek",
                 "DeepSeek (V4)",
                 "chat.deepseek.com. Текст задач уходит на сайт в Китае.",
+            ),
+            (
+                "kimi",
+                "Kimi (Instant)",
+                "kimi.ai. На бесплатном аккаунте доступна только Instant. Текст задач уходит на сайт в Китае.",
             ),
             (
                 "tencent",
@@ -960,7 +955,7 @@ impl DelegatorApp {
             ("high", "Высокий"),
             ("medium", "Средний"),
             ("low", "Низкий"),
-            ("auto", "Как в Gemini"),
+            ("auto", "Как на сайте"),
         ];
         fn label_of(options: &[(&str, &str)], id: &str) -> String {
             options
@@ -988,44 +983,61 @@ impl DelegatorApp {
             }
             self.draw_web_door_login(ui, "gemini");
         });
-        ui.add_enabled_ui(self.config.gemini_web_enabled, |ui| {
-            let mut changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Модель");
-                egui::ComboBox::from_id_salt("gemini_web_model")
-                    .selected_text(label_of(&MODELS, &self.config.gemini_web_model))
-                    .show_ui(ui, |ui| {
-                        for (id, label) in MODELS {
-                            changed |= ui
-                                .selectable_value(
-                                    &mut self.config.gemini_web_model,
-                                    id.to_string(),
-                                    label,
-                                )
-                                .changed();
-                        }
-                    });
-            });
-            ui.horizontal(|ui| {
-                ui.label("Рассуждение");
-                egui::ComboBox::from_id_salt("gemini_web_reasoning")
-                    .selected_text(label_of(&LEVELS, &self.config.gemini_web_reasoning))
-                    .show_ui(ui, |ui| {
-                        for (id, label) in LEVELS {
-                            changed |= ui
-                                .selectable_value(
-                                    &mut self.config.gemini_web_reasoning,
-                                    id.to_string(),
-                                    label,
-                                )
-                                .changed();
-                        }
-                    });
-            });
-            if changed {
-                self.config.save();
+        let mut studio_on = self.config.aistudio_web_enabled;
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .checkbox(&mut studio_on, "AI Studio")
+                .on_hover_text(
+                    "aistudio.google.com. Тот же аккаунт Google, но свои лимиты: выручает, когда \
+                     Gemini исчерпан. Модель и рассуждение общие с Gemini.",
+                )
+                .changed()
+            {
+                self.set_web_door_flag("aistudio", studio_on);
             }
+            self.draw_web_door_login(ui, "aistudio");
         });
+        ui.add_enabled_ui(
+            self.config.gemini_web_enabled || self.config.aistudio_web_enabled,
+            |ui| {
+                let mut changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Модель");
+                    egui::ComboBox::from_id_salt("gemini_web_model")
+                        .selected_text(label_of(&MODELS, &self.config.gemini_web_model))
+                        .show_ui(ui, |ui| {
+                            for (id, label) in MODELS {
+                                changed |= ui
+                                    .selectable_value(
+                                        &mut self.config.gemini_web_model,
+                                        id.to_string(),
+                                        label,
+                                    )
+                                    .changed();
+                            }
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Рассуждение");
+                    egui::ComboBox::from_id_salt("gemini_web_reasoning")
+                        .selected_text(label_of(&LEVELS, &self.config.gemini_web_reasoning))
+                        .show_ui(ui, |ui| {
+                            for (id, label) in LEVELS {
+                                changed |= ui
+                                    .selectable_value(
+                                        &mut self.config.gemini_web_reasoning,
+                                        id.to_string(),
+                                        label,
+                                    )
+                                    .changed();
+                            }
+                        });
+                });
+                if changed {
+                    self.config.save();
+                }
+            },
+        );
         ui.add_space(6.0);
         ui.colored_label(
             self.theme.weak_text_color(),

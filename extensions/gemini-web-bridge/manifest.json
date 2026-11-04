@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Delegator Gemini Bridge",
-  "version": "0.21.2",
+  "version": "0.22.3",
   "description": "Sends selected Delegator chat requests to dedicated signed-in web chat tabs: Gemini, AI Studio, Kimi, Z.ai, Qwen, DeepSeek, Tencent Hy, Rudder.",
   "permissions": [
     "alarms",

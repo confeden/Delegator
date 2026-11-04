@@ -23,7 +23,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from .base import ProviderResult, ProviderUsage
-from .gemini_web import _config_payload
+from .gemini_web import QUOTA_COOLDOWN_SEC, UNAVAILABLE_COOLDOWN_SEC, _config_payload, model_ladder
 
 
 @dataclasses.dataclass(frozen=True)
@@ -42,10 +42,12 @@ DOORS: tuple[Door, ...] = (
     # The same Google account as Gemini with quotas of its own, so it can answer when Gemini is spent.
     # Its default was Gemini 4 Argon when checked, Gemini's own top model, so it shares Gemini's tier.
     Door("aistudio", "AI Studio", "https://aistudio.google.com/prompts/new_chat", "aistudio_web_enabled", 156),
-    Door("kimi", "Kimi", "https://www.kimi.ai/", "kimi_web_enabled", 152),
     Door("zai", "Z.ai", "https://chat.z.ai/", "zai_web_enabled", 150),
     Door("qwen", "Qwen", "https://chat.qwen.ai/", "qwen_web_enabled", 144),
     Door("deepseek", "DeepSeek", "https://chat.deepseek.com/", "deepseek_web_enabled", 138),
+    # A free account gets Instant only: K3.1 Pro and K2.8 answered with a subscription dialog. No DPR row
+    # for Instant, so this places it after the rated doors, not at K3's 152.
+    Door("kimi", "Kimi", "https://www.kimi.ai/", "kimi_web_enabled", 110),
     # Hy4 preview has no row in the table yet: `unrated` = 100 (§9.1), so it goes after the rated doors.
     Door("tencent", "Tencent Hy", "https://aistudio.tencent.ai/", "tencent_web_enabled", 100),
     # Picks its own model per request, so it has no rating of its own: `unrated` = 100 (§9.1). Last in
@@ -53,7 +55,9 @@ DOORS: tuple[Door, ...] = (
     Door("rudder", "Rudder", "https://rudder.chat/chat", "rudder_web_enabled", 100),
 )
 DOOR_BY_ID = {door.id: door for door in DOORS}
+SHARED_MODEL_DOORS = {"gemini", "aistudio"}  # one «Модель» + «Рассуждение» on «Интеграция → Web»
 
+TURN_ACK_SEC = 8.0  # the extension's next poll starts at once, so this is generous
 TAB_LINGER_SEC = 300  # a reopened tab costs 10-20 s of page load; a parked one costs nothing
 MAX_WAIT_SEC = 360
 QUOTA_REST_SEC = 3 * 3600
@@ -82,6 +86,8 @@ def classify_door_error(message: str) -> str:
     text = message or ""
     if text.startswith("LOGIN"):
         return "login"
+    if text.startswith("UNAVAILABLE"):
+        return "unavailable"
     if text.startswith("QUOTA"):
         return "quota"
     if text.startswith("SLOW") or "не ответил вовремя" in text:
@@ -175,6 +181,7 @@ class DoorBridge:
         self._requests: asyncio.Queue[dict[str, object]] = asyncio.Queue()
         self._pending: dict[str, asyncio.Future[tuple[str, str | None, str]]] = {}
         self._busy_until = 0.0
+        self._taken: dict[str, tuple[dict[str, object], float]] = {}
 
     def has_demand(self) -> bool:
         return bool(self._pending) or not self._requests.empty() or time.monotonic() < self._busy_until
@@ -188,7 +195,16 @@ class DoorBridge:
     def has_queued(self) -> bool:
         return not self._requests.empty()
 
-    async def request(self, *, text: str, mode: str, timeout_sec: float = 300, debug: bool = False) -> ProviderResult:
+    async def request(
+        self,
+        *,
+        text: str,
+        mode: str,
+        timeout_sec: float = 300,
+        debug: bool = False,
+        model: str = "",
+        reasoning: str = "",
+    ) -> ProviderResult:
         request_id = uuid.uuid4().hex
         wait_sec = min(timeout_sec, MAX_WAIT_SEC)
         loop = asyncio.get_running_loop()
@@ -197,7 +213,8 @@ class DoorBridge:
         self._busy_until = time.monotonic() + TAB_LINGER_SEC
         # The page gives up a little before the race does, so its error (which says what the page shows)
         # gets back in time.
-        await self._requests.put({"request_id": request_id, "text": text, "max_wait_ms": int((wait_sec - 8) * 1000), "debug": debug})
+        await self._requests.put({"request_id": request_id, "text": text, "max_wait_ms": int((wait_sec - 8) * 1000), "debug": debug,
+                                   "model": model, "reasoning": reasoning})
         try:
             answer, error, used = await asyncio.wait_for(future, timeout=wait_sec + 25)
         except TimeoutError as exc:
@@ -224,7 +241,23 @@ class DoorBridge:
             request = self._requests.get_nowait()
             if str(request["request_id"]) in self._pending:
                 turns.append(request)
+                self._taken[str(request["request_id"])] = (request, time.monotonic())
         return turns
+
+    def acknowledge(self, request_ids: list[str]) -> None:
+        for request_id in request_ids:
+            self._taken.pop(request_id, None)
+
+    def requeue_unacknowledged(self, max_age_sec: float = TURN_ACK_SEC) -> None:
+        """A long-poll reply can vanish (Chrome closed, the extension reloaded) and the turn with it. The
+        extension acknowledges on its next poll, and a turn it never acknowledged goes out once more."""
+        now = time.monotonic()
+        for request_id, (request, taken_at) in list(self._taken.items()):
+            if now - taken_at < max_age_sec:
+                continue
+            del self._taken[request_id]
+            if request_id in self._pending and not request.get("resent"):
+                self._requests.put_nowait({**request, "resent": True})
 
     def resolve(self, request_id: str, *, text: str = "", error: str | None = None, used: str = "") -> bool:
         self._busy_until = time.monotonic() + TAB_LINGER_SEC
@@ -254,6 +287,7 @@ class WebDoors:
         self.bridges = {door.id: DoorBridge(door) for door in DOORS if door.id != GEMINI.id}
         self.status = {door.id: DoorStatus() for door in DOORS}
         self.login_requests: set[str] = set()
+        self.studio_spent: dict[str, float] = {}
         self._state_file = state_file
         self._last_seen = 0.0
         self._load()
@@ -296,7 +330,7 @@ class WebDoors:
         return [door_id for door_id, bridge in self.bridges.items()
                 if bridge.has_pending() or (door_enabled(bridge.door, payload) and bridge.has_demand())]
 
-    async def wait_change(self, known: list[str], timeout_sec: float = 20) -> dict:
+    async def wait_change(self, known: list[str], timeout_sec: float = 20, ack: list[str] | None = None) -> dict:
         """The extension's one long poll: answers with new turns, a change in wanted tabs, or a login.
 
         One poll for every door, because Chrome allows six connections to a host and everything to the
@@ -305,7 +339,11 @@ class WebDoors:
         known_set = set(known)
         deadline = time.monotonic() + timeout_sec
         self.touch()
+        for bridge in self.bridges.values():
+            bridge.acknowledge(ack or [])
         while time.monotonic() < deadline:
+            for bridge in self.bridges.values():
+                bridge.requeue_unacknowledged()
             if (
                 set(self.wanted()) != known_set
                 or self.login_requests
@@ -349,7 +387,7 @@ class WebDoors:
             status = self.status[door.id]
             rows.append({
                 "id": door.id, "label": door.label, "url": door.url, "enabled": door_enabled(door, payload),
-                "strength": door.strength,
+                "strength": door.strength, "shares_model": door.id in SHARED_MODEL_DOORS,
                 "auth": status.auth, "auth_label": status.auth_label, "auth_at": status.auth_at,
                 "resting_sec": status.resting_for(), "rest_reason": status.rest_reason,
                 "last_error": status.last_error, "last_seconds": status.last_seconds, "phase": status.phase,
@@ -414,6 +452,42 @@ class WebDoors:
             status.auth = "signed_in"
             status.auth_at = time.time()
         self.save()
+
+    async def ask_studio(
+        self,
+        *,
+        text: str,
+        model: str,
+        reasoning: str,
+        timeout_sec: float,
+        no_lite: bool = False,
+        debug: bool = False,
+    ) -> ProviderResult:
+        """AI Studio by the choice it shares with Gemini, and the same way down when a model is spent.
+
+        It meters its models apart from Gemini's page, so a spent model is remembered per door. "best" is
+        the top of the ladder here: this page has no menu of its own to rank."""
+        ladder = [entry for entry in model_ladder(model, no_lite=no_lite) if entry != "best"]
+        now = time.monotonic()
+        candidates = [entry for entry in ladder if self.studio_spent.get(entry, 0) <= now] or ladder[-1:]
+        deadline = now + timeout_sec
+        last_error = ""
+        for entry in candidates:
+            remaining = deadline - time.monotonic()
+            if remaining < 20:
+                break
+            try:
+                return await self.bridges["aistudio"].request(
+                    text=text, mode="delegate", timeout_sec=remaining, debug=debug, model=entry, reasoning=reasoning,
+                )
+            except RuntimeError as exc:
+                kind = classify_door_error(str(exc))
+                if kind not in ("quota", "unavailable"):
+                    raise
+                last_error = str(exc)
+                rest = QUOTA_COOLDOWN_SEC if kind == "quota" else UNAVAILABLE_COOLDOWN_SEC
+                self.studio_spent[entry] = time.monotonic() + rest
+        raise RuntimeError(f"QUOTA: ни одна модель AI Studio не ответила. {last_error}"[:1500])
 
     async def race(self, ask: Asker, doors: list[Door], *, hedge_after: float, timeout_sec: float) -> WebAnswer:
         """The first good answer wins; a stronger door still running gets a short grace."""

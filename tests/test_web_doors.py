@@ -96,30 +96,30 @@ def test_a_clearly_stronger_door_about_to_finish_beats_a_weak_one_that_finished_
 def test_nothing_waits_for_a_door_of_the_same_tier(monkeypatch):
     monkeypatch.setattr(web_doors, "WINNER_GRACE_SEC", 5.0)
     race = WebDoors().race(
-        scripted({"gemini": (3, None), "kimi": (0.01, None)}), doors("gemini", "kimi"),
+        scripted({"gemini": (3, None), "zai": (0.01, None)}), doors("gemini", "zai"),
         hedge_after=0.01, timeout_sec=5,
     )
     answer = asyncio.run(asyncio.wait_for(race, 1))
-    assert answer.door.id == "kimi"
+    assert answer.door.id == "zai"
 
 
 def test_the_fastest_of_the_top_tier_leads_and_weaker_doors_keep_their_place(config):
-    config(gemini_web_enabled=True, kimi_web_enabled=True, zai_web_enabled=True, deepseek_web_enabled=True)
+    config(gemini_web_enabled=True, aistudio_web_enabled=True, zai_web_enabled=True, deepseek_web_enabled=True)
     hub = WebDoors()
     hub.touch()
     hub._note_success(DOOR_BY_ID["gemini"], 60)
-    hub._note_success(DOOR_BY_ID["kimi"], 32)
+    hub._note_success(DOOR_BY_ID["aistudio"], 32)
     hub._note_success(DOOR_BY_ID["zai"], 20)
     hub._note_success(DOOR_BY_ID["deepseek"], 5)  # the fastest of all, but clearly weaker
-    assert [door.id for door in hub.ready_doors()] == ["zai", "kimi", "gemini", "deepseek"]
+    assert [door.id for door in hub.ready_doors()] == ["zai", "aistudio", "gemini", "deepseek"]
 
 
 def test_a_new_door_gets_its_turn_ahead_of_a_slow_one(config):
-    config(gemini_web_enabled=True, kimi_web_enabled=True)
+    config(gemini_web_enabled=True, aistudio_web_enabled=True)
     hub = WebDoors()
     hub.touch()
     hub._note_success(DOOR_BY_ID["gemini"], 60)
-    assert [door.id for door in hub.ready_doors()] == ["kimi", "gemini"]
+    assert [door.id for door in hub.ready_doors()] == ["aistudio", "gemini"]
 
 
 def test_a_failed_door_hands_over_at_once_without_waiting_for_the_hedge():
@@ -341,3 +341,106 @@ def test_only_the_local_runtime_gui_and_extension_may_reach_the_queues():
     assert is_foreign_request("127.0.0.1:1380", "", "cross-site")
     assert is_foreign_request("127.0.0.1:1380", "https://evil.example", "cross-site")
     assert is_foreign_request("evil.example:1380", "", "")
+
+
+def studio_hub(script):
+    """A hub whose AI Studio bridge answers from a script: {model: error or None}."""
+    hub = WebDoors()
+    tried: list[tuple[str, str]] = []
+
+    async def request(*, text, mode, timeout_sec=300, debug=False, model="", reasoning=""):
+        tried.append((model, reasoning))
+        error = script.get(model)
+        if error:
+            raise RuntimeError(error)
+        return result(model)
+
+    hub.bridges["aistudio"].request = request
+    return hub, tried
+
+
+def ask_studio(hub, model="gemini-web/best", reasoning="high", **kwargs):
+    return asyncio.run(hub.ask_studio(text="q", model=model, reasoning=reasoning, timeout_sec=60, **kwargs))
+
+
+def test_ai_studio_follows_the_choice_shared_with_gemini(config):
+    config()
+    hub, tried = studio_hub({})
+    assert ask_studio(hub, model="gemini-web/3.8-flash", reasoning="low").text == "answer from 3.8-flash"
+    assert tried == [("3.8-flash", "low")]
+
+
+def test_best_on_ai_studio_is_the_top_of_the_ladder_not_a_row_named_best(config):
+    config()
+    hub, tried = studio_hub({})
+    ask_studio(hub)
+    assert tried[0][0] == "argon"
+
+
+def test_a_spent_model_walks_down_and_is_not_asked_again(config):
+    config()
+    hub, tried = studio_hub({"argon": "QUOTA: limit"})
+    assert ask_studio(hub).text != "answer from argon"
+    first_round = [model for model, _ in tried]
+    assert first_round[0] == "argon" and len(first_round) == 2
+    tried.clear()
+    ask_studio(hub)
+    assert "argon" not in [model for model, _ in tried]
+
+
+def test_a_missing_model_is_passed_over_too(config):
+    config()
+    hub, tried = studio_hub({"argon": "UNAVAILABLE: no such row"})
+    ask_studio(hub)
+    assert len(tried) == 2
+
+
+def test_with_another_door_ready_ai_studio_stops_short_of_flash_lite(config):
+    config()
+    hub, tried = studio_hub({"argon": "QUOTA: x", "3.8-flash": "QUOTA: x", "3.1-pro": "QUOTA: x"})
+    with pytest.raises(RuntimeError, match="^QUOTA"):
+        ask_studio(hub, no_lite=True)
+    assert "3.5-flash-lite" not in [model for model, _ in tried]
+
+
+def test_any_other_failure_on_ai_studio_is_not_walked_down(config):
+    config()
+    hub, tried = studio_hub({"argon": "something broke"})
+    with pytest.raises(RuntimeError, match="something broke"):
+        ask_studio(hub)
+    assert len(tried) == 1
+
+
+def test_a_turn_the_extension_never_confirmed_goes_out_once_more_and_only_once():
+    async def run():
+        bridge = DoorBridge(DOOR_BY_ID["kimi"])
+        ask = asyncio.create_task(bridge.request(text="q", mode="delegate", timeout_sec=30))
+        await asyncio.sleep(0.01)
+        first = bridge.take_turns()
+        bridge.requeue_unacknowledged(max_age_sec=0)
+        second = bridge.take_turns()
+        bridge.requeue_unacknowledged(max_age_sec=0)
+        third = bridge.take_turns()
+        ask.cancel()
+        await asyncio.gather(ask, return_exceptions=True)
+        return first, second, third
+
+    first, second, third = asyncio.run(run())
+    assert len(first) == 1 and len(second) == 1 and third == []
+    assert second[0]["request_id"] == first[0]["request_id"]
+
+
+def test_a_confirmed_turn_is_not_sent_again():
+    async def run():
+        bridge = DoorBridge(DOOR_BY_ID["kimi"])
+        ask = asyncio.create_task(bridge.request(text="q", mode="delegate", timeout_sec=30))
+        await asyncio.sleep(0.01)
+        turn = bridge.take_turns()[0]
+        bridge.acknowledge([str(turn["request_id"])])
+        bridge.requeue_unacknowledged(max_age_sec=0)
+        again = bridge.take_turns()
+        ask.cancel()
+        await asyncio.gather(ask, return_exceptions=True)
+        return again
+
+    assert asyncio.run(run()) == []

@@ -645,6 +645,9 @@
       // What the page itself shows is what answers; report it, not what was asked for.
       const used = [pickerLabel(), usedReasoning].filter(Boolean).join(" · ");
       const text = await sendPrompt(task.text, task.max_wait_ms, task.files || []);
+      if (text.length < 300 && /(something went wrong|try your request again|i encountered an error|что-то пошло не так|попробуйте ещё раз|i'm having a hard time)/i.test(text)) {
+        throw new Error(`SLOW[${pickerLabel()}]: Gemini извинился вместо ответа: ${text.slice(0, 160)}`);
+      }
       return { text, used };
     } finally {
       if (debuggerInputActive) {

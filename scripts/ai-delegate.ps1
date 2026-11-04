@@ -1914,6 +1914,11 @@ function Run-Ping {
     foreach ($line in $report) { Write-Output $line }
     $webLine = Format-WebDoorsLine (Get-WebDoorsState)
     if (-not [string]::IsNullOrWhiteSpace($webLine)) { Write-Output $webLine }
+    # The probe above asks API models only. "Nobody could answer" is not the whole truth when a web door
+    # is up, and that is where real tasks go first.
+    if ([string]::IsNullOrWhiteSpace($answered) -and (Test-WebDoorsUp)) {
+        Write-Output "Модели по API сейчас не отвечают, но задачи пойдут через Web."
+    }
     Exit-Delegate 0
 }
 
