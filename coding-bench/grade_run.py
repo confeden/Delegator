@@ -255,6 +255,8 @@ def delegation_stats(meta):
             continue
         if rec.get("stage") == "web" and rec.get("status") == "ok" and lo <= when <= hi:
             web += 1
+            name = rec.get("model") or "?"
+            models[name] = models.get(name, 0) + 1
     return {"calls": len(requests) + web,
             "ok": sum(1 for e in requests.values() if e["ok"]) + web,
             "web_calls": web,

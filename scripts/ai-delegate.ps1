@@ -2516,7 +2516,7 @@ function Read-ContextFiles {
             }
             if (-not (Test-TextFile $path)) {
                 $script:ContextBinarySkipped++
-                [Console]::Error.WriteLine("[Delegator] context file is not text, not attached: $path")
+                [Console]::Error.WriteLine("[Delegator] context file is not text, it can only go as a web attachment: $path")
                 continue
             }
             if ($spent -ge $Budget) {
@@ -3760,6 +3760,13 @@ function Run-Ask {
     if ($null -ne $webOrCached) {
         $webOrCached
         return
+    }
+    # Only the web chat can take a binary file. The ladder would answer about a file it never saw:
+    # asked for a picture's colour, it said «Отсутствует» with full confidence (measured).
+    if ($Backend -eq "auto" -and [string]::IsNullOrWhiteSpace($Model) -and @(Get-BinaryContextFiles).Count -gt 0 -and (Test-WebDoorsUp)) {
+        [Console]::Error.WriteLine("[Delegator] the attached file could not be delivered, no answer rather than a wrong one")
+        Write-DelegateMetric -Stage "web" -Backend "web" -LatencyMs $askSw.ElapsedMilliseconds -Status "attachment-undelivered"
+        Exit-Delegate 1
     }
 
     # Forced backend mode: skip planner/triage to avoid extra latency and duplicate timeouts.

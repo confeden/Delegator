@@ -418,15 +418,16 @@
 
   async function attachFiles(files) {
     for (const file of files) {
-      if (!uploadInputs().length) {
+      const acceptingInput = () => uploadInputs().find((element) => acceptsFile(element.getAttribute("accept") || "", file.name, file.mime || ""));
+      if (!acceptingInput()) {
         const trigger = [...document.querySelectorAll("button")]
           .find((button) => /Загрузка и инструменты|Upload and tools/i.test(button.getAttribute("aria-label") || ""));
         if (!trigger) throw new Error("В Gemini не найдено меню загрузки файлов.");
         trigger.click();
-        const until = Date.now() + 3000;
-        while (!uploadInputs().length && Date.now() < until) await sleep(100);
+        const until = Date.now() + 6000;
+        while (!acceptingInput() && Date.now() < until) await sleep(100);
       }
-      const input = uploadInputs().find((element) => acceptsFile(element.getAttribute("accept") || "", file.name, file.mime || ""));
+      const input = acceptingInput();
       if (!input) throw new Error(`Gemini не принимает файл ${file.name}: такого типа нет в его списке загрузки.`);
       const bytes = Uint8Array.from(atob(file.data_base64), (char) => char.charCodeAt(0));
       const transfer = new DataTransfer();
@@ -464,8 +465,11 @@
       || isGenerating()
       || getAnswerNodes().length > 0
       || !(findComposer()?.innerText || findComposer()?.value || "").trim();
-    const waitSent = async (ms) => {
-      const until = Date.now() + ms;
+    // A long prompt renders slowly, and a second press on a page still busy with the first landed on Stop:
+    // Gemini answered a 60 000 character prompt with «Вы остановили генерацию ответа».
+    const sendPatience = 3000 + Math.min(text.length / 8, 15000);
+    const waitSent = async () => {
+      const until = Date.now() + sendPatience;
       while (Date.now() < until) {
         if (wasSent()) return true;
         await sleep(150);
@@ -486,19 +490,19 @@
     let sent = false;
     if (sendButton) {
       await trustedClick(sendButton);
-      sent = await waitSent(3000);
+      sent = await waitSent();
     }
     if (!sent) {
       void phase("отправка кликом не сработала, пробую Enter");
       composer.focus();
       await trustedKey(composer, "Enter");
-      sent = await waitSent(3000);
+      sent = await waitSent();
     }
     if (!sent) {
       void phase("Enter не сработал, пробую click() по кнопке");
       const button = findSendButton();
-      if (button) button.click();
-      sent = await waitSent(3000);
+      if (button && !isGenerating()) button.click();
+      sent = await waitSent();
     }
     if (!sent) {
       const label = findSendButton();
@@ -645,7 +649,7 @@
       // What the page itself shows is what answers; report it, not what was asked for.
       const used = [pickerLabel(), usedReasoning].filter(Boolean).join(" · ");
       const text = await sendPrompt(task.text, task.max_wait_ms, task.files || []);
-      if (text.length < 300 && /(something went wrong|try your request again|i encountered an error|что-то пошло не так|попробуйте ещё раз|i'm having a hard time)/i.test(text)) {
+      if (text.length < 320 && /(something went wrong|try your request again|i encountered an error|вы остановили генерацию|you stopped this response|что-то пошло не так|попробуйте ещё раз|i'm having a hard time)/i.test(text)) {
         throw new Error(`SLOW[${pickerLabel()}]: Gemini извинился вместо ответа: ${text.slice(0, 160)}`);
       }
       return { text, used };

@@ -50,3 +50,8 @@ def test_a_probe_that_times_out_does_not_pass(monkeypatch, script_present):
     monkeypatch.setattr(subprocess, "run", run)
     ok, detail = start.delegator_answers()
     assert not ok and "did not finish" in detail
+
+
+def test_the_probe_is_not_a_health_check_the_web_door_refuses():
+    # Test-WebEligible keeps "Reply exactly:" away from the web, and the delegator arm is answered there.
+    assert not start.PROBE_PROMPT.startswith("Reply exactly:")

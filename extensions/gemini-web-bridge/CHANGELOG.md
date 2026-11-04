@@ -1,12 +1,13 @@
 # Delegator Gemini Bridge changes
 
-## 0.22.3
+## 0.23.0
 
 - Puter removed. New web doors with one generic driver (`door.js`): AI Studio, Kimi, Z.ai, Qwen, DeepSeek, Tencent Hy, Rudder.
 - «Войти»: the GUI asks, the site opens in front, and the sign-in is confirmed by what the page shows.
 - All doors share one long poll: Chrome allows six connections to a host, and a poll per door starved the last ones.
 - Gemini and AI Studio follow one shared model and reasoning choice.
 - A subscription dialog, a Retry button or an apology from the site is a failed turn, never an answer.
+- Prompts keep their line breaks on Kimi and Tencent, a long prompt no longer lands on Stop, a page that reloads mid-turn resumes.
 - Reloads itself once when Delegator ships a newer copy (`storage` permission for that one mark).
 - A door that loses the race is told to stop, so a dead turn does not hold the tab or spend quota.
 - Gemini: a cold tab waits 30 s for the model picker (8 s failed every first request), and a guest page reports `LOGIN`.

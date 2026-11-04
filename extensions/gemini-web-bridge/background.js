@@ -18,6 +18,7 @@ const DOORS = {
 };
 const doorTabs = new Map();
 const doorQueues = new Map();
+const doorsSent = new Set();
 const doorsRunning = new Set();
 let doorsSyncing = false;
 
@@ -254,6 +255,7 @@ chrome.debugger.onDetach.addListener(({ tabId }) => debuggerTabs.delete(tabId));
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "DELEGATOR_DOOR_PHASE") {
+    if (message.phase === "жду ответ") doorsSent.add(message.door);
     reportDoorPhase(message.door, message.phase);
     return;
   }
@@ -353,10 +355,22 @@ async function pollQueue() {
           })
           .catch(() => {});
       }, 3000);
-      const result = await chrome.tabs.sendMessage(tabId, {
-        type: "DELEGATOR_GEMINI_RUN",
-        task,
-      }).finally(() => clearInterval(liveness));
+      const send = () => chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_GEMINI_RUN", task });
+      let result;
+      try {
+        result = await send();
+        // A parked tab sometimes ignores «Новый чат», and the tab now lingers for minutes. A fresh load
+        // costs seconds and always works.
+        if (/не открыл новый чат|Не найдена команда «Новый чат»/.test(result?.error || "")) {
+          await chrome.tabs.update(tabId, { url: BRIDGE_URL });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await waitTabLoaded(tabId);
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+          result = await send();
+        }
+      } finally {
+        clearInterval(liveness);
+      }
       await fetch(`${CORE}/api/gemini-web/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -524,7 +538,27 @@ async function runDoorTurn(door, task) {
       .catch(() => {});
   }, 3000);
   try {
-    return await chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_DOOR_RUN", door, label: DOORS[door].label, task });
+    // A site may reload itself mid-turn (Rudder hands the session over through another page), which ends
+    // the script and the channel with it. Run the turn again, or if it was already sent, wait on.
+    doorsSent.delete(door);
+    const startedAt = Date.now();
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const resume = doorsSent.has(door);
+        return await chrome.tabs.sendMessage(tabId, { type: "DELEGATOR_DOOR_RUN", door, label: DOORS[door].label, task: { ...task, resume, attempt, startedAt } });
+      } catch (error) {
+        const closed = /message channel closed|message port closed|Receiving end does not exist/i.test(String(error?.message || error));
+        if (!closed || attempt >= 3) throw error;
+        // Another door may have won meanwhile: a dead turn is not worth sending to the site again.
+        const live = await fetch(`${CORE}/api/web-door/${door}/live?id=${encodeURIComponent(task.request_id)}`, { cache: "no-store" })
+          .then((response) => response.json()).then((reply) => reply.live).catch(() => true);
+        if (!live) throw new Error("ABORTED: другая дверь ответила раньше.");
+        reportDoorPhase(door, "страница перезагрузилась");
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await waitTabLoaded(tabId);
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["door.js"] });
+      }
+    }
   } finally {
     clearInterval(liveness);
     if (debuggerTabs.has(tabId)) {

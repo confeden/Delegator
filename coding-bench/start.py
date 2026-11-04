@@ -73,7 +73,9 @@ def grade_pending():
         pass
 
 
-PROBE_PROMPT = "Reply exactly: ok"
+# Not "Reply exactly: ...": the runtime keeps those health checks away from the web door, so that wording
+# skipped the door this arm is answered by and waited 189 s on the API ladder (measured).
+PROBE_PROMPT = "Say the word ok and nothing else."
 
 
 def delegator_answers():

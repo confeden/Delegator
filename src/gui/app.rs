@@ -966,37 +966,22 @@ impl DelegatorApp {
 
         ui.strong("Web");
         ui.add_space(5.0);
-        let mut gemini_on = self.config.gemini_web_enabled;
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .checkbox(&mut gemini_on, "Gemini (через Chrome)")
-                .on_hover_text(
-                    "Задачи из IDE уходят в вашу сессию Gemini в Chrome — к самой сильной модели, \
-                 одним запросом, без промежуточных ступеней. Если Chrome недоступен, работает \
-                 обычная цепочка моделей. Нужно расширение из папки extensions\\gemini-web-bridge \
-                 (один раз: chrome://extensions → Загрузить распакованное). Окно Gemini \
-                 расширение открывает и закрывает само.",
-                )
-                .changed()
-            {
-                self.set_web_door_flag("gemini", gemini_on);
-            }
-            self.draw_web_door_login(ui, "gemini");
-        });
-        let mut studio_on = self.config.aistudio_web_enabled;
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .checkbox(&mut studio_on, "AI Studio")
-                .on_hover_text(
-                    "aistudio.google.com. Тот же аккаунт Google, но свои лимиты: выручает, когда \
-                     Gemini исчерпан. Модель и рассуждение общие с Gemini.",
-                )
-                .changed()
-            {
-                self.set_web_door_flag("aistudio", studio_on);
-            }
-            self.draw_web_door_login(ui, "aistudio");
-        });
+        self.draw_door_row(
+            ui,
+            "gemini",
+            "Gemini",
+            "Задачи из IDE уходят в вашу сессию Gemini в Chrome. Если Chrome недоступен, работает \
+             обычная цепочка моделей. Нужно расширение из папки extensions\\gemini-web-bridge \
+             (один раз: chrome://extensions → Загрузить распакованное). Вкладку расширение \
+             открывает и закрывает само.",
+        );
+        self.draw_door_row(
+            ui,
+            "aistudio",
+            "AI Studio",
+            "aistudio.google.com. Тот же аккаунт Google, но свои лимиты: выручает, когда Gemini \
+             исчерпан. Модель и рассуждение общие с Gemini.",
+        );
         ui.add_enabled_ui(
             self.config.gemini_web_enabled || self.config.aistudio_web_enabled,
             |ui| {
@@ -1044,17 +1029,7 @@ impl DelegatorApp {
             "Другие сайты: вперёд идёт самый сильный",
         );
         for (id, label, hint) in WEB_DOORS {
-            let mut enabled = self.web_door_flag(id);
-            ui.horizontal_wrapped(|ui| {
-                if ui
-                    .checkbox(&mut enabled, label)
-                    .on_hover_text(hint)
-                    .changed()
-                {
-                    self.set_web_door_flag(id, enabled);
-                }
-                self.draw_web_door_login(ui, id);
-            });
+            self.draw_door_row(ui, id, label, hint);
         }
     }
 
@@ -1088,9 +1063,9 @@ impl DelegatorApp {
         self.config.save();
     }
 
-    /// «Войти» and the status beside it. Pressing it also ticks the door: nobody signs in to a site
-    /// they do not mean to use, and a second click on the checkbox would be one more thing to miss.
-    fn draw_web_door_login(&mut self, ui: &mut egui::Ui, id: &'static str) {
+    /// One door's row. Pressing «Войти» also ticks the door: nobody signs in to a site they do not mean to
+    /// use, and a second click on the checkbox would be one more thing to miss.
+    fn draw_door_row(&mut self, ui: &mut egui::Ui, id: &'static str, label: &str, hint: &str) {
         let row = self
             .web_doors
             .as_ref()
@@ -1110,31 +1085,32 @@ impl DelegatorApp {
                     lines.push(format!("Последний ответ: {:.0} с", door.last_seconds));
                 }
                 if !door.last_error.is_empty() {
-                    lines.push(door.last_error.clone());
+                    lines.push(door.last_error.chars().take(300).collect());
                 }
                 lines.join("\n")
             })
             .unwrap_or_default();
-        if ui
-            .small_button("Войти")
-            .on_hover_text("Откроет сайт в Chrome. Войдите как обычно: Delegator сам увидит вход и закроет вкладку.")
-            .clicked()
-        {
+        let mut enabled = self.web_door_flag(id);
+        let events = door_row(
+            ui,
+            &self.theme,
+            &mut enabled,
+            label,
+            hint,
+            &status,
+            tone,
+            &detail,
+        );
+        if events.toggled {
+            self.set_web_door_flag(id, enabled);
+        }
+        if events.login {
             self.set_web_door_flag(id, true);
             let tx = self.tx.clone();
             tokio::spawn(async move {
                 let _ = tx.send(AppMessage::WebLoginRequested(request_login(id).await));
             });
             self.web_doors_polled_at = None;
-        }
-        let color = match tone {
-            DoorTone::Good => self.theme.success_color(),
-            DoorTone::Warn => self.theme.warning_color(),
-            DoorTone::Weak => self.theme.weak_text_color(),
-        };
-        let label = ui.colored_label(color, status);
-        if !detail.is_empty() {
-            label.on_hover_text(detail);
         }
     }
 
@@ -2751,9 +2727,92 @@ impl eframe::App for DelegatorApp {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct DoorRowEvents {
+    toggled: bool,
+    login: bool,
+    login_rect: Option<egui::Rect>,
+}
+
+/// Checkbox, «Войти» and the status. Free of the app's state, so a test can draw and press exactly this.
+#[allow(clippy::too_many_arguments)]
+fn door_row(
+    ui: &mut egui::Ui,
+    theme: &ThemeConfig,
+    enabled: &mut bool,
+    label: &str,
+    hint: &str,
+    status: &str,
+    tone: DoorTone,
+    detail: &str,
+) -> DoorRowEvents {
+    let mut events = DoorRowEvents::default();
+    ui.horizontal_wrapped(|ui| {
+        events.toggled = ui.checkbox(enabled, label).on_hover_text(hint).changed();
+        let login = ui.small_button("Войти").on_hover_text(
+            "Откроет сайт в Chrome. Войдите как обычно: Delegator сам увидит вход и закроет вкладку.",
+        );
+        events.login = login.clicked();
+        events.login_rect = Some(login.rect);
+        let color = match tone {
+            DoorTone::Good => theme.success_color(),
+            DoorTone::Warn => theme.warning_color(),
+            DoorTone::Weak => theme.weak_text_color(),
+        };
+        let shown = ui.colored_label(color, status);
+        if !detail.is_empty() {
+            shown.on_hover_text(detail);
+        }
+    });
+    events
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Web column as the owner gets it, at the width it has in the narrowest window (D8: 810 px, two
+    /// columns), with the longest label and the longest status. Screen access is denied (D7).
+    #[test]
+    fn a_door_row_stays_inside_the_web_column() {
+        const COLUMN: f32 = 380.0;
+        let theme = ThemeConfig::load();
+        let ctx = egui::Context::default();
+        let frame = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(COLUMN, 300.0),
+            )),
+            ..Default::default()
+        };
+        let mut enabled = false;
+        let mut seen = DoorRowEvents::default();
+        let mut right = 0.0_f32;
+        let mut draw = |ctx: &egui::Context, seen: &mut DoorRowEvents, right: &mut f32| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let events = door_row(
+                    ui,
+                    &theme,
+                    &mut enabled,
+                    "Kimi (Instant)",
+                    "подсказка",
+                    "расширение не подключено",
+                    DoorTone::Warn,
+                    "",
+                );
+                seen.login |= events.login;
+                seen.login_rect = events.login_rect;
+                *right = ui.min_rect().right();
+            });
+        };
+        let _ = ctx.run(frame(), |ctx| draw(ctx, &mut seen, &mut right));
+        assert!(right <= COLUMN, "row runs past the column: {right}");
+        let center = seen.login_rect.expect("the button was drawn").center();
+        assert!(
+            center.x < COLUMN && center.y < 300.0,
+            "«Войти» is off the column: {center:?}"
+        );
+    }
 
     /// Lays the navigation row out in a window `width` px wide and returns the
     /// rect it occupied. No `theme::apply` — that installs a font from the

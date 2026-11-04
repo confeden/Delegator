@@ -25,6 +25,7 @@
       modelLabel: /^Gemini[\w .-]*$/i,
     },
     kimi: {
+      typing: "paste",
       modelOpener: ".current-model",
       picker: ".current-model",
       // K3.1 Pro and K2.8 on a free account answer with a subscription dialog ("Too many people are
@@ -68,6 +69,10 @@
       toggles: [/^DeepThink/i],
     },
     tencent: {
+      typing: "plain",
+      // The site strips every line break from a sent message, whatever way it was typed: the composer held
+      // 3, the sent message 0. U+2028 survives, and a model reads it as a line break.
+      lineBreak: "\u2028",
       composer: "textarea.t-textarea__inner",
       send: "[class*='send']",
       answer: ".hyc-common-markdown",
@@ -292,25 +297,36 @@
 
   const composerLength = (composer) => (composer?.value ?? composer?.innerText ?? "").trim().length;
 
+  // Text with its line breaks: Kimi's editor flattened them under execCommand and Tencent's page under a
+  // value set from outside, and the model then saw one long line (measured: LINES=1 for three lines).
   async function typePrompt(site, text) {
     const composer = findComposer(site);
     if (!composer) throw new Error("На странице нет поля ввода.");
-    setComposerText(composer, text);
-    const settled = Date.now() + 1500;
-    while (composerLength(composer) === 0 && Date.now() < settled) await sleep(100);
-    if (composerLength(composer) > 0) return composer;
-    // A rich editor that ignores execCommand takes a real paste.
-    const transfer = new DataTransfer();
-    transfer.setData("text/plain", text);
-    composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
-    const pasted = Date.now() + 1000;
-    while (composerLength(composer) === 0 && Date.now() < pasted) await sleep(100);
-    if (composerLength(composer) > 0) return composer;
-    await trusted("begin");
     composer.focus();
-    await trusted("text", { text });
-    await sleep(300);
-    if (composerLength(composer) > 0) return composer;
+    const settled = async (ms) => {
+      const until = Date.now() + ms;
+      while (composerLength(composer) === 0 && Date.now() < until) await sleep(100);
+      return composerLength(composer) > 0;
+    };
+    const paste = () => {
+      const transfer = new DataTransfer();
+      transfer.setData("text/plain", text);
+      composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+    };
+    const viaDebugger = async () => {
+      await trusted("begin");
+      composer.focus();
+      await trusted("text", { text });
+    };
+    const ways = {
+      paste: [paste, viaDebugger],
+      trusted: [viaDebugger, () => setComposerText(composer, text)],
+      plain: [() => setComposerText(composer, text), paste, viaDebugger],
+    }[site.typing || "plain"];
+    for (const way of ways) {
+      await way();
+      if (await settled(1500 + Math.min(text.length / 8, 15000))) return composer;
+    }
     throw new Error("Страница не приняла текст запроса.");
   }
 
@@ -326,10 +342,12 @@
         await sleep(400);
       }
     };
-    const waitSent = async (ms) => {
-      const until = Date.now() + ms;
+    const patience = 3000 + Math.min(text.length / 8, 15000);
+    const waitSent = async () => {
+      const until = Date.now() + patience;
       while (Date.now() < until) {
         if (wasSent()) return true;
+        if ((isGenerating() || site.running?.()) && composerLength(findComposer(site)) === 0) return true;
         await sleep(150);
       }
       return false;
@@ -345,11 +363,11 @@
       await sleep(100);
     }
     button()?.click();
-    if (await waitSent(3000)) return;
+    if (await waitSent()) return;
     await refill();
     composer.focus();
     composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-    if (await waitSent(3000)) return;
+    if (await waitSent()) return;
     // The page ignores untrusted input: the same keys and clicks through the debugger.
     await trusted("begin");
     await refill();
@@ -357,11 +375,11 @@
     if (target) {
       const rect = target.getBoundingClientRect();
       await trusted("click", { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-      if (await waitSent(2500)) return;
+      if (await waitSent()) return;
     }
     composer.focus();
     await trusted("key", { key: "Enter" });
-    if (await waitSent(2500)) return;
+    if (await waitSent()) return;
     if (paywall()) throw new Error(`QUOTA: ${paywall()}`);
     if (loginWall()) throw new Error(`LOGIN: сайт просит войти. ${pageFacts(site, promptHead)}`);
     throw new Error(`Страница не приняла запрос: ни кнопка, ни Enter его не отправили. ${pageFacts(site, promptHead)}`);
@@ -492,7 +510,15 @@
     return doorLabel;
   }
 
-  async function waitForAnswer(site, promptHead, maxWaitMs, prompt) {
+  // The deepest shown element holding the prompt: what the page says was sent.
+  function promptOnPage(promptHead) {
+    if (!promptHead) return null;
+    return [...document.querySelectorAll("body *")].reverse()
+      .find((element) => visible(element) && !["SCRIPT", "STYLE", "TEXTAREA", "NOSCRIPT"].includes(element.tagName)
+        && !element.isContentEditable && (element.textContent || "").includes(promptHead)) || null;
+  }
+
+  async function waitForAnswer(site, promptHead, maxWaitMs, prompt, anchor = null) {
     const started = Date.now();
     const deadline = turnStartedAt + Math.min(Math.max(Number(maxWaitMs) || 360000, 60000), 900000);
     let lifeAt = Date.now();
@@ -508,7 +534,9 @@
         if (aborted) throw new Error("ABORTED: другая дверь ответила раньше.");
         const thinking = query("button,[role='button'],span").some((element) => element.children.length === 0 && /^(thinking|думает|思考中)[\s.…]*$/i.test((element.textContent || "").trim()));
         if (thinking) lifeAt = Date.now();
-        const node = lastAnswer(site);
+        const found = lastAnswer(site);
+        // Given an anchor, an answer from before it is another turn's, whatever it says.
+        const node = found && (!anchor || !anchor.isConnected || (anchor.compareDocumentPosition(found) & Node.DOCUMENT_POSITION_FOLLOWING)) ? found : null;
         const raw = node ? answerText(site, node) : "";
         const text = THINKING_ONLY.test(raw) || raw === prompt ? "" : raw;
         if (text !== best) {
@@ -522,7 +550,8 @@
           } else {
             wallSince = 0;
           }
-          if (Date.now() - started > 5000 && query("button,[role='button']").some((element) => /^(повторить|retry|try again|regenerate)$/i.test(labelOf(element)))) {
+          // Some sites keep Retry beside the user's message at all times, so only a page gone still counts.
+          if (Date.now() - lifeAt > 60000 && query("button,[role='button']").some((element) => /^(повторить|retry|try again|regenerate)$/i.test(labelOf(element)))) {
             throw new Error(`SLOW: сайт предлагает повторить запрос. ${pageFacts(site, promptHead)}`);
           }
           const notice = limitNotice() || paywall();
@@ -587,8 +616,17 @@
   }
 
   let generatingSeen = "";
+  let linesTyped = -1;
   let turnStartedAt = Date.now();
   let busySeen = false;
+
+  // How the page itself shows the prompt it took, line breaks included.
+  function bubbleShape(promptHead) {
+    const bubble = [...document.querySelectorAll("body *")].reverse()
+      .find((element) => element.children.length <= 3 && !["SCRIPT", "STYLE", "TEXTAREA"].includes(element.tagName) && (element.textContent || "").includes(promptHead));
+    if (!bubble) return "нет";
+    return `${bubble.tagName.toLowerCase()}.${String(bubble.className).slice(0, 40)} ws=${getComputedStyle(bubble).whiteSpace} ${JSON.stringify(bubble.outerHTML.slice(0, 260))}`;
+  }
 
   function controlShape(element) {
     return `${element.tagName.toLowerCase()}.${String(element.className?.baseVal ?? element.className ?? "").trim().split(/\s+/).slice(0, 3).join(".").slice(0, 50)}[${(element.getAttribute("aria-label") || "").slice(0, 30)}]"${(element.innerText || "").replace(/\s+/g, " ").trim().slice(0, 40)}"`;
@@ -677,31 +715,50 @@
     if (!site) throw new Error(`Неизвестный сайт: ${door}.`);
     aborted = false;
     currentDoor = door;
-    turnStartedAt = Date.now();
-    void phase("драйвер запущен");
+    turnStartedAt = Number(task.startedAt) || Date.now();
+    void phase(task.attempt ? "страница перезагрузилась, продолжаю" : "драйвер запущен");
     // Focus emulation for the whole turn, as for Gemini: a background page lays out and streams as if
     // it were in front. Not fatal: a page that does not need it still works.
     await trusted("begin").catch(() => {});
     void phase("жду страницу");
     await waitReady(site);
+    if (task.attempt) {
+      // The page reloaded mid-turn. It shows the prompt: the turn was sent, wait on and take only what
+      // follows it. It does not, though the turn had been sent: the site lost it, and a reply from some
+      // other chat must not pass for this one. Neither: the turn never left, so run it from the start.
+      const raw = String(task.text || "");
+      const line = (site.lineBreak ? raw.replace(/\r?\n/g, site.lineBreak) : raw).trim().split(site.lineBreak || "\n")[0].trim().slice(0, 40);
+      const shownBy = Date.now() + 8000;
+      let shown = promptOnPage(line);
+      while (!shown && Date.now() < shownBy) {
+        await sleep(250);
+        shown = promptOnPage(line);
+      }
+      if (shown) {
+        const resumed = await waitForAnswer(site, line, task.max_wait_ms, raw.trim(), shown);
+        return { text: resumed, used: usedLabel(site, doorLabel) };
+      }
+      if (task.resume) throw new Error(`SLOW: после перезагрузки страницы запроса на ней нет. ${pageFacts(site, line)}`);
+    }
     await ensureFreshChat(site);
     void phase("выбор модели");
     const controls = task.debug ? await probeControls(site) : "";
     await chooseModel(site);
     const sharedLabel = site.sharedChoice ? await chooseStudioModel(site, task) : "";
     await chooseToggles(site);
-    const text = String(task.text || "");
+    const text = site.lineBreak ? String(task.text || "").replace(/\r?\n/g, site.lineBreak) : String(task.text || "");
     // The first line only: pages collapse or restyle what follows it.
-    const promptHead = text.trim().split("\n")[0].trim().slice(0, 40);
+    const promptHead = text.trim().split(site.lineBreak || "\n")[0].trim().slice(0, 40);
     void phase("ввод запроса");
     const composer = await typePrompt(site, text);
+    linesTyped = ((composer.value ?? composer.innerText ?? "").match(/\n/g) || []).length;
     void phase("отправка");
     if (paywall()) throw new Error(`QUOTA: ${paywall()}`);
     await pressSend(site, composer, promptHead, text);
     void phase("жду ответ");
     const answer = await waitForAnswer(site, promptHead, task.max_wait_ms, text.trim());
     const used = sharedLabel || usedLabel(site, doorLabel);
-    return { text: task.debug ? `${answer}\n=== DOM ===\n${controls}\n--- busy while generating ${busySeen}, at the end ${sendBusy(site)}\n--- while generating: ${generatingSeen}\n${answerSkeleton(site, promptHead)}` : answer, used };
+    return { text: task.debug ? `${answer}\n=== DOM ===\nline breaks in the prompt ${(text.match(/\n/g) || []).length}, in the composer ${linesTyped}, on the page: ${bubbleShape(promptHead)}\n${controls}\n--- busy while generating ${busySeen}, at the end ${sendBusy(site)}\n--- while generating: ${generatingSeen}\n${answerSkeleton(site, promptHead)}` : answer, used };
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
