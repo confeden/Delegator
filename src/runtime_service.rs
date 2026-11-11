@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CORE_URL: &str = "http://127.0.0.1:1380/health";
 /// PyInstaller onefile re-extracts the whole Python runtime on every launch;
@@ -44,15 +45,11 @@ struct SpawnContext {
 impl SpawnContext {
     fn new() -> Result<Self, String> {
         let install_root = install_root()?;
-        let core_exe = install_root.join("delegator-core.exe");
-        let runtime_dir = install_root.join("runtime");
-        let delegate_cmd = runtime_dir.join("ai-delegate.cmd");
+        let core_exe = install_root.join(crate::platform::CORE_NAME);
+        let runtime_dir = crate::platform::runtime_dir(&install_root);
+        let delegate_cmd = runtime_dir.join(crate::platform::ENTRY_NAME);
 
-        let local_appdata = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
-            .ok_or_else(|| "LOCALAPPDATA/APPDATA is not available".to_string())?;
-        let data_root = local_appdata.join("DelegatorWin");
+        let data_root = crate::platform::data_root();
         let runtime_home = data_root.join("runtime");
         let core_home = data_root.join("core");
         std::fs::create_dir_all(&runtime_home).map_err(|e| e.to_string())?;
@@ -84,6 +81,11 @@ impl SpawnContext {
             .stderr(Stdio::null());
         #[cfg(target_os = "windows")]
         command.creation_flags(CREATE_NO_WINDOW);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         command
             .spawn()
             .map_err(|e| format!("Failed to start Delegator Core: {e}"))
@@ -328,24 +330,31 @@ impl Drop for RuntimeService {
 /// bootloader; the extracted python child (and any powershell grandchildren)
 /// survive it, so use `taskkill /T /F` and fall back to kill() if that fails.
 fn kill_process_tree(child: &mut Child) {
-    let pid = child.id();
-    let mut command = Command::new("taskkill");
-    command
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
     #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW);
-    match command.status() {
-        Ok(status) if status.success() => {}
-        Ok(status) => {
-            eprintln!("taskkill for Delegator Core tree (pid {pid}) exited with {status}");
-            let _ = child.kill();
-        }
-        Err(error) => {
-            eprintln!("Failed to run taskkill for pid {pid}: {error}");
-            let _ = child.kill();
+    {
+        let pid = child.id();
+        let mut command = Command::new("taskkill");
+        command
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        command.creation_flags(CREATE_NO_WINDOW);
+        match command.status() {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                eprintln!("taskkill for Delegator Core tree (pid {pid}) exited with {status}");
+                let _ = child.kill();
+            }
+            Err(error) => {
+                eprintln!("Failed to run taskkill for pid {pid}: {error}");
+                let _ = child.kill();
+            }
         }
     }
     let _ = child.wait();
@@ -375,19 +384,17 @@ fn same_path(left: &str, right: &Path) -> bool {
         return false;
     }
     let left = PathBuf::from(left);
-    let normalized_left = left
-        .canonicalize()
-        .unwrap_or(left)
-        .to_string_lossy()
-        .replace('/', "\\")
-        .to_lowercase();
-    let normalized_right = right
-        .canonicalize()
-        .unwrap_or_else(|_| right.to_path_buf())
-        .to_string_lossy()
-        .replace('/', "\\")
-        .to_lowercase();
-    normalized_left == normalized_right
+    let left = left.canonicalize().unwrap_or(left);
+    let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        left.to_string_lossy().replace('/', "\\").to_lowercase()
+            == right.to_string_lossy().replace('/', "\\").to_lowercase()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        left == right
+    }
 }
 
 #[cfg(test)]

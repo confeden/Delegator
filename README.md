@@ -1,3 +1,5 @@
+> **Модифицированная версия для macOS.** Сборка, установка и отличия описаны в [docs/MACOS.md](docs/MACOS.md). Исходный проект: [confeden/Delegator](https://github.com/confeden/Delegator).
+
 Delegator — небольшое приложение для Windows 10/11, живущее в трее. Оно тихо встраивается в ваши
 IDE-ассистенты (Codex/ChatGPT, Antigravity, OpenCode, Cursor, Claude, VS Code) и забирает у них ту часть
 работы, где дорогая модель не нужна: разбор длинных логов, черновой код, поиск, пересказ,

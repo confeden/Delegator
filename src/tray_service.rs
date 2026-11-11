@@ -1,6 +1,8 @@
 use eframe::egui;
 use std::cell::RefCell;
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
@@ -26,6 +28,7 @@ fn wake_ui() {
     }
 }
 
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Sender clone kept for the env-gated self-test hook below.
@@ -46,6 +49,10 @@ pub fn request_quit_for_test() {
 /// `DELEGATOR_SELFTEST_OPEN_SECS` hook to verify that the window really comes
 /// to the front without driving the tray menu by hand.
 pub fn request_open_for_test() {
+    request_open();
+}
+
+pub fn request_open() {
     if let Some(tx) = QUIT_TX.get() {
         raise_window();
         let _ = tx.send(TrayAction::Open);
@@ -69,6 +76,13 @@ pub fn attach_window_handle(handle: isize) {
 /// Shows, un-minimises and foregrounds the GUI window. No-op until the window
 /// exists.
 pub fn raise_window() {
+    #[cfg(target_os = "macos")]
+    if let Some(ctx) = UI_CONTEXT.get() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        ctx.request_repaint();
+    }
     let handle = WINDOW_HANDLE.load(Ordering::SeqCst);
     if handle == 0 {
         return;
@@ -115,6 +129,8 @@ pub fn raise_window() {
 /// True while the main window is on screen. A hidden window gets no paint
 /// messages, so its egui loop — and everything driven from it — is frozen.
 fn window_is_visible() -> bool {
+    #[cfg(target_os = "macos")]
+    return true;
     let handle = WINDOW_HANDLE.load(Ordering::SeqCst);
     if handle == 0 {
         return false;
@@ -158,6 +174,7 @@ fn start_quit_watchdog() {
         // starts a fresh core that then outlives this process.
         crate::gui::background::request_stop();
         crate::gui::background::wait_until_core_released(Duration::from_secs(2));
+        #[cfg(target_os = "windows")]
         let _ = Command::new("taskkill")
             .args(["/IM", "delegator-core.exe", "/T", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
@@ -252,7 +269,7 @@ impl TrayManager {
         // named after the action: a checkbox that named an action would be
         // unreadable ("Автозагрузка" checked = "it is on", nothing else).
         let autostart_item = CheckMenuItem::new(
-            "Автозагрузка при входе в Windows",
+            "Запускать при входе в систему",
             true,
             crate::autostart::is_enabled(),
             None,

@@ -1,4 +1,6 @@
 ﻿$ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 
 $coreRoot = if ($env:DELEGATOR_CORE_ROOT) {
     $env:DELEGATOR_CORE_ROOT
@@ -6,7 +8,7 @@ $coreRoot = if ($env:DELEGATOR_CORE_ROOT) {
     Split-Path $PSScriptRoot -Parent
 }
 
-$standaloneCore = Join-Path $coreRoot "delegator-core.exe"
+$standaloneCore = if ($script:DelegatorIsWindows) { Join-Path $coreRoot "delegator-core.exe" } else { Get-DelegatorCorePath }
 
 $serverScript = Join-Path $coreRoot "run_server.py"
 $healthUrl = if ($env:DELEGATOR_CORE_HEALTH_URL) {
@@ -29,15 +31,15 @@ if (Test-DelegatorCoreHealthy) {
 }
 
 if (Test-Path -LiteralPath $standaloneCore) {
-    $runtimeDir = Join-Path $coreRoot "runtime"
-    $runtimeHome = if ($env:DELEGATOR_RUNTIME_HOME) { $env:DELEGATOR_RUNTIME_HOME } else { Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime" }
-    $coreHome = if ($env:DELEGATOR_CORE_HOME) { $env:DELEGATOR_CORE_HOME } else { Join-Path $env:LOCALAPPDATA "DelegatorWin\core" }
-    $delegateCmd = Join-Path $runtimeDir "ai-delegate.cmd"
+    $runtimeDir = $PSScriptRoot
+    $runtimeHome = (Get-DelegatorRuntimeHome)
+    $coreHome = if ($env:DELEGATOR_CORE_HOME) { $env:DELEGATOR_CORE_HOME } else { Join-Path $script:DelegatorDataRoot "core" }
+    $delegateCmd = Join-Path $runtimeDir $(if ($script:DelegatorIsWindows) { "ai-delegate.cmd" } else { "ai-delegate" })
     $env:DELEGATOR_RUNTIME_DIR = $runtimeDir
     $env:DELEGATOR_RUNTIME_HOME = $runtimeHome
     $env:DELEGATOR_CORE_HOME = $coreHome
     $env:DELEGATOR_CORE_DELEGATE_CMD = $delegateCmd
-    Start-Process -FilePath $standaloneCore -WorkingDirectory $coreRoot -WindowStyle Hidden
+    $null = Start-DelegatorProcess -Program $standaloneCore -WorkingDirectory $coreRoot
     for ($i = 0; $i -lt 20; $i++) {
         Start-Sleep -Milliseconds 500
         if (Test-DelegatorCoreHealthy) { exit 0 }

@@ -13,6 +13,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 . (Join-Path $PSScriptRoot "delegator-common.ps1")
 $Utf8NoBom = Initialize-DelegateEncoding
 
@@ -81,13 +83,7 @@ $maxAnswerChars = if ($settings -and $settings.microMaxAnswerChars) { [int]$sett
 
 if ($Async) {
     $runId = [Guid]::NewGuid().ToString("n")
-    $delegateHome = if ($env:DELEGATOR_RUNTIME_HOME) {
-        $env:DELEGATOR_RUNTIME_HOME
-    } elseif ($env:LOCALAPPDATA) {
-        Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime"
-    } else {
-        Join-Path $env:APPDATA "DelegatorWin\runtime"
-    }
+    $delegateHome = (Get-DelegatorRuntimeHome)
     $promptFile = Join-Path $delegateHome ("micro-prompt-" + $runId + ".txt")
     $outputFile = Join-Path $delegateHome ("micro-output-" + $runId + ".txt")
     $errorFile = Join-Path $delegateHome ("micro-error-" + $runId + ".txt")
@@ -102,7 +98,7 @@ Remove-Item -LiteralPath '$($promptFile.Replace("'","''"))' -Force -ErrorAction 
 exit `$LASTEXITCODE
 "@
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($scriptText))
-    $proc = Start-Process -FilePath powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded) -WindowStyle Hidden -PassThru
+    $proc = Start-DelegatorProcess -Program (Get-DelegatorPowerShell) -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded)
     $result = [pscustomobject]@{
         delegate = "micro-async"
         model = $microModel

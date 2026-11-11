@@ -1333,7 +1333,11 @@ impl DelegatorApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading(&title);
             ui.colored_label(self.theme.weak_text_color(), &base_url);
-            ui.label("Ключи хранятся только здесь и шифруются Windows DPAPI.");
+            ui.label(if cfg!(target_os = "macos") {
+                "Ключи хранятся в Связке ключей macOS (Keychain)."
+            } else {
+                "Ключи хранятся только здесь и шифруются Windows DPAPI."
+            });
             if ui
                 .checkbox(&mut provider_enabled, "Провайдер включён")
                 .changed()

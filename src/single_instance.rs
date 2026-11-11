@@ -72,8 +72,55 @@ pub fn acquire() -> InstanceLock {
     lock
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn claim_file(path: &std::path::Path) -> std::io::Result<Option<std::fs::File>> {
+    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        return Ok(Some(file));
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(None)
+    } else {
+        Err(error)
+    }
+}
+
+#[cfg(target_os = "macos")]
 pub fn acquire() -> InstanceLock {
+    use std::os::fd::IntoRawFd;
+    use std::os::unix::{fs::PermissionsExt, net::UnixDatagram};
+    let root = crate::platform::data_root();
+    if std::fs::create_dir_all(&root).is_err() {
+        return InstanceLock::Acquired;
+    }
+    let file = match claim_file(&root.join("instance.lock")) {
+        Ok(Some(file)) => file,
+        Ok(None) => return InstanceLock::AlreadyRunning,
+        Err(error) => {
+            eprintln!("Cannot acquire Delegator instance lock: {error}");
+            return InstanceLock::Acquired;
+        }
+    };
+    let fd = file.into_raw_fd();
+    LOCK_HANDLE.store(fd as isize, Ordering::SeqCst);
+    let path = root.join("instance.sock");
+    let _ = std::fs::remove_file(&path);
+    if let Ok(socket) = UnixDatagram::bind(&path) {
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 16];
+            while socket.recv(&mut buffer).is_ok() {
+                crate::tray_service::request_open();
+            }
+        });
+    }
     InstanceLock::Acquired
 }
 
@@ -124,12 +171,28 @@ pub fn raise_running_instance() {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn raise_running_instance() {}
+#[cfg(target_os = "macos")]
+pub fn raise_running_instance() {
+    if let Ok(socket) = std::os::unix::net::UnixDatagram::unbound() {
+        let _ = socket.send_to(b"open", crate::platform::data_root().join("instance.sock"));
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn lock_rejects_a_second_open_and_is_released_on_close() {
+        let path =
+            std::env::temp_dir().join(format!("delegator-instance-test-{}", std::process::id()));
+        let first = claim_file(&path).unwrap().unwrap();
+        assert!(claim_file(&path).unwrap().is_none());
+        drop(first);
+        assert!(claim_file(&path).unwrap().is_some());
+        let _ = std::fs::remove_file(path);
+    }
 
     /// The first claim must win, and — the part that actually matters — a second
     /// must NOT, because that is what a second copy of the exe sees.

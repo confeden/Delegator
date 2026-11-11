@@ -15,6 +15,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = $Utf8NoBom
 [Console]::OutputEncoding = $Utf8NoBom
@@ -22,13 +24,7 @@ $OutputEncoding = $Utf8NoBom
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUTF8 = "1"
 
-$DelegateHome = if ($env:DELEGATOR_RUNTIME_HOME) {
-    $env:DELEGATOR_RUNTIME_HOME
-} elseif ($env:LOCALAPPDATA) {
-    Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime"
-} else {
-    Join-Path $env:APPDATA "DelegatorWin\runtime"
-}
+$DelegateHome = (Get-DelegatorRuntimeHome)
 $RunsFile = Join-Path $DelegateHome "runs.jsonl"
 $UsageLogFile = Join-Path $DelegateHome "usage.jsonl"
 $CooldownsFile = Join-Path $DelegateHome "cooldowns.json"
@@ -38,7 +34,7 @@ $OpenCodeExtraModelsFile = Join-Path $DelegateHome "opencode-extra-models.json"
 $ModelSettingsFile = Join-Path $DelegateHome "delegate-model-settings.json"
 $OpenCodeConfigDir = Join-Path $DelegateHome "opencode-config"
 $OpenCodeWorkDir = Join-Path $DelegateHome "opencode-workdir"
-$OpenCodeGuiModelStateFile = Join-Path $env:USERPROFILE ".local\state\opencode\model.json"
+$OpenCodeGuiModelStateFile = Join-Path $script:DelegatorUserHome ".local/state/opencode/model.json"
 
 # ── Benchmark isolation ───────────────────────────────────────────────────────
 # A benchmark run must never reach the usage numbers: it burns tokens on tasks
@@ -56,7 +52,7 @@ function Test-DelegatorBenchmarkActive {
         return ($age.TotalHours -lt $BenchmarkStaleHours)
     } catch { return $false }
 }
-$DelegatorAppConfigFile = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
+$DelegatorAppConfigFile = $script:DelegatorConfigFile
 $OpenCodeBigPickleModel = if ($env:CODEX_OPENCODE_BIG_PICKLE_MODEL) { $env:CODEX_OPENCODE_BIG_PICKLE_MODEL } else { "opencode/big-pickle" }
 $OpenCodeNemotronModel = if ($env:CODEX_OPENCODE_NEMOTRON_MODEL) { $env:CODEX_OPENCODE_NEMOTRON_MODEL } else { "opencode/nemotron-3-ultra-free" }
 $OpenCodeLagunaModel = if ($env:CODEX_OPENCODE_LAGUNA_MODEL) { $env:CODEX_OPENCODE_LAGUNA_MODEL } else { "opencode/laguna-s-2.1-free" }
@@ -129,6 +125,11 @@ $script:DelegatorCustomProviders = $null
 $script:DelegatorProviderVerdicts = $null
 
 function Get-OpenCodeCommandPath {
+    if (-not $script:DelegatorIsWindows) {
+        $command = Get-Command opencode -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { return [string]$command.Source }
+        return ""
+    }
     $exe = Get-Command "opencode.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($exe -and -not [string]::IsNullOrWhiteSpace([string]$exe.Source)) {
         return [string]$exe.Source
@@ -172,6 +173,7 @@ function Test-ModelAvailableInOpenCode {
 function Unprotect-DelegatorOpenRouterKey {
     param([string]$Encrypted)
     if ([string]::IsNullOrWhiteSpace($Encrypted)) { return "" }
+    if (-not $script:DelegatorIsWindows) { return Get-DelegatorKeychainSecret $Encrypted }
     try {
         Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
         $plain = [Security.Cryptography.ProtectedData]::Unprotect(
@@ -510,7 +512,7 @@ function Get-DelegateProxy {
     # GUI-managed proxies (config.json "proxies", DEV_CONTRACTS 7a) are authoritative
     # when the key exists; the legacy <RT>\proxy.json below is only a pre-v8 fallback.
     try {
-        $guiConfigPath = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
+        $guiConfigPath = $script:DelegatorConfigFile
         if (Test-Path -LiteralPath $guiConfigPath) {
             $guiConfig = Get-Content -LiteralPath $guiConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($guiConfig -and $guiConfig.PSObject.Properties["proxies"]) {
@@ -556,7 +558,7 @@ function Invoke-CurlJsonRequest {
         [int]$TimeoutSec,
         [string]$ProxyUrl
     )
-    $curlExe = Join-Path $env:SystemRoot "System32\curl.exe"
+    $curlExe = Get-DelegatorCurl
     if (-not (Test-Path -LiteralPath $curlExe)) {
         return [pscustomobject]@{ ok = $false; statusCode = 0; body = $null; rawBody = ""; error = "curl.exe is missing from System32; it is required for SOCKS proxying via $ProxyUrl." }
     }
@@ -1287,8 +1289,8 @@ function Sort-ByAvailability {
         $id = [string]$list[$i]
         if ($state.models.PSObject.Properties[$id]) {
             $rec = $state.models.PSObject.Properties[$id].Value
-            $lastFail = [string]$rec.lastFail
-            $lastOk = [string]$rec.lastOk
+            $lastFail = ConvertTo-DelegatorTimestamp $rec.lastFail
+            $lastOk = ConvertTo-DelegatorTimestamp $rec.lastOk
             if ($lastFail -and $lastFail -gt $horizon -and $lastFail -gt $lastOk) { $penalty = 1 }
         }
         $keyed += [pscustomobject]@{ id = $id; penalty = $penalty; index = $i }
@@ -1643,7 +1645,10 @@ function Get-FilesActivitySignature {
 
 function Stop-ProcessTree {
     param([int]$ProcessId)
-    try { & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null } catch {}
+    try {
+        if ($script:DelegatorIsWindows) { & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null }
+        else { [Diagnostics.Process]::GetProcessById($ProcessId).Kill($true) }
+    } catch {}
 }
 
 function Test-StreamEventLine {
@@ -1790,6 +1795,12 @@ if (-not [string]::IsNullOrWhiteSpace('$escapedVariant')) { `$args += @('--varia
 & '$escapedOpenCodeCommand' @args
 exit `$LASTEXITCODE
 "@
+    if (-not $script:DelegatorIsWindows) {
+        # Redirect inside the child; its output files remain live for the idle
+        # watchdog, and no shell reparses the prompt or application paths.
+        $redirect = "& '$escapedOpenCodeCommand' @args 1> '$($stdoutPath.Replace("'","''"))' 2> '$($stderrPath.Replace("'","''"))'"
+        $scriptText = $scriptText.Replace("& '$escapedOpenCodeCommand' @args", $redirect)
+    }
     Write-Utf8NoBom -Path $scriptPath -Text $scriptText
     $commandLine = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File " + (Quote-Arg $scriptPath)
     Write-Utf8NoBom -Path $cmdPath -Text ("@echo off`r`nchcp 65001 >nul`r`nset PYTHONIOENCODING=utf-8`r`nset PYTHONUTF8=1`r`n" + $commandLine + " > " + (Quote-Arg $stdoutPath) + " 2> " + (Quote-Arg $stderrPath) + "`r`n")
@@ -1797,6 +1808,11 @@ exit `$LASTEXITCODE
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = "cmd.exe"
     $psi.Arguments = "/d /s /c " + (Quote-Arg $cmdPath)
+    if (-not $script:DelegatorIsWindows) {
+        $psi.FileName = Get-DelegatorPowerShell
+        $psi.Arguments = ""
+        foreach ($arg in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $scriptPath)) { $psi.ArgumentList.Add($arg) }
+    }
     $psi.WorkingDirectory = $OpenCodeWorkDir
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $false

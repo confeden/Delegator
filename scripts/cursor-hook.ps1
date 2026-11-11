@@ -23,6 +23,8 @@
 #>
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 
 # Cursor sends the event as JSON on stdin. Nothing here needs it, but the stream
 # must be drained or the parent can block on a full pipe.
@@ -36,7 +38,7 @@ function Write-Empty {
 }
 
 try {
-    $rule = Join-Path $env:USERPROFILE ".cursor\rules\delegator.mdc"
+    $rule = Join-Path $script:DelegatorUserHome ".cursor/rules/delegator.mdc"
     if (-not (Test-Path -LiteralPath $rule)) { Write-Empty }
     $text = [System.IO.File]::ReadAllText($rule, (New-Object System.Text.UTF8Encoding $false))
     if ([string]::IsNullOrWhiteSpace($text)) { Write-Empty }

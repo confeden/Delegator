@@ -3,7 +3,7 @@ name = "delegator"
 version = "0.9.40"
 edition = "2021"
 authors = ["Delegator contributors"]
-description = "Portable Windows tray orchestrator for Gemini and OpenCode delegation"
+description = "Desktop tray orchestrator for Gemini and OpenCode delegation"
 readme = "README.md"
 keywords = ["windows", "tray", "gemini", "opencode", "orchestrator"]
 categories = ["development-tools", "gui"]
@@ -31,7 +31,11 @@ image = "0.25"
 [build-dependencies]
 winresource = "0.1"
 
-[dependencies.windows-sys]
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 version = "0.59"
 features = [
     "Win32_Foundation",

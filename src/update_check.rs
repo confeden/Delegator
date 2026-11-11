@@ -33,7 +33,7 @@ const INSTALLER_PREFIX: &str = "delegatorsetup-";
 const INSTALLER_SUFFIX: &str = ".exe";
 
 /// Shown (as a tooltip) when the release carries no installer to run.
-pub const NO_INSTALLER_ASSET: &str = "в релизе нет файла DelegatorSetup-*.exe";
+pub const NO_INSTALLER_ASSET: &str = "для этой системы нет установщика; откройте страницу релизов";
 
 /// The downloadable installer of a release.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -108,6 +108,20 @@ impl From<GithubAsset> for ReleaseAsset {
 /// The `DelegatorSetup-*.exe` of a release (case-insensitive, first match wins).
 /// Assets without a download url are ignored: they cannot be fetched anyway.
 pub fn pick_installer_asset(assets: &[ReleaseAsset]) -> Result<ReleaseAsset, String> {
+    // Upstream releases contain Windows installers. This edition updates by
+    // replacing its .app manually and must never run a Windows updater.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = assets;
+        Err(NO_INSTALLER_ASSET.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        pick_windows_installer_asset(assets)
+    }
+}
+
+fn pick_windows_installer_asset(assets: &[ReleaseAsset]) -> Result<ReleaseAsset, String> {
     assets
         .iter()
         .find(|asset| {
@@ -138,10 +152,7 @@ fn runtime_home() -> PathBuf {
             return PathBuf::from(explicit);
         }
     }
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("APPDATA"))
-        .unwrap_or_default();
-    PathBuf::from(base).join("DelegatorWin").join("runtime")
+    crate::config::runtime_home_dir()
 }
 
 fn state_path() -> PathBuf {
@@ -393,7 +404,7 @@ mod tests {
                 "https://example/DelegatorSetup-0.4.4.exe",
             ),
         ];
-        let picked = pick_installer_asset(&assets).expect("installer is found");
+        let picked = pick_windows_installer_asset(&assets).expect("installer is found");
         assert_eq!(picked.name, "delegatorsetup-0.4.4.EXE");
         assert_eq!(picked.url, "https://example/DelegatorSetup-0.4.4.exe");
         assert_eq!(picked.size, 42);
@@ -403,7 +414,7 @@ mod tests {
     fn installer_asset_needs_the_right_name_and_a_url() {
         // Nothing that looks like the installer at all.
         assert_eq!(
-            pick_installer_asset(&[
+            pick_windows_installer_asset(&[
                 asset("Delegator.zip", "https://example/Delegator.zip"),
                 asset("DelegatorSetup.exe", "https://example/DelegatorSetup.exe"),
                 asset(
@@ -414,12 +425,12 @@ mod tests {
             Err(NO_INSTALLER_ASSET.to_string())
         );
         assert_eq!(
-            pick_installer_asset(&[]),
+            pick_windows_installer_asset(&[]),
             Err(NO_INSTALLER_ASSET.to_string())
         );
         // Right name, but the API gave no download url — unusable.
         assert_eq!(
-            pick_installer_asset(&[asset("DelegatorSetup-0.4.4.exe", "  ")]),
+            pick_windows_installer_asset(&[asset("DelegatorSetup-0.4.4.exe", "  ")]),
             Err(NO_INSTALLER_ASSET.to_string())
         );
     }
@@ -442,7 +453,7 @@ mod tests {
         let release: GithubRelease = serde_json::from_str(raw).expect("release json parses");
         let assets: Vec<ReleaseAsset> =
             release.assets.into_iter().map(ReleaseAsset::from).collect();
-        let picked = pick_installer_asset(&assets).expect("installer is found");
+        let picked = pick_windows_installer_asset(&assets).expect("installer is found");
         assert_eq!(picked.name, "DelegatorSetup-9.9.exe");
         assert_eq!(picked.url, "https://example/DelegatorSetup-9.9.exe");
         assert_eq!(picked.size, 12_345_678);

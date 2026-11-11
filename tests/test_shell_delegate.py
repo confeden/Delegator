@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import textwrap
 from pathlib import Path
 
@@ -41,7 +42,10 @@ def test_parse_usage_marker_malformed_json() -> None:
     assert usage is None
 
 
-@pytest.mark.skipif(os.name != "nt", reason="requires powershell.exe")
+@pytest.mark.skipif(
+    os.name != "nt" and not (os.environ.get("DELEGATOR_PWSH") or shutil.which("pwsh")),
+    reason="requires PowerShell",
+)
 def test_transport_preserves_multiline_cyrillic_and_percent(tmp_path: Path) -> None:
     """End-to-end regression for the .cmd transport bugs: the prompt must reach the
     delegate byte-for-byte (newlines, Cyrillic, %VAR%, quotes) and the usage marker

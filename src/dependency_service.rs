@@ -1,7 +1,13 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "windows")]
 const OPENCODE_NAMES: [&str; 2] = ["opencode.cmd", "opencode.exe"];
+#[cfg(target_os = "windows")]
 const NPM_NAMES: [&str; 2] = ["npm.cmd", "npm.exe"];
+#[cfg(not(target_os = "windows"))]
+const OPENCODE_NAMES: [&str; 1] = ["opencode"];
+#[cfg(not(target_os = "windows"))]
+const NPM_NAMES: [&str; 1] = ["npm"];
 const WINGET_NAMES: [&str; 1] = ["winget.exe"];
 
 #[derive(Debug, Clone)]
@@ -46,6 +52,7 @@ impl DependencyStatus {
 /// successful install.
 pub fn find_opencode_cli() -> Option<PathBuf> {
     find_on_path(&OPENCODE_NAMES)
+        .or_else(|| find_in_dirs(&unix_cli_dirs(), &OPENCODE_NAMES))
         .or_else(|| find_in_dirs(&npm_global_dirs(), &OPENCODE_NAMES))
         .or_else(|| find_in_dirs(&winget_link_dirs(), &OPENCODE_NAMES))
 }
@@ -54,7 +61,9 @@ pub fn find_opencode_cli() -> Option<PathBuf> {
 /// Node.js install root — a Node.js that winget installed a minute ago is not
 /// on the running process's PATH yet.
 pub fn find_npm() -> Option<PathBuf> {
-    find_on_path(&NPM_NAMES).or_else(|| find_in_dirs(&nodejs_install_dirs(), &NPM_NAMES))
+    find_on_path(&NPM_NAMES)
+        .or_else(|| find_in_dirs(&unix_cli_dirs(), &NPM_NAMES))
+        .or_else(|| find_in_dirs(&nodejs_install_dirs(), &NPM_NAMES))
 }
 
 /// Scans PATH for winget (Windows 10 21H1+ / 11 ship it as an App Execution
@@ -63,6 +72,22 @@ pub fn find_winget() -> Option<PathBuf> {
     find_on_path(&WINGET_NAMES).or_else(|| find_in_dirs(&windows_apps_dirs(), &WINGET_NAMES))
 }
 
+fn unix_cli_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = crate::ide_detector::IdeDetector::get_user_home();
+        vec![
+            home.join(".opencode/bin"),
+            home.join(".local/bin"),
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ]
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
+}
 fn find_on_path(names: &[&str]) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let directories: Vec<PathBuf> = std::env::split_paths(&path).collect();
@@ -145,13 +170,13 @@ mod tests {
             fs::create_dir_all(dir).expect("create temp dir");
         }
         // A DIRECTORY named like the shim must not count as a hit.
-        fs::create_dir_all(decoy.join("opencode.cmd")).expect("create decoy dir");
-        fs::write(real.join("opencode.cmd"), "@echo off\r\n").expect("write shim");
+        fs::create_dir_all(decoy.join(OPENCODE_NAMES[0])).expect("create decoy dir");
+        fs::write(real.join(OPENCODE_NAMES[0]), "@echo off\r\n").expect("write shim");
 
         assert_eq!(find_in_dirs(&[empty.clone()], &OPENCODE_NAMES), None);
         assert_eq!(
             find_in_dirs(&[empty, decoy, real.clone()], &OPENCODE_NAMES),
-            Some(real.join("opencode.cmd"))
+            Some(real.join(OPENCODE_NAMES[0]))
         );
 
         let _ = fs::remove_dir_all(&root);
@@ -160,6 +185,7 @@ mod tests {
     /// `winget install OpenJS.NodeJS.LTS` writes `npm.cmd` into
     /// `%ProgramFiles%\nodejs`, which the running process never sees on PATH.
     #[test]
+    #[cfg(target_os = "windows")]
     fn npm_is_also_looked_up_in_the_nodejs_install_root() {
         let dirs = nodejs_install_dirs();
         assert!(

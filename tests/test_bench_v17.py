@@ -33,10 +33,11 @@ def test_the_hidden_data_is_the_v17_corpus():
 def test_every_shipped_benchmark_file_has_an_installer_line_and_no_line_is_dangling():
     with open(os.path.join(ROOT, "installer", "Delegator.iss"), encoding="utf-8-sig") as fh:
         wanted = set(re.findall(r'Source: "\.\.\\coding-bench\\([^"]+)"', fh.read()))
+    wanted = {path.replace("\\", "/") for path in wanted}
     on_disk = set()
     for folder, dirs, names in os.walk(BENCH):
         dirs[:] = [d for d in dirs if d not in ("__pycache__", "runs_archive")]
-        on_disk.update(os.path.relpath(os.path.join(folder, n), BENCH) for n in names)
+        on_disk.update(os.path.relpath(os.path.join(folder, n), BENCH).replace("\\", "/") for n in names)
     assert on_disk - wanted == set(), "files without an installer line"
     assert wanted - on_disk == set(), "installer lines without a file"
 

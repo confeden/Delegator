@@ -59,6 +59,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 
 # ── Load shared module ──
 . (Join-Path $PSScriptRoot "delegator-common.ps1")
@@ -1571,7 +1573,7 @@ function Run-Parallel {
 }
 
 function Run-UI {
-    $appExe = Join-Path (Split-Path $BinHome -Parent) "delegator.exe"
+    $appExe = Join-Path (Split-Path (Get-DelegatorCorePath) -Parent) $(if ($script:DelegatorIsWindows) { "delegator.exe" } else { "delegator" })
     if (-not (Test-Path -LiteralPath $appExe)) { throw "Delegator GUI was not found: $appExe" }
     Start-Process -FilePath $appExe
     exit 0
@@ -2203,7 +2205,7 @@ function Run-Boost {
 
     $env:CODEX_DELEGATE_BOOST_ACTIVE = "1"
     try {
-        $raw = (& powershell @scriptArgs 2>&1 | Out-String).Trim()
+        $raw = (& (Get-DelegatorPowerShell) @scriptArgs 2>&1 | Out-String).Trim()
     } finally {
         $env:CODEX_DELEGATE_BOOST_ACTIVE = "0"
         foreach ($tf in $advisorFiles) { Remove-Item -LiteralPath $tf -Force -ErrorAction SilentlyContinue }
@@ -2535,6 +2537,11 @@ function Read-ContextFiles {
 }
 
 function Get-CoreExecutable {
+    if (-not $script:DelegatorIsWindows) {
+        $core = Get-DelegatorCorePath
+        if (Test-Path -LiteralPath $core) { return $core }
+        return ""
+    }
     # The runtime scripts live in <install>\runtime, the core next to them in
     # <install>. It carries a full Python, which is the only interpreter an
     # installed machine is guaranteed to have.
@@ -2579,7 +2586,7 @@ function Get-MechanicalDefects {
             [System.IO.File]::WriteAllText($rewritePath, [string]$Rewrite, $utf8)
             $arguments += $rewritePath
         }
-        $process = Start-Process -FilePath $core -ArgumentList $arguments -PassThru -WindowStyle Hidden
+        $process = Start-DelegatorProcess -Program $core -Arguments $arguments
         $null = $process.Handle
         if (-not $process.WaitForExit(20000)) {
             try { $process.Kill() } catch { }
@@ -2837,8 +2844,7 @@ function Get-RouterDecision {
             callerConfidence = [string]$CallerConfidence; bestConfidence = [string]$BestConfidence
         }
         [System.IO.File]::WriteAllText($requestPath, ($payload | ConvertTo-Json -Depth 4 -Compress), $utf8)
-        $process = Start-Process -FilePath $core -ArgumentList @("--route", $requestPath, $decisionPath) `
-            -PassThru -WindowStyle Hidden
+        $process = Start-DelegatorProcess -Program $core -Arguments @("--route", $requestPath, $decisionPath)
         # Without caching the handle first, ExitCode is $null after a timed wait.
         $null = $process.Handle
         if (-not $process.WaitForExit(8000)) {

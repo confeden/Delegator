@@ -1,0 +1,37 @@
+name: macOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build-macos.txt
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Build and test the macOS application
+        run: python3 scripts/build-macos.py
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Delegator-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.dmg
+          if-no-files-found: error

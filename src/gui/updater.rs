@@ -49,6 +49,7 @@ pub fn installed_app_exe() -> PathBuf {
 
 /// The whole update action: download → write the script → spawn it detached.
 /// The caller quits the app as soon as this returns `Ok(())`.
+#[cfg(target_os = "windows")]
 pub async fn run_update(
     tag: String,
     asset: Option<ReleaseAsset>,
@@ -70,6 +71,15 @@ pub async fn run_update(
         return Err(reason);
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub async fn run_update(
+    _tag: String,
+    _asset: Option<ReleaseAsset>,
+    _report: impl Fn(u8) + Send + 'static,
+) -> Result<(), String> {
+    Err("В macOS обновите приложение вручную, заменив Delegator.app".to_string())
 }
 
 /// Streams the asset into `%TEMP%\DelegatorSetup-<tag>.exe`, reporting whole
@@ -591,6 +601,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn spawn_updater_runs_a_script_from_a_path_with_spaces() {
         let dir = std::env::temp_dir().join(format!(
             "delegator spawn test {}-{}",
@@ -626,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn installed_app_path_follows_the_per_user_install_layout() {
         // Whole components, so this cannot pass on a coincidental suffix.
         assert!(installed_app_exe().ends_with(r"Programs\Delegator\delegator.exe"));

@@ -1,12 +1,21 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
+mod autostart;
+#[cfg(target_os = "macos")]
+#[path = "macos/autostart.rs"]
 mod autostart;
 mod config;
+#[cfg(target_os = "windows")]
+mod crypto;
+#[cfg(target_os = "macos")]
+#[path = "macos/crypto.rs"]
 mod crypto;
 mod dependency_service;
 mod gui;
 mod ide_detector;
 mod models_service;
+mod platform;
 mod provider_verdicts;
 mod runtime_service;
 mod single_instance;
@@ -23,6 +32,15 @@ use tray_service::TrayManager;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The PowerShell runtime resolves opaque Keychain references through this
+    // helper. The secret travels over stdout, never in a process argument.
+    #[cfg(target_os = "macos")]
+    if std::env::args().nth(1).as_deref() == Some("--read-secret") {
+        let reference = std::env::args().nth(2).ok_or("Missing secret reference")?;
+        print!("{}", crypto::decrypt_string(&reference)?);
+        return Ok(());
+    }
+    platform::initialize_environment();
     if std::env::args().any(|arg| arg.eq_ignore_ascii_case("--remove-hooks")) {
         ide_detector::IdeDetector::remove_all_hooks();
         ide_detector::IdeDetector::remove_legacy_shims();
@@ -59,25 +77,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // Handed to the GUI so its update loop can supervise (and respawn) the core.
     let runtime = runtime_result.ok();
-    let (tray, tray_rx) = TrayManager::setup()?;
-    // Test hook: verify the tray «Открыть» path without clicking the menu.
-    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_OPEN_SECS") {
-        if let Ok(secs) = delay.trim().parse::<u64>() {
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(secs));
-                tray_service::request_open_for_test();
-            });
-        }
-    }
-    // Test hook: measure shutdown latency without driving the tray menu.
-    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_QUIT_SECS") {
-        if let Ok(secs) = delay.trim().parse::<u64>() {
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(secs));
-                tray_service::request_quit_for_test();
-            });
-        }
-    }
+    // AppKit requires tray creation from a running main-thread event loop.
+    let tray_slot = std::rc::Rc::new(std::cell::RefCell::new(None::<TrayManager>));
+    let creator_tray = tray_slot.clone();
     let window_icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../assets/delegator-logo.png"))?;
 
@@ -97,6 +99,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         concat!("Delegator v", env!("CARGO_PKG_VERSION")),
         native_options,
         Box::new(move |cc| {
+            let (tray, tray_rx) = setup_tray().map_err(|e| std::io::Error::other(e.to_string()))?;
+            *creator_tray.borrow_mut() = Some(tray);
             let theme = theme::apply(&cc.egui_ctx);
             Ok(Box::new(DelegatorApp::new(
                 cc,
@@ -109,6 +113,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )
     .map_err(|e| format!("Eframe runtime error: {}", e))?;
+
+    let tray = tray_slot
+        .borrow_mut()
+        .take()
+        .ok_or("Tray was not created")?;
 
     // The window is gone but shutdown still takes a moment (killing the core
     // tree). Pulse the tray icon meanwhile so quitting never looks like a hang,
@@ -146,10 +155,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Best-effort safety net: the core must never outlive the GUI, even if the
 /// child handle was lost (e.g. the core restarted itself via /api/restart).
 fn kill_leftover_core() {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let _ = std::process::Command::new("taskkill")
-        .args(["/IM", "delegator-core.exe", "/T", "/F"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/IM", "delegator-core.exe", "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+}
+
+fn setup_tray() -> Result<
+    (
+        TrayManager,
+        std::sync::mpsc::Receiver<tray_service::TrayAction>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let (tray, tray_rx) = TrayManager::setup()?;
+    // Test hook: verify the tray «Открыть» path without clicking the menu.
+    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_OPEN_SECS") {
+        if let Ok(secs) = delay.trim().parse::<u64>() {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+                tray_service::request_open_for_test();
+            });
+        }
+    }
+    // Test hook: measure shutdown latency without driving the tray menu.
+    if let Ok(delay) = std::env::var("DELEGATOR_SELFTEST_QUIT_SECS") {
+        if let Ok(secs) = delay.trim().parse::<u64>() {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(secs));
+                tray_service::request_quit_for_test();
+            });
+        }
+    }
+    Ok((tray, tray_rx))
 }
