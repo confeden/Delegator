@@ -1952,11 +1952,16 @@ function escapeHtml(text) {
 function normalizeHref(target) {
   const value = (target || "").trim();
   if (!value) return "#";
-  if (/^(https?:|mailto:|\/api\/)/i.test(value)) return value;
   if (/^[a-zA-Z]:[\\/]/.test(value)) {
     return `file:///${value.replaceAll("\\", "/")}`;
   }
-  return value;
+  try {
+    const url = new URL(value, window.location.href);
+    if (["http:", "https:", "mailto:"].includes(url.protocol)) return url.href;
+  } catch (_) {
+    // Invalid and executable URLs must never reach href/src or window.open.
+  }
+  return "#";
 }
 
 function appendTextNode(parent, text) {

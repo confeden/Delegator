@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -28,6 +30,50 @@ def test_parse_usage_marker_strips_and_parses() -> None:
     assert usage.cost == 0.5
     assert usage.elapsed_ms == 700
     assert usage.request_id == "r-1"
+
+
+@pytest.mark.parametrize("payload", ["[]", "null", '"not an object"', '{"totalTokens": 1e999}', '{"cost": 1e999}'])
+def test_malformed_usage_metadata_cannot_crash_a_completed_answer(payload):
+    text, usage = _parse_usage_marker("Answer\n##DELEGATOR_USAGE## " + payload)
+    assert text == "Answer"
+    assert usage is None or usage.total_tokens is None
+    assert usage is None or usage.cost is None
+
+
+@pytest.mark.parametrize("failure", ["closed-streams", "callback"])
+def test_provider_reaps_child_on_stream_errors(monkeypatch, failure):
+    real_popen = subprocess.Popen
+    children = []
+    code = (
+        "import os,time; os.close(1); os.close(2); time.sleep(30)"
+        if failure == "closed-streams"
+        else "import time; print('answer', flush=True); time.sleep(30)"
+    )
+
+    def spawn(args, **kwargs):
+        if args[0] == "fake-delegate":
+            child = real_popen([sys.executable, "-c", code], **kwargs)
+            children.append(child)
+            return child
+        return real_popen(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    provider = ShellDelegateProvider(command="fake-delegate", timeout_sec=0.5 if failure == "closed-streams" else 5)
+
+    def broken_callback(chunk):
+        raise ValueError("stream consumer failed")
+
+    try:
+        expected = TimeoutError if failure == "closed-streams" else ValueError
+        with pytest.raises(expected):
+            provider.run_stream(mode="delegate", text="task", on_stdout=broken_callback)
+        assert children[0].poll() is not None
+    finally:
+        # Keep a failing regression test from leaving its fixture process alive.
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
 
 
 def test_parse_usage_marker_absent() -> None:

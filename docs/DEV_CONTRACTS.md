@@ -700,3 +700,23 @@ Tencent Hy, Rudder. A door is on through its `<id>_web_enabled` flag in config.j
 
 Budgets: `assist` 540 s in total (the hook tells agents to allow 10 minutes), `improve` 240 s (past it the caller
 keeps its draft), one web turn 300 s (benchmark 570 s, improve 180 s). Past the budget the ladder stops asking.
+
+## 15. Local HTTP and execution boundaries
+
+- `LocalCallersOnly` guards every HTTP route, including health, static files, sessions, uploads and
+  restart. Host must name a loopback address. Browser Origin must match the request's scheme, host
+  and port even when Fetch Metadata is absent. The browser extension and native clients remain
+  supported; this is a browser-origin boundary, not authentication between local OS users.
+- Uploads accept at most 64 MiB per file. Oversized declared multipart bodies are rejected before
+  parsing; copying enforces the file limit without depending on Content-Length. Partial files are
+  removed on failure or cancellation. Download ids are lowercase UUID hex, never glob patterns,
+  and lookup excludes symlinks. A receive limit also bounds the multipart spool for chunked requests
+  without Content-Length and closes temporary files when the limit is reached.
+- Markdown links are parsed as URLs and limited to HTTP, HTTPS and mailto; Windows filesystem paths
+  retain their file links. Executable schemes never reach href, src or window.open.
+- OpenCode defaults to the `delegate-text` agent with all tools denied. An empty/canned answer is a
+  failed attempt, never a reason to retry through the unrestricted build agent. Automatic retry
+  walks other GUI-enabled models when the optional ranking file is absent; explicit model pins
+  stay pinned. Usage identifies the model that actually answered.
+- The shell provider reaps its child on every exit, including EOF, timeout and stream callback
+  errors. Malformed usage metadata is ignored without discarding the answer.
