@@ -10,7 +10,7 @@ def test_rendered_links_only_use_safe_schemes():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed to execute the browser URL sanitizer")
-    source = (Path(__file__).resolve().parents[1] / "delegator_core/static/app.js").read_text()
+    source = (Path(__file__).resolve().parents[1] / "delegator_core/static/app.js").read_text(encoding="utf-8")
     sanitizer = source[source.index("function normalizeHref("):source.index("function appendTextNode(")]
     script = "const window = {location: {href: 'http://127.0.0.1:1380/'}};\n" + sanitizer + "\n"
     script += "const inputs = " + json.dumps([
