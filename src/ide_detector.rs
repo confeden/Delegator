@@ -138,10 +138,14 @@ fn migrate_legacy_text(env: &IdeEnv, content: String) -> String {
         let installed = runtime_dir.join(format!("{name}.cmd"));
         for extension in ["cmd", "ps1"] {
             let legacy = legacy_bin.join(format!("{name}.{extension}"));
-            result = result.replace(
-                &legacy.to_string_lossy().to_string(),
-                &installed.to_string_lossy(),
-            );
+            let legacy = legacy.to_string_lossy();
+            for spelling in [
+                legacy.to_string(),
+                legacy.replace('\\', "/"),
+                legacy.replace('/', "\\"),
+            ] {
+                result = result.replace(&spelling, &installed.to_string_lossy());
+            }
         }
     }
     result
@@ -1039,7 +1043,9 @@ mod tests {
         env.runtime_ready = false;
         let legacy = env
             .home
-            .join(r".codex/bin/ai-delegate.cmd")
+            .join(".codex")
+            .join("bin")
+            .join("ai-delegate.cmd")
             .to_string_lossy()
             .to_string();
         let content = format!("Entry point: `{legacy}`\n");

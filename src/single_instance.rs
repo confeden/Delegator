@@ -94,8 +94,9 @@ fn claim_file(path: &std::path::Path) -> std::io::Result<Option<std::fs::File>> 
 
 #[cfg(target_os = "macos")]
 pub fn acquire() -> InstanceLock {
+    use std::io::Write;
     use std::os::fd::IntoRawFd;
-    use std::os::unix::{fs::PermissionsExt, net::UnixDatagram};
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let root = crate::platform::data_root();
     if std::fs::create_dir_all(&root).is_err() {
         return InstanceLock::Acquired;
@@ -110,13 +111,25 @@ pub fn acquire() -> InstanceLock {
     };
     let fd = file.into_raw_fd();
     LOCK_HANDLE.store(fd as isize, Ordering::SeqCst);
-    let path = root.join("instance.sock");
-    let _ = std::fs::remove_file(&path);
-    if let Ok(socket) = UnixDatagram::bind(&path) {
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    // Unix socket names are limited to 104 bytes on macOS. A long home path
+    // (or a test profile under TMPDIR) exceeds that, so use a loopback port.
+    if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", 0)) {
+        if let Ok(address) = listener.local_addr() {
+            let path = root.join("instance.port");
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+            {
+                let _ = write!(file, "{}", address.port());
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
         std::thread::spawn(move || {
-            let mut buffer = [0u8; 16];
-            while socket.recv(&mut buffer).is_ok() {
+            for stream in listener.incoming().flatten() {
+                drop(stream);
                 crate::tray_service::request_open();
             }
         });
@@ -173,8 +186,14 @@ pub fn raise_running_instance() {
 
 #[cfg(target_os = "macos")]
 pub fn raise_running_instance() {
-    if let Ok(socket) = std::os::unix::net::UnixDatagram::unbound() {
-        let _ = socket.send_to(b"open", crate::platform::data_root().join("instance.sock"));
+    let path = crate::platform::data_root().join("instance.port");
+    if let Some(port) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+    {
+        let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        let _ =
+            std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(500));
     }
 }
 

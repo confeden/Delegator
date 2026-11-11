@@ -79,6 +79,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = runtime_result.ok();
     // AppKit requires tray creation from a running main-thread event loop.
     let tray_slot = std::rc::Rc::new(std::cell::RefCell::new(None::<TrayManager>));
+    #[cfg(target_os = "windows")]
+    let tray_rx = {
+        let (tray, rx) = setup_tray()?;
+        *tray_slot.borrow_mut() = Some(tray);
+        rx
+    };
+    #[cfg(target_os = "macos")]
     let creator_tray = tray_slot.clone();
     let window_icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../assets/delegator-logo.png"))?;
@@ -91,7 +98,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // the user can still narrow it down to 650.
             .with_inner_size([980.0, 555.0])
             .with_min_inner_size([650.0, 420.0])
-            .with_visible(!start_in_background),
+            // On macOS the first redraw creates the app (including its tray).
+            // Start inactive, then let the app hide after its initial frames.
+            .with_visible(!start_in_background || cfg!(target_os = "macos"))
+            .with_active(!start_in_background),
         ..Default::default()
     };
 
@@ -99,8 +109,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         concat!("Delegator v", env!("CARGO_PKG_VERSION")),
         native_options,
         Box::new(move |cc| {
-            let (tray, tray_rx) = setup_tray().map_err(|e| std::io::Error::other(e.to_string()))?;
-            *creator_tray.borrow_mut() = Some(tray);
+            #[cfg(target_os = "macos")]
+            let tray_rx = {
+                let (tray, rx) = setup_tray().map_err(|e| std::io::Error::other(e.to_string()))?;
+                *creator_tray.borrow_mut() = Some(tray);
+                rx
+            };
             let theme = theme::apply(&cc.egui_ctx);
             Ok(Box::new(DelegatorApp::new(
                 cc,
@@ -155,6 +169,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Best-effort safety net: the core must never outlive the GUI, even if the
 /// child handle was lost (e.g. the core restarted itself via /api/restart).
 fn kill_leftover_core() {
+    #[cfg(target_os = "macos")]
+    platform::kill_leftover_core();
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

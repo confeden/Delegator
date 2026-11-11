@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+umask 077
 runtime_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 install_dir=$(dirname -- "$runtime_dir")
 binary_dir="$install_dir"

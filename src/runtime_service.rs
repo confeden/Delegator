@@ -330,10 +330,8 @@ impl Drop for RuntimeService {
 /// bootloader; the extracted python child (and any powershell grandchildren)
 /// survive it, so use `taskkill /T /F` and fall back to kill() if that fails.
 fn kill_process_tree(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
+    #[cfg(target_os = "macos")]
+    crate::platform::kill_process_tree(child.id());
     #[cfg(target_os = "windows")]
     {
         let pid = child.id();

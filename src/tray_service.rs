@@ -174,6 +174,8 @@ fn start_quit_watchdog() {
         // starts a fresh core that then outlives this process.
         crate::gui::background::request_stop();
         crate::gui::background::wait_until_core_released(Duration::from_secs(2));
+        #[cfg(target_os = "macos")]
+        crate::platform::kill_leftover_core();
         #[cfg(target_os = "windows")]
         let _ = Command::new("taskkill")
             .args(["/IM", "delegator-core.exe", "/T", "/F"])
