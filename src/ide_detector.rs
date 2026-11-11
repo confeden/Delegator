@@ -124,16 +124,21 @@ fn migrate_legacy_text(env: &IdeEnv, content: String) -> String {
         .parent()
         .map(PathBuf::from)
         .unwrap_or_default();
-    let legacy_bin = env.home.join(r".codex/bin");
+    let legacy_bin = env.home.join(".codex").join("bin");
     let mut result = content;
     // The policy file moved out of the Codex profile too.
-    result = result.replace(
-        &env.home
-            .join(r".codex/DELEGATOR.md")
-            .to_string_lossy()
-            .to_string(),
-        &runtime_dir.join("DELEGATOR.md").to_string_lossy(),
-    );
+    let legacy_policy = env.home.join(".codex").join("DELEGATOR.md");
+    let legacy_policy = legacy_policy.to_string_lossy();
+    for spelling in [
+        legacy_policy.to_string(),
+        legacy_policy.replace('\\', "/"),
+        legacy_policy.replace('/', "\\"),
+    ] {
+        result = result.replace(
+            &spelling,
+            &runtime_dir.join("DELEGATOR.md").to_string_lossy(),
+        );
+    }
     for name in LEGACY_ENTRY_POINTS {
         let installed = runtime_dir.join(format!("{name}.cmd"));
         for extension in ["cmd", "ps1"] {
@@ -1048,7 +1053,8 @@ mod tests {
             .join("ai-delegate.cmd")
             .to_string_lossy()
             .to_string();
-        let content = format!("Entry point: `{legacy}`\n");
+        let policy = env.home.join(".codex").join("DELEGATOR.md");
+        let content = format!("Entry point: `{legacy}`\nPolicy: `{}`\n", policy.display());
         assert_eq!(migrate_legacy_text(&env, content.clone()), content);
 
         let ready = profile.env();
