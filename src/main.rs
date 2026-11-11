@@ -14,6 +14,7 @@ mod crypto;
 mod dependency_service;
 mod gui;
 mod ide_detector;
+mod key_transfer;
 mod models_service;
 mod platform;
 mod provider_verdicts;

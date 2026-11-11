@@ -155,6 +155,7 @@ pub struct DelegatorApp {
 
     // Temp UI Inputs
     google_account_drafts: Vec<ApiAccountDraft>,
+    key_transfer_input: String,
     new_google_label: String,
     new_google_key: String,
     opencode_account_drafts: Vec<ApiAccountDraft>,
@@ -297,6 +298,7 @@ impl DelegatorApp {
             web_doors: None,
             web_doors_loading: false,
             web_doors_polled_at: None,
+            key_transfer_input: String::new(),
             google_account_drafts,
             new_google_label: String::new(),
             new_google_key: String::new(),
@@ -1133,7 +1135,65 @@ impl DelegatorApp {
         ctx.request_repaint_after(Duration::from_secs(3));
     }
 
+    fn draw_key_transfer(&mut self, ui: &mut egui::Ui) {
+        let panel = ui.collapsing("Перенос API-ключей между устройствами", |ui| {
+            ui.label("На первом устройстве скопируйте все сохранённые ключи. На втором вставьте пакет и нажмите «Импортировать».");
+            ui.colored_label(self.theme.warning_color(),
+                "Пакет содержит незашифрованные API-ключи. Передавайте его только себе через доверенный канал и удалите после переноса.");
+            if ui.button("Копировать все API-ключи").clicked() {
+                match crate::key_transfer::export(&self.config) {
+                    Ok(text) => {
+                        ui.ctx().copy_text(text);
+                        self.status_message = "Ключи скопированы. После переноса очистите буфер обмена.".into();
+                    }
+                    Err(error) => self.status_message = error,
+                }
+            }
+            ui.label("Пакет с другого устройства (Ctrl+V / ⌘V):");
+            let input = ui.add(egui::TextEdit::multiline(&mut self.key_transfer_input)
+                .id_source("key_transfer_input")
+                .password(true)
+                .char_limit(1024 * 1024)
+                .desired_rows(2)
+                .desired_width(ui.available_width()));
+            ui.horizontal(|ui| {
+                if ui.button("Вставить из буфера").clicked() {
+                    input.request_focus();
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                }
+                if ui.add_enabled(!self.key_transfer_input.trim().is_empty(), egui::Button::new("Импортировать")).clicked() {
+                    let mut imported = self.config.clone();
+                    let result = crate::key_transfer::import(&mut imported, &self.key_transfer_input)
+                        .and_then(|count| imported.save_checked().map(|()| count));
+                    match result {
+                        Ok(count) => {
+                            self.config = imported;
+                            self.google_account_drafts = self.config.google_accounts.iter().map(|a| ApiAccountDraft {
+                                id: a.id.clone(), label: a.label.clone(), enabled: a.enabled, new_key: String::new(),
+                            }).collect();
+                            self.opencode_account_drafts = self.config.opencode_accounts.iter().map(|a| ApiAccountDraft {
+                                id: a.id.clone(), label: a.label.clone(), enabled: a.enabled, new_key: String::new(),
+                            }).collect();
+                            self.provider_account_drafts.clear();
+                            self.key_transfer_input.clear();
+                            self.status_message = format!("Добавлено ключей: {count}. Повторы пропущены. Очистите буфер обмена.");
+                        }
+                        Err(error) => self.status_message = error,
+                    }
+                }
+                if ui.button("Очистить поле").clicked() {
+                    self.key_transfer_input.clear();
+                }
+            });
+            ui.label(&self.status_message);
+        });
+        if panel.body_response.is_none() {
+            self.key_transfer_input.clear();
+        }
+    }
+
     fn draw_api_tab(&mut self, ui: &mut egui::Ui) {
+        self.draw_key_transfer(ui);
         let providers = self.api_provider_buttons();
         ui.horizontal_wrapped(|ui| {
             for (key, label, warn) in &providers {

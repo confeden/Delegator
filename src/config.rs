@@ -1059,6 +1059,25 @@ impl AppConfig {
         }
     }
 
+    /// Imports need a visible failure and must preserve the previous file.
+    pub(crate) fn save_checked(&self) -> Result<(), String> {
+        let path = Self::config_path().ok_or("Не удалось найти папку настроек.")?;
+        let _lock = lock_config_file();
+        let json = serde_json::to_vec_pretty(self)
+            .map_err(|_| "Не удалось подготовить настройки к сохранению.")?;
+        let name = path.file_name().ok_or("Некорректный путь настроек.")?;
+        let tmp = path.with_file_name(format!("{}.tmp", name.to_string_lossy()));
+        if fs::write(&tmp, json).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return Err("Не удалось записать настройки. Импорт отменён.".into());
+        }
+        if fs::rename(&tmp, &path).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return Err("Не удалось сохранить настройки. Импорт отменён.".into());
+        }
+        Ok(())
+    }
+
     fn save_to_path(&self, path: &Path) {
         let lock = lock_config_file();
         self.write_locked(path, &lock);
@@ -1498,7 +1517,7 @@ impl AppConfig {
 /// Builds a provider row or says why it cannot exist. Split out of
 /// `add_custom_provider` for the same reason as `validated_proxy_entry`: the
 /// adder saves to the real config path, so the rules can only be tested here.
-fn validated_custom_provider(
+pub(crate) fn validated_custom_provider(
     id: &str,
     label: &str,
     base_url: &str,
@@ -1610,7 +1629,7 @@ pub fn runtime_home_dir() -> PathBuf {
     crate::platform::data_root().join("runtime")
 }
 
-fn new_account_id(prefix: &str) -> Result<String, String> {
+pub(crate) fn new_account_id(prefix: &str) -> Result<String, String> {
     let unique_suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?

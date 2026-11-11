@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Stop"
 $buildStartedUtc = [DateTime]::UtcNow
 $projectRoot = $PSScriptRoot
-$installerPath = Join-Path $projectRoot "dist\DelegatorSetup-0.9.40.exe"
+$installerPath = Join-Path $projectRoot "dist\DelegatorSetup-0.9.41.exe"
 $python = Join-Path $projectRoot ".venv312\Scripts\python.exe"
 $pyinstaller = Join-Path $projectRoot ".venv312\Scripts\pyinstaller.exe"
 $innoRoot = Join-Path $projectRoot "target\tools\innosetup-7.0.2"
