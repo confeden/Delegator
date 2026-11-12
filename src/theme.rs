@@ -105,10 +105,16 @@ pub fn apply(ctx: &egui::Context) -> ThemeConfig {
 }
 
 fn theme_path() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()?
-        .parent()
-        .map(|root| root.join("resources").join("theme.json"))
+    std::env::current_exe().ok()?.parent().map(|root| {
+        #[cfg(target_os = "macos")]
+        {
+            root.parent().unwrap_or(root).join("Resources/theme.json")
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            root.join("resources/theme.json")
+        }
+    })
 }
 
 fn install_segoe_semibold(ctx: &egui::Context, family_name: &str) {

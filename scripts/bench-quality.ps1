@@ -37,6 +37,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+
 # `powershell -File bench-quality.ps1 -Arms A,B` hands the array over as the
 # single string "A,B" - split it back before anything asks -contains.
 $Arms = @($Arms | ForEach-Object { ([string]$_).Split(",") } | ForEach-Object { $_.Trim().ToUpperInvariant() } | Where-Object { $_ })
@@ -45,7 +47,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dispatcher = Join-Path $scriptRoot "ai-delegate.ps1"
 if (-not $CasesFile) { $CasesFile = Join-Path $scriptRoot "bench-cases.json" }
 if (-not $OutDir) {
-    $base = if ($env:DELEGATOR_RUNTIME_HOME) { $env:DELEGATOR_RUNTIME_HOME } else { Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime" }
+    $base = (Get-DelegatorRuntimeHome)
     $OutDir = Join-Path $base "bench"
 }
 $draftDir = Join-Path $OutDir "drafts"

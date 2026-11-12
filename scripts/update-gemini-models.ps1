@@ -1,8 +1,11 @@
 ﻿param(
-    [string]$DelegateHome = $(if ($env:DELEGATOR_RUNTIME_HOME) { $env:DELEGATOR_RUNTIME_HOME } else { Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime" })
+    [string]$DelegateHome
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+if (-not $DelegateHome) { $DelegateHome = Get-DelegatorRuntimeHome }
+
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $updatedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssK")

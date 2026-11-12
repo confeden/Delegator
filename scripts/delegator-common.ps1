@@ -1,4 +1,5 @@
-﻿# ── Delegator Common Functions ──
+﻿. (Join-Path $PSScriptRoot "platform.ps1")
+# ── Delegator Common Functions ──
 # Shared utilities for all delegator scripts. Dot-source this at the top of each script.
 # Usage: . (Join-Path $PSScriptRoot "delegator-common.ps1")
 
@@ -15,13 +16,7 @@ function Initialize-DelegateEncoding {
 
 # ── Paths ──
 $script:DelegateBinHome = $PSScriptRoot
-$script:DelegateHome = if ($env:DELEGATOR_RUNTIME_HOME) {
-    $env:DELEGATOR_RUNTIME_HOME
-} elseif ($env:LOCALAPPDATA) {
-    Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime"
-} else {
-    Join-Path $env:APPDATA "DelegatorWin\runtime"
-}
+$script:DelegateHome = (Get-DelegatorRuntimeHome)
 $script:DelegateRankingFile = Join-Path $script:DelegateHome "model-rankings.json"
 $script:DelegateModelSettingsFile = Join-Path $script:DelegateHome "delegate-model-settings.json"
 $script:DelegateRouterSettingsFile = Join-Path $script:DelegateHome "delegate-router-settings.json"
@@ -32,7 +27,7 @@ $script:DelegateLegacyCacheFile = Join-Path $script:DelegateHome "response-cache
 $script:DelegateUsageLogFile = Join-Path $script:DelegateHome "usage.jsonl"
 $script:DelegateCooldownsFile = Join-Path $script:DelegateHome "cooldowns.json"
 $script:DelegatePolicyFile = Join-Path $PSScriptRoot "DELEGATOR.md"
-$script:DelegatorAppConfigFile = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
+$script:DelegatorAppConfigFile = $script:DelegatorConfigFile
 $script:DelegateProxyFile = Join-Path $script:DelegateHome "proxy.json"
 $script:DelegateModelRatingsFile = Join-Path $PSScriptRoot "model-ratings.json"
 
@@ -195,7 +190,7 @@ function Get-DelegateProxy {
     # GUI-managed proxies (config.json "proxies", DEV_CONTRACTS 7a) are authoritative
     # when the key exists; the legacy <RT>\proxy.json below is only a pre-v8 fallback.
     try {
-        $guiConfigPath = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
+        $guiConfigPath = $script:DelegatorConfigFile
         if (Test-Path -LiteralPath $guiConfigPath) {
             $guiConfig = Get-Content -LiteralPath $guiConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($guiConfig -and $guiConfig.PSObject.Properties["proxies"]) {

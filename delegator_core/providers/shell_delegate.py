@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import queue
+import signal
 import subprocess
 import tempfile
 import threading
@@ -20,6 +21,9 @@ def _kill_process_tree(pid: int, logger: logging.Logger) -> None:
     """Kill the whole child tree: plain kill() leaves powershell.exe grandchildren
     alive, still holding model locks and burning API quota."""
     try:
+        if os.name != "nt":
+            os.killpg(pid, signal.SIGKILL)
+            return
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
             capture_output=True,
@@ -110,8 +114,12 @@ class ShellDelegateProvider:
         prompt_file = self._write_prompt_file(text)
         script = self._delegate_script()
         if script is not None:
+            bundled_pwsh = Path(self.command).parent.parent / "powershell" / "pwsh"
+            powershell = "powershell.exe" if os.name == "nt" else os.environ.get(
+                "DELEGATOR_PWSH", str(bundled_pwsh) if bundled_pwsh.is_file() else "pwsh"
+            )
             args = [
-                "powershell.exe",
+                powershell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
@@ -146,6 +154,7 @@ class ShellDelegateProvider:
                 env=env,
                 bufsize=1,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                start_new_session=os.name != "nt",
             )
         except Exception as exc:
             self.logger.error(f"Failed to start subprocess: {exc}")

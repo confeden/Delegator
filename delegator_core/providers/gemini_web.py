@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -16,6 +17,8 @@ def _config_file() -> Path:
     override = os.environ.get("DELEGATOR_CONFIG_FILE")
     if override:
         return Path(override)
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Application Support/Delegator/config.json"
     roaming = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     return Path(roaming) / "Delegator" / "DelegatorWin" / "config" / "config.json"
 

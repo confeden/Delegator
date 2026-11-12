@@ -1,8 +1,11 @@
 ﻿param(
-    [string]$DelegateHome = $(if ($env:DELEGATOR_RUNTIME_HOME) { $env:DELEGATOR_RUNTIME_HOME } else { Join-Path $env:LOCALAPPDATA "DelegatorWin\runtime" })
+    [string]$DelegateHome
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "platform.ps1")
+if (-not $DelegateHome) { $DelegateHome = Get-DelegatorRuntimeHome }
+
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $updatedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssK")
@@ -22,7 +25,7 @@ function Get-DelegateProxy {
     # GUI-managed proxies (config.json "proxies", DEV_CONTRACTS 7a) are authoritative
     # when the key exists; the legacy <RT>\proxy.json below is only a pre-v8 fallback.
     try {
-        $guiConfigPath = Join-Path $env:APPDATA "Delegator\DelegatorWin\config\config.json"
+        $guiConfigPath = $script:DelegatorConfigFile
         if (Test-Path -LiteralPath $guiConfigPath) {
             $guiConfig = Get-Content -LiteralPath $guiConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($guiConfig -and $guiConfig.PSObject.Properties["proxies"]) {
@@ -66,7 +69,7 @@ function Invoke-CurlJsonRequest {
         [int]$TimeoutSec,
         [string]$ProxyUrl
     )
-    $curlExe = Join-Path $env:SystemRoot "System32\curl.exe"
+    $curlExe = Get-DelegatorCurl
     if (-not (Test-Path -LiteralPath $curlExe)) {
         return [pscustomobject]@{ ok = $false; statusCode = 0; body = $null; rawBody = ""; error = "curl.exe is missing from System32; it is required for SOCKS proxying via $ProxyUrl." }
     }

@@ -1,4 +1,5 @@
 use crate::crypto::{decrypt_string, encrypt_string};
+#[cfg(not(target_os = "macos"))]
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -581,10 +582,21 @@ fn lock_config_file() -> MutexGuard<'static, ()> {
 
 impl AppConfig {
     fn config_path() -> Option<PathBuf> {
+        #[cfg(target_os = "macos")]
+        {
+            let dir = crate::platform::data_root();
+            fs::create_dir_all(&dir).ok()?;
+            return Some(dir.join("config.json"));
+        }
+        #[cfg(not(target_os = "macos"))]
         let proj_dirs = ProjectDirs::from("com", "Delegator", "DelegatorWin")?;
+        #[cfg(not(target_os = "macos"))]
         let config_dir = proj_dirs.config_dir();
-        fs::create_dir_all(config_dir).ok()?;
-        Some(config_dir.join("config.json"))
+        #[cfg(not(target_os = "macos"))]
+        {
+            fs::create_dir_all(config_dir).ok()?;
+            Some(config_dir.join("config.json"))
+        }
     }
 
     pub fn load() -> Self {
@@ -1595,12 +1607,7 @@ pub fn runtime_home_dir() -> PathBuf {
             return PathBuf::from(overridden);
         }
     }
-    std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("APPDATA"))
-        .map(PathBuf::from)
-        .unwrap_or_default()
-        .join("DelegatorWin")
-        .join("runtime")
+    crate::platform::data_root().join("runtime")
 }
 
 fn new_account_id(prefix: &str) -> Result<String, String> {

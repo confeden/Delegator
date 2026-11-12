@@ -186,6 +186,7 @@ Source: "..\scripts\ai-delegate-plan.ps1"; DestDir: "{app}\runtime"; Flags: igno
 Source: "..\scripts\ai-delegate-parallel.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\ai-delegate-parallel.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\delegator-common.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
+Source: "..\scripts\platform.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\model-ratings.json"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\cursor-hook.cmd"; DestDir: "{app}\runtime"; Flags: ignoreversion
 Source: "..\scripts\cursor-hook.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion

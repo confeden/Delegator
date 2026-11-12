@@ -54,6 +54,8 @@ def runtime_home():
     """Same rule as scripts/delegator-common.ps1, so the 'benchmark is running' flag lands where it is read."""
     if os.environ.get("DELEGATOR_RUNTIME_HOME"):
         return os.environ["DELEGATOR_RUNTIME_HOME"]
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Delegator/runtime")
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or ROOT
     return os.path.join(base, "DelegatorWin", "runtime")
 
@@ -95,7 +97,7 @@ def delegator_answers():
         probe = fh.name
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "ask", "-PromptFile", probe],
+            [os.environ.get("DELEGATOR_PWSH", "powershell" if os.name == "nt" else "pwsh"), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "ask", "-PromptFile", probe],
             capture_output=True, timeout=360)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, "probe did not finish: %s" % exc

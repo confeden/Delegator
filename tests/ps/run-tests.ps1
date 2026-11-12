@@ -35,6 +35,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$onWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+if (-not $env:TEMP) { $env:TEMP = [IO.Path]::GetTempPath() }
 
 # Every tests\ps\*.tests.ps1 must appear here, naming the ONE script it loads.
 # An unlisted file is an error, not a skip: a test nobody runs is worse than no
@@ -142,6 +144,10 @@ try {
 
         $script:CurrentSuite = ([string]$suite.Tests) -replace "\.tests\.ps1$", ""
         if ($Filter -and $script:CurrentSuite -notlike "*$Filter*") { continue }
+        if (-not $onWindows -and $script:CurrentSuite -eq "build-outputs") {
+            Write-Host "  build-outputs: skipped (Windows build pruning tool)"
+            continue
+        }
         Write-Host ("  {0}  ({1})" -f $script:CurrentSuite, $suite.Script)
 
         # `& { ... }` is a CHILD scope: the dot-sourced script's functions live

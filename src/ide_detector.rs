@@ -79,20 +79,24 @@ const MAX_SCAN_DEPTH: usize = 2;
 /// bigger directory is real IDE state and stops the scan early.
 const MAX_SCAN_ENTRIES: usize = 64;
 
-const RUNTIME_ENTRY_RELATIVE: &str = r"runtime\ai-delegate.cmd";
+#[cfg(target_os = "windows")]
+const RUNTIME_ENTRY_RELATIVE: &str = "runtime/ai-delegate.cmd";
 
 /// Entry point to advertise, plus whether it actually exists. Preference: the
 /// runtime shipped next to this executable, then the standard install location.
 /// A developer build has neither — and must not rewrite the user's instruction
 /// files with a path that points into a build tree.
-fn resolve_runtime_entrypoint(local_appdata: &Path) -> (PathBuf, bool) {
+fn resolve_runtime_entrypoint(_local_appdata: &Path) -> (PathBuf, bool) {
     let beside_exe = std::env::current_exe().ok().and_then(|path| {
         path.parent()
-            .map(|parent| parent.join(RUNTIME_ENTRY_RELATIVE))
+            .map(|parent| crate::platform::runtime_dir(parent).join(crate::platform::ENTRY_NAME))
     });
-    let installed = local_appdata
-        .join(r"Programs\Delegator")
+    #[cfg(target_os = "windows")]
+    let installed = _local_appdata
+        .join(r"Programs/Delegator")
         .join(RUNTIME_ENTRY_RELATIVE);
+    #[cfg(not(target_os = "windows"))]
+    let installed = SelfInstall::entry();
     for candidate in beside_exe
         .iter()
         .cloned()
@@ -120,24 +124,33 @@ fn migrate_legacy_text(env: &IdeEnv, content: String) -> String {
         .parent()
         .map(PathBuf::from)
         .unwrap_or_default();
-    let legacy_bin = env.home.join(r".codex\bin");
+    let legacy_bin = env.home.join(".codex").join("bin");
     let mut result = content;
     // The policy file moved out of the Codex profile too.
-    result = result.replace(
-        &env.home
-            .join(r".codex\DELEGATOR.md")
-            .to_string_lossy()
-            .to_string(),
-        &runtime_dir.join("DELEGATOR.md").to_string_lossy(),
-    );
+    let legacy_policy = env.home.join(".codex").join("DELEGATOR.md");
+    let legacy_policy = legacy_policy.to_string_lossy();
+    for spelling in [
+        legacy_policy.to_string(),
+        legacy_policy.replace('\\', "/"),
+        legacy_policy.replace('/', "\\"),
+    ] {
+        result = result.replace(
+            &spelling,
+            &runtime_dir.join("DELEGATOR.md").to_string_lossy(),
+        );
+    }
     for name in LEGACY_ENTRY_POINTS {
         let installed = runtime_dir.join(format!("{name}.cmd"));
         for extension in ["cmd", "ps1"] {
             let legacy = legacy_bin.join(format!("{name}.{extension}"));
-            result = result.replace(
-                &legacy.to_string_lossy().to_string(),
-                &installed.to_string_lossy(),
-            );
+            let legacy = legacy.to_string_lossy();
+            for spelling in [
+                legacy.to_string(),
+                legacy.replace('\\', "/"),
+                legacy.replace('/', "\\"),
+            ] {
+                result = result.replace(&spelling, &installed.to_string_lossy());
+            }
         }
     }
     result
@@ -222,7 +235,7 @@ fn strip_legacy_delegator_prose(content: &str) -> String {
 
 fn get_hook_text(env: &IdeEnv) -> String {
     let entrypoint = env.runtime_entry.clone();
-    format!(
+    let text = format!(
         "{header}\n# Delegator Integration\n\
 Delegator gives you free access to stronger models through `{entry}`. It costs you no tokens, and **you do not choose how to use it — Delegator decides.** One command:\n\
 \n\
@@ -277,7 +290,17 @@ If the user's message is exactly `-benchmark` or `-benchmark d` (also written `/
             .map(|dir| dir.display().to_string())
             .unwrap_or_default(),
         footer = DELEGATOR_HOOK_FOOTER
-    )
+    );
+    #[cfg(target_os = "macos")]
+    let text = text
+        .replace("& \"", "\"")
+        .replace("$env:TEMP\\", "${TMPDIR:-/tmp}/")
+        .replace("\\BENCHMARK.md", "/BENCHMARK.md")
+        .replace(
+            "Run it in PowerShell (`&` is the call operator).",
+            "Run it in the system shell (zsh/bash).",
+        );
+    text
 }
 
 /// True for a target the IDE reads as an instruction file: those need the
@@ -432,22 +455,22 @@ impl IdeEnv {
             // config\AGENTS.md path alone left the IDE quoting a stale entry
             // point from an older install (reported 2026-08-11).
             "Antigravity" => vec![
-                self.home.join(".gemini\\GEMINI.md"),
-                self.home.join(".gemini\\config\\AGENTS.md"),
+                self.home.join(".gemini/GEMINI.md"),
+                self.home.join(".gemini/config/AGENTS.md"),
             ],
-            "Codex" => vec![self.home.join(".codex\\AGENTS.md")],
-            "OpenCode" => vec![self.home.join(".config\\opencode\\AGENTS.md")],
+            "Codex" => vec![self.home.join(".codex/AGENTS.md")],
+            "OpenCode" => vec![self.home.join(".config/opencode/AGENTS.md")],
             // `.mdc`, not `.md`: that is the extension Cursor's own rule UI, its
             // @-mentions and its filename handling all assume, and only a rule
             // with a header is offered to the agent instead of being grepped for.
-            "Cursor" => vec![self.home.join(".cursor\\rules\\delegator.mdc")],
+            "Cursor" => vec![self.home.join(".cursor/rules/delegator.mdc")],
             "Claude" => vec![
-                self.home.join(".claude\\CLAUDE.md"),
-                self.appdata.join("Claude\\CLAUDE.md"),
+                self.home.join(".claude/CLAUDE.md"),
+                self.appdata.join("Claude/CLAUDE.md"),
             ],
             "VS Code" => vec![self
                 .home
-                .join(".copilot\\instructions\\delegator.instructions.md")],
+                .join(".copilot/instructions/delegator.instructions.md")],
             // VSCodium is the same editor without Microsoft's branding, so its
             // chat reads the same personal instruction sources — including the
             // SHARED `~/.copilot\instructions` above. Writing there from two
@@ -459,7 +482,7 @@ impl IdeEnv {
             // `currentProfile.promptsHome`, i.e. `%APPDATA%\VSCodium\User\prompts`.
             "VSCodium" => vec![self
                 .appdata
-                .join("VSCodium\\User\\prompts\\delegator.instructions.md")],
+                .join("VSCodium/User/prompts/delegator.instructions.md")],
             _ => Vec::new(),
         }
     }
@@ -471,8 +494,8 @@ impl IdeEnv {
             "Antigravity" => vec![self.home.join(".gemini"), self.home.join(".antigravity")],
             "Codex" => vec![self.home.join(".codex")],
             "OpenCode" => vec![
-                self.home.join(".config\\opencode"),
-                self.home.join(".local\\share\\opencode"),
+                self.home.join(".config/opencode"),
+                self.home.join(".local/share/opencode"),
             ],
             "Cursor" => vec![self.appdata.join("Cursor"), self.home.join(".cursor")],
             "Claude" => vec![self.appdata.join("Claude"), self.home.join(".claude")],
@@ -489,56 +512,56 @@ impl IdeEnv {
     fn install_markers(&self, name: &str) -> Vec<PathBuf> {
         match name {
             "Antigravity" => vec![
-                self.home.join(".gemini\\antigravity"),
+                self.home.join(".gemini/antigravity"),
                 self.home.join(".antigravity"),
                 self.appdata.join("Antigravity"),
                 self.appdata.join("Antigravity IDE"),
                 self.local_appdata.join("Antigravity"),
-                self.local_appdata.join("Programs\\Antigravity"),
-                self.local_appdata.join("Programs\\Antigravity IDE"),
+                self.local_appdata.join("Programs/Antigravity"),
+                self.local_appdata.join("Programs/Antigravity IDE"),
             ],
             // The app ships as the MSIX package OpenAI.Codex and now presents
             // itself as ChatGPT, but it still keeps its profile in ~/.codex.
             "Codex" => vec![
-                self.home.join(".codex\\config.toml"),
-                self.home.join(".codex\\auth.json"),
-                self.home.join(".codex\\sessions"),
-                self.home.join(".codex\\history.jsonl"),
-                self.local_appdata.join("OpenAI\\Codex"),
+                self.home.join(".codex/config.toml"),
+                self.home.join(".codex/auth.json"),
+                self.home.join(".codex/sessions"),
+                self.home.join(".codex/history.jsonl"),
+                self.local_appdata.join("OpenAI/Codex"),
             ],
             "OpenCode" => vec![
-                self.home.join(".local\\share\\opencode"),
-                self.home.join(".config\\opencode\\opencode.json"),
-                self.home.join(".config\\opencode\\auth.json"),
+                self.home.join(".local/share/opencode"),
+                self.home.join(".config/opencode/opencode.json"),
+                self.home.join(".config/opencode/auth.json"),
                 self.appdata.join("@opencode-ai"),
             ],
             "Cursor" => vec![
-                self.local_appdata.join("Programs\\Cursor"),
-                self.appdata.join("Cursor\\User"),
-                self.home.join(".cursor\\extensions"),
-                self.home.join(".cursor\\argv.json"),
+                self.local_appdata.join("Programs/Cursor"),
+                self.appdata.join("Cursor/User"),
+                self.home.join(".cursor/extensions"),
+                self.home.join(".cursor/argv.json"),
             ],
             "Claude" => vec![
-                self.appdata.join("Claude\\config.json"),
-                self.appdata.join("Claude\\Local Storage"),
+                self.appdata.join("Claude/config.json"),
+                self.appdata.join("Claude/Local Storage"),
                 self.home.join(".claude.json"),
-                self.home.join(".claude\\settings.json"),
-                self.home.join(".claude\\projects"),
-                self.home.join(".claude\\history.jsonl"),
+                self.home.join(".claude/settings.json"),
+                self.home.join(".claude/projects"),
+                self.home.join(".claude/history.jsonl"),
                 self.local_appdata.join("claude-cli-nodejs"),
                 self.local_appdata.join("AnthropicClaude"),
             ],
             "VS Code" => vec![
-                self.appdata.join("Code\\User"),
-                self.home.join(".vscode\\extensions"),
-                self.local_appdata.join("Programs\\Microsoft VS Code"),
+                self.appdata.join("Code/User"),
+                self.home.join(".vscode/extensions"),
+                self.local_appdata.join("Programs/Microsoft VS Code"),
             ],
             "VSCodium" => vec![
-                self.appdata.join("VSCodium\\User\\settings.json"),
-                self.appdata.join("VSCodium\\User\\globalStorage"),
-                self.home.join(".vscode-oss\\extensions"),
-                self.home.join(".vscode-oss\\argv.json"),
-                self.local_appdata.join("Programs\\VSCodium"),
+                self.appdata.join("VSCodium/User/settings.json"),
+                self.appdata.join("VSCodium/User/globalStorage"),
+                self.home.join(".vscode-oss/extensions"),
+                self.home.join(".vscode-oss/argv.json"),
+                self.local_appdata.join("Programs/VSCodium"),
             ],
             _ => Vec::new(),
         }
@@ -557,7 +580,7 @@ impl IdeEnv {
     }
 
     fn command_on_path(&self, stem: &str) -> bool {
-        const EXTENSIONS: [&str; 4] = [".cmd", ".exe", ".bat", ".ps1"];
+        const EXTENSIONS: [&str; 5] = ["", ".cmd", ".exe", ".bat", ".ps1"];
         self.path_dirs.iter().any(|dir| {
             EXTENSIONS
                 .iter()
@@ -618,6 +641,23 @@ impl IdeEnv {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+struct SelfInstall;
+#[cfg(not(target_os = "windows"))]
+impl SelfInstall {
+    fn entry() -> PathBuf {
+        let relative = "Delegator.app/Contents/Resources/runtime/ai-delegate";
+        let user = IdeDetector::get_user_home()
+            .join("Applications")
+            .join(relative);
+        if user.is_file() {
+            user
+        } else {
+            PathBuf::from("/Applications").join(relative)
+        }
+    }
+}
+
 pub struct IdeDetector;
 
 impl IdeDetector {
@@ -647,15 +687,21 @@ impl IdeDetector {
     }
 
     pub fn get_appdata() -> PathBuf {
+        #[cfg(target_os = "macos")]
+        return Self::get_user_home().join("Library/Application Support");
+        #[cfg(not(target_os = "macos"))]
         std::env::var_os("APPDATA")
             .map(PathBuf::from)
-            .unwrap_or_else(|| Self::get_user_home().join("AppData\\Roaming"))
+            .unwrap_or_else(|| Self::get_user_home().join("AppData/Roaming"))
     }
 
     pub fn get_local_appdata() -> PathBuf {
+        #[cfg(target_os = "macos")]
+        return Self::get_appdata();
+        #[cfg(not(target_os = "macos"))]
         std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
-            .unwrap_or_else(|| Self::get_user_home().join("AppData\\Local"))
+            .unwrap_or_else(|| Self::get_user_home().join("AppData/Local"))
     }
 
     // Kept for API compatibility: detection and hook writing now go through
@@ -740,7 +786,13 @@ impl IdeDetector {
         let command = env
             .runtime_entry
             .parent()
-            .map(|dir| dir.join("cursor-hook.cmd"))
+            .map(|dir| {
+                dir.join(if cfg!(target_os = "windows") {
+                    "cursor-hook.cmd"
+                } else {
+                    "cursor-hook"
+                })
+            })
             .unwrap_or_default();
         if enable && (!env.runtime_ready || !command.exists()) {
             // Same rule as the instruction files: never advertise a path that
@@ -803,7 +855,10 @@ impl IdeDetector {
             !is_ours
         });
         if enable {
-            entries.push(serde_json::json!({ "command": command.to_string_lossy() }));
+            let value = command.to_string_lossy().to_string();
+            #[cfg(target_os = "macos")]
+            let value = format!("'{}'", value.replace('\'', "'\\''"));
+            entries.push(serde_json::json!({ "command": value }));
         }
 
         let empty_event = entries.is_empty();
@@ -871,7 +926,7 @@ impl IdeDetector {
 
         // Strip our block from the legacy policy file; whatever the user wrote
         // there stays untouched.
-        let legacy_policy = env.home.join(r".codex\DELEGATOR.md");
+        let legacy_policy = env.home.join(r".codex/DELEGATOR.md");
         if legacy_policy.exists() {
             let _ = Self::apply_hook_to_path(env, "Legacy Codex policy", &legacy_policy, false);
             if fs::read_to_string(&legacy_policy)
@@ -885,7 +940,7 @@ impl IdeDetector {
         // Delete the entry points Delegator itself put in ~/.codex\bin. Files
         // the user placed there are left alone, and the directory is removed
         // only once it is empty.
-        let bin_dir = env.home.join(r".codex\bin");
+        let bin_dir = env.home.join(r".codex/bin");
         if !bin_dir.exists() {
             return;
         }
@@ -993,10 +1048,13 @@ mod tests {
         env.runtime_ready = false;
         let legacy = env
             .home
-            .join(r".codex\bin\ai-delegate.cmd")
+            .join(".codex")
+            .join("bin")
+            .join("ai-delegate.cmd")
             .to_string_lossy()
             .to_string();
-        let content = format!("Entry point: `{legacy}`\n");
+        let policy = env.home.join(".codex").join("DELEGATOR.md");
+        let content = format!("Entry point: `{legacy}`\nPolicy: `{}`\n", policy.display());
         assert_eq!(migrate_legacy_text(&env, content.clone()), content);
 
         let ready = profile.env();
@@ -1016,7 +1074,7 @@ mod tests {
 
         IdeDetector::cleanup_legacy_installation_in(&env);
 
-        let bin = env.home.join(r".codex\bin");
+        let bin = env.home.join(r".codex/bin");
         assert!(!bin.join("ai-delegate.cmd").exists());
         assert!(!bin.join("gemini-delegate.ps1").exists());
         // Files Delegator never wrote stay, and so does the directory holding them.
@@ -1190,7 +1248,7 @@ mod tests {
         profile.write("home/.codex/config.toml", "model = \"gpt\"\n");
         IdeDetector::apply_hook_in(&env, "Codex", true).expect("hook a detected IDE");
 
-        let hook = profile.home().join(".codex\\AGENTS.md");
+        let hook = profile.home().join(".codex/AGENTS.md");
         assert!(fs::read_to_string(&hook)
             .expect("hook file")
             .contains(DELEGATOR_HOOK_HEADER));
@@ -1341,7 +1399,7 @@ mod tests {
         IdeDetector::apply_hook_in(&env, "VSCodium", true).expect("hook detected VSCodium");
         let hook = profile
             .appdata()
-            .join(r"VSCodium\User\prompts\delegator.instructions.md");
+            .join(r"VSCodium/User/prompts/delegator.instructions.md");
         let written = fs::read_to_string(&hook).expect("hook file");
         // Same rule as VS Code: no `applyTo` header, no attached instructions.
         assert!(written.starts_with("---\napplyTo: '**'\n"), "{written:.60}");
@@ -1390,7 +1448,7 @@ mod tests {
 
         let hook = profile
             .home()
-            .join(r".copilot\instructions\delegator.instructions.md");
+            .join(r".copilot/instructions/delegator.instructions.md");
         let written = fs::read_to_string(&hook).expect("hook file");
         assert!(
             written.starts_with("---\napplyTo: '**'\n"),
@@ -1411,7 +1469,7 @@ mod tests {
         // Other IDEs read plain markdown: no header there.
         profile.write("home/.codex/config.toml", "model = \"gpt\"\n");
         IdeDetector::apply_hook_in(&env, "Codex", true).expect("hook Codex");
-        let codex = fs::read_to_string(profile.home().join(r".codex\AGENTS.md")).expect("agents");
+        let codex = fs::read_to_string(profile.home().join(r".codex/AGENTS.md")).expect("agents");
         assert!(codex.starts_with(DELEGATOR_HOOK_HEADER), "{codex:.60}");
     }
 
@@ -1433,7 +1491,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     fn the_cursor_hook_emits_the_key_cursor_actually_reads() {
         let profile = TempProfile::new("cursor-hook-shape");
-        let rule = profile.root.join(".cursor\\rules\\delegator.mdc");
+        let rule = profile.root.join(".cursor/rules/delegator.mdc");
         std::fs::create_dir_all(rule.parent().expect("rules dir")).expect("create rules dir");
         std::fs::write(
             &rule,
@@ -1441,7 +1499,7 @@ mod tests {
         )
         .expect("write rule");
 
-        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts\\cursor-hook.ps1");
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/cursor-hook.ps1");
         let output = std::process::Command::new("powershell")
             .args(["-NoProfile", "-File"])
             .arg(&script)
@@ -1522,7 +1580,11 @@ description: 'Delegator"
             .expect("runtime dir")
             .to_path_buf();
         fs::write(
-            runtime_dir.join("cursor-hook.cmd"),
+            runtime_dir.join(if cfg!(target_os = "windows") {
+                "cursor-hook.cmd"
+            } else {
+                "cursor-hook"
+            }),
             "@echo off
 ",
         )
@@ -1552,7 +1614,11 @@ description: 'Delegator"
         assert!(submit[1]["command"]
             .as_str()
             .unwrap()
-            .contains("cursor-hook.cmd"));
+            .contains(if cfg!(target_os = "windows") {
+                "cursor-hook.cmd"
+            } else {
+                "cursor-hook"
+            }));
         assert!(value["hooks"]["stop"].is_array(), "other events untouched");
         assert_eq!(value["version"], 1, "unknown keys survive a round trip");
 
@@ -1592,7 +1658,11 @@ description: 'Delegator"
             .expect("runtime dir")
             .to_path_buf();
         fs::write(
-            runtime_dir.join("cursor-hook.cmd"),
+            runtime_dir.join(if cfg!(target_os = "windows") {
+                "cursor-hook.cmd"
+            } else {
+                "cursor-hook"
+            }),
             "@echo off
 ",
         )
@@ -1620,7 +1690,7 @@ description: 'Delegator"
         IdeDetector::apply_hook_in(&env, "VS Code", true).expect("hook");
         let hook = profile
             .home()
-            .join(r".copilot\instructions\delegator.instructions.md");
+            .join(r".copilot/instructions/delegator.instructions.md");
         let written = fs::read_to_string(&hook).expect("hook file");
         assert!(
             written.starts_with("---\napplyTo: '**/*.py'\n---\n"),
@@ -1691,7 +1761,7 @@ description: 'Delegator"
         profile.write("home/.claude/settings.json", "{}");
         IdeDetector::apply_hook_in(&env, "Claude", true).expect("hook detected Claude");
 
-        assert!(profile.home().join(".claude\\CLAUDE.md").exists());
+        assert!(profile.home().join(".claude/CLAUDE.md").exists());
         assert!(
             !profile.appdata().join("Claude").exists(),
             "the second target's directory must not be created"

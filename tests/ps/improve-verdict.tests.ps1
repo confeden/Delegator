@@ -118,7 +118,8 @@ Test-Case "a trailing comma is salvaged, and says so" {
     $obj = Get-ImproveVerdict '{"verdict":"ok","defects":[],}'
     Assert-NotNull $obj
     Assert-Equal "ok" $obj.verdict
-    Assert-Equal "salvaged" $obj.parseMode
+    $expected = if ($PSVersionTable.PSVersion.Major -ge 7) { "json" } else { "salvaged" }
+    Assert-Equal $expected $obj.parseMode
 }
 
 Test-Case "salvage keeps demonstrated defects out of a broken object" {

@@ -277,7 +277,11 @@ pub const NODEJS_DOWNLOAD_URL: &str = "https://nodejs.org/en/download";
 pub const OPENCODE_SITE_URL: &str = "https://opencode.ai";
 
 /// Shown when neither winget nor npm exists, so no chain can even start.
-pub const NO_INSTALLER_FOUND: &str = "не найдены winget и npm";
+pub const NO_INSTALLER_FOUND: &str = if cfg!(target_os = "macos") {
+    "npm не найден; установите Node.js или OpenCode CLI"
+} else {
+    "не найдены winget и npm"
+};
 
 /// One command of the dependency install chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,8 +413,18 @@ async fn run_install_step(step: InstallStep) -> CliJobResult {
 /// Used only for the two hardcoded fallback links above.
 pub fn open_url(url: &str) {
     println!("Opening {url} in the default browser");
-    let mut command = std::process::Command::new("cmd");
-    command.args(["/c", "start", "", url]);
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "start", "", url]);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = std::process::Command::new("/usr/bin/open");
+        c.arg(url);
+        c
+    };
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

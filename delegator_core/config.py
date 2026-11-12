@@ -13,6 +13,8 @@ def _default_install_root() -> Path:
 
 
 def _default_data_root() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Delegator"
     local_appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
     if local_appdata:
         return Path(local_appdata) / "DelegatorWin"
@@ -45,9 +47,11 @@ def _default_runtime_home() -> Path:
 def load_config() -> CoreConfig:
     home_dir = Path(os.environ.get("DELEGATOR_CORE_HOME", DEFAULT_HOME))
     db_path = Path(os.environ.get("DELEGATOR_CORE_DB", home_dir / "delegator-core.db"))
-    runtime_dir = Path(
-        os.environ.get("DELEGATOR_RUNTIME_DIR", _default_install_root() / "runtime")
-    )
+    install_root = _default_install_root()
+    default_runtime = (install_root.parent / "Resources/runtime"
+                       if sys.platform == "darwin" and getattr(sys, "frozen", False)
+                       else install_root / "runtime")
+    runtime_dir = Path(os.environ.get("DELEGATOR_RUNTIME_DIR", default_runtime))
     return CoreConfig(
         host=os.environ.get("DELEGATOR_CORE_HOST", "127.0.0.1"),
         port=int(os.environ.get("DELEGATOR_CORE_PORT", "1380")),
@@ -56,7 +60,7 @@ def load_config() -> CoreConfig:
         default_mode=os.environ.get("DELEGATOR_CORE_DEFAULT_MODE", "delegate"),
         shell_delegate_cmd=os.environ.get(
             "DELEGATOR_CORE_DELEGATE_CMD",
-            str(runtime_dir / "ai-delegate.cmd"),
+            str(runtime_dir / ("ai-delegate.cmd" if os.name == "nt" else "ai-delegate")),
         ),
         shell_timeout_sec=int(os.environ.get("DELEGATOR_CORE_SHELL_TIMEOUT_SEC", "180")),
         runtime_home=_default_runtime_home(),
