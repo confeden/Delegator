@@ -506,7 +506,7 @@ function Get-RecentHardFailedModels {
         try { $errorClass = [string]$row.errorClass } catch {}
         if ($errorClass -notin @("network", "auth")) { continue }
         $when = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParse([string]$row.ts, [ref]$when)) { continue }
+        if (-not [DateTimeOffset]::TryParse((ConvertTo-DelegatorTimestamp $row.ts), [ref]$when)) { continue }
         if ($when -lt $cutoff) { continue }
         $result[$id] = $true
     }
@@ -1236,7 +1236,7 @@ function Invoke-DelegateWithRetry {
 
     while ($attempt -le $MaxRetries) {
         $result = Invoke-Delegate -ChosenBackend $currentBackend -Text $Text -ChosenModel $currentModel -EffectiveComplexity $EffectiveComplexity
-        
+
         # Check exit code and quality
         $outStr = (($result.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
         $quality = Test-ResponseQuality -Response $outStr -OriginalPrompt $Text

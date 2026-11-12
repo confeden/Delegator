@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import plistlib
@@ -58,7 +59,6 @@ def bundle_python(python: Path, output: Path):
     """
     info = run(python, "-c", "import json,sys,sysconfig; print(json.dumps([sys.base_prefix, sysconfig.get_path('stdlib'), sysconfig.get_python_version()]))",
                capture_output=True, text=True)
-    import json
     prefix, stdlib, version = json.loads(info.stdout)
     prefix = Path(prefix)
     stdlib = Path(stdlib)
@@ -120,6 +120,9 @@ def main():
     python = venv / "bin/python"
     if not python.is_file():
         run(sys.executable, "-m", "venv", venv)
+    # A copied/extracted framework can run Python while its SSL extensions are
+    # unusable. Fail before packaging that interpreter into a broken core.
+    run(python, "-c", "import ssl,sqlite3,ctypes; print(ssl.OPENSSL_VERSION)")
     run(python, "-m", "pip", "install", "--disable-pip-version-check", "-r", ROOT / "requirements-build-macos.txt")
     run(python, "-m", "pip", "install", "--no-deps", "-e", ROOT)
     pwsh = powershell(arch)
@@ -131,8 +134,19 @@ def main():
         run(pwsh / "pwsh", "-NoLogo", "-NoProfile", "-File", ROOT / "tests/ps/run-tests.ps1")
     profile = "debug" if args.debug else "release"
     run("cargo", "build", "--locked", *([] if args.debug else ["--release"]))
+    prefix = Path(run(python, "-c", "import sys; print(sys.base_prefix)",
+                      capture_output=True, text=True).stdout.strip())
+    # Include the framework's OpenSSL dependencies explicitly: unresolved
+    # @rpath imports otherwise only produce PyInstaller warnings, and the
+    # resulting executable exits before it can serve /health.
+    ssl_binaries = []
+    for pattern in ("libssl.*.dylib", "libcrypto.*.dylib"):
+        for library in sorted((prefix / "lib").glob(pattern)):
+            if not library.is_symlink():
+                ssl_binaries.extend(["--add-binary", f"{library}:."])
     run(python, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--noupx",
         "--name", "delegator-core", "--add-data", f"{ROOT / 'delegator_core/static'}:delegator_core/static",
+        *ssl_binaries,
         "--distpath", ROOT / "target" / profile, "--workpath", ROOT / "target/pyinstaller-macos/work",
         "--specpath", ROOT / "target/pyinstaller-macos", ROOT / "run_server.py")
     version = next(line.split('"')[1] for line in (ROOT / "Cargo.toml").read_text().splitlines() if line.startswith("version ="))
@@ -190,6 +204,9 @@ def main():
             run("codesign", "--force", "--sign", "-", binary, capture_output=True)
     run("codesign", "--force", "--sign", "-", app)
     run("codesign", "--verify", "--deep", "--strict", app)
+    # Test the actual signed bundle before producing release archives, even
+    # when --skip-tests skips the source test suites.
+    run(python, ROOT / "scripts/test-macos-bundle.py", app)
     zip_path = ROOT / f"dist/Delegator-{version}-macos-{arch}.zip"
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, zip_path)
     if not args.no_dmg:
