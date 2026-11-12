@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import queue
 import signal
@@ -31,8 +30,6 @@ def _kill_process_tree(pid: int, logger: logging.Logger) -> None:
             timeout=15,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    except ProcessLookupError:
-        pass  # A successfully completed process group is already gone.
     except Exception as exc:
         logger.warning(f"taskkill of process tree {pid} failed: {exc}")
 
@@ -47,8 +44,6 @@ def _parse_usage_marker(stdout: str) -> tuple[str, ProviderUsage | None]:
             payload = stripped[len(USAGE_MARKER):].strip()
             try:
                 data = json.loads(payload)
-                if not isinstance(data, dict):
-                    continue
                 usage = ProviderUsage(
                     model=data.get("model"),
                     provider=data.get("provider"),
@@ -71,7 +66,7 @@ def _as_int(value) -> int | None:
         if value is None:
             return None
         return int(value)
-    except (TypeError, ValueError, OverflowError):
+    except (TypeError, ValueError):
         return None
 
 
@@ -79,9 +74,8 @@ def _as_float(value) -> float | None:
     try:
         if value is None:
             return None
-        number = float(value)
-        return number if math.isfinite(number) else None
-    except (TypeError, ValueError, OverflowError):
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -175,21 +169,7 @@ class ShellDelegateProvider:
                 on_stderr=on_stderr,
             )
         finally:
-            try:
-                # EOF and a failed stream consumer do not imply that the child
-                # exited. Always reap it, including on callback/timeout errors.
-                if os.name != "nt" or process.poll() is None:
-                    _kill_process_tree(process.pid, self.logger)
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-                for stream in (process.stdout, process.stderr):
-                    if stream is not None:
-                        stream.close()
-            finally:
-                self._cleanup_prompt_file(prompt_file)
+            self._cleanup_prompt_file(prompt_file)
 
     def _write_prompt_file(self, text: str) -> Path:
         handle = tempfile.NamedTemporaryFile(
@@ -312,10 +292,7 @@ class ShellDelegateProvider:
 
         for thread in threads:
             thread.join(timeout=0.2)
-        try:
-            return_code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired as exc:
-            raise TimeoutError(f"delegate command timed out after {self.timeout_sec} sec") from exc
+        return_code = process.wait(timeout=1)
         raw_stdout = "".join(stdout_parts).strip()
         stderr = "".join(stderr_parts).strip()
         text, usage = _parse_usage_marker(raw_stdout)

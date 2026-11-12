@@ -1,6 +1,6 @@
 [package]
 name = "delegator"
-version = "0.9.41"
+version = "0.9.40"
 edition = "2021"
 authors = ["Delegator contributors"]
 description = "Desktop tray orchestrator for Gemini and OpenCode delegation"

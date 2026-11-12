@@ -1359,8 +1359,7 @@ function Get-OpenCodeErrorClass {
     if ($ExitCode -eq 2) { return "unknown" }
     if ($text -match '(?i)\(429\)|Too Many Requests|rate.?limit|quota|resource_exhausted') { return "rate_limit" }
     if ($text -match '(?i)\(401\)|\(403\)|unauthorized|forbidden|invalid[_ ]?(api[_ ]?)?key|authentication') { return "auth" }
-    if ($text -match '(?i)\bENOTFOUND\b|\bEAI_AGAIN\b|getaddrinfo') { return "network" }
-    if ($text -match '(?i)\(404\)|\bnot[ _-]?found\b|no such model|unknown model|not mapped') { return "not_found" }
+    if ($text -match '(?i)\(404\)|not.?found|no such model|unknown model|not mapped') { return "not_found" }
     if ($text -match '(?i)content.?policy|safety|moderation|flagged|prohibited') { return "content_policy" }
     if ($text -match '(?i)context.?length|maximum context|too many tokens|token limit|exceeds.*context') { return "context_overflow" }
     if ($text -match '(?i)\(5\d\d\)|server error|internal error|bad gateway|service unavailable|overloaded') { return "server" }
@@ -1755,7 +1754,6 @@ function Invoke-OpenCodeModel {
     } else {
         $agent = if ($env:CODEX_OPENCODE_AGENT) { $env:CODEX_OPENCODE_AGENT } else { Get-ModelSetting $OpenCodeModel "agent" }
         if ([string]::IsNullOrWhiteSpace($agent)) { $agent = Get-ExtraOpenCodeAgent $OpenCodeModel }
-        if ([string]::IsNullOrWhiteSpace($agent)) { $agent = "delegate-text" }
     }
     $escapedPromptPath = $promptPath.Replace("'", "''")
     $escapedModel = $OpenCodeModel.Replace("'", "''")
@@ -1765,14 +1763,16 @@ function Invoke-OpenCodeModel {
     $escapedConfigDir = $OpenCodeConfigDir.Replace("'", "''")
     $escapedWorkDir = $OpenCodeWorkDir.Replace("'", "''")
     $inlineConfig = @{
-        default_agent = "delegate-text"
         agent = @{
             "delegate-text" = @{
                 description = "Delegator isolated text engine"
                 mode = "primary"
                 prompt = "Execute the user's TASK immediately. Never delegate, describe policy, announce readiness, or ask for the task again. Return only the requested result."
                 temperature = 0.1
-                permission = @{ "*" = "deny" }
+                permission = @{
+                    read = "deny"; edit = "deny"; glob = "deny"; grep = "deny"; list = "deny"
+                    bash = "deny"; task = "deny"; webfetch = "deny"; websearch = "deny"
+                }
             }
         }
     } | ConvertTo-Json -Depth 10 -Compress
@@ -1982,11 +1982,17 @@ function Run-Ask {
                 $result = Invoke-OpenCodeModel -Text $effectivePrompt -OpenCodeModel $candidate -Seconds $TimeoutSec
                 $parsed = Parse-OpenCodeOutput $result.output
                 if ($result.exitCode -eq 0 -and (Test-UnhelpfulDelegateAnswer $parsed.answer)) {
-                    # A CLI can finish after tool calls without producing any text.
-                    # Never retry through the unrestricted build agent or count a
-                    # canned readiness reply as an answer; let the model ladder run.
-                    $result.exitCode = 1
-                    $result.output = "OpenCode returned no useful answer text.`n" + [string]$result.output
+                    Write-RunEvent ([pscustomobject]@{
+                        runId = $runId; delegate = "opencode"; event = "attempt_retrying"; status = "running"
+                        promptSummary = $summary; domain = $domain; model = $candidate
+                        note = "delegate-text canned answer; retrying without agent"
+                    })
+                    $retryResult = Invoke-OpenCodeModel -Text $effectivePrompt -OpenCodeModel $candidate -Seconds $TimeoutSec -AgentOverride ""
+                    $retryParsed = Parse-OpenCodeOutput $retryResult.output
+                    if ($retryResult.exitCode -eq 0 -and -not (Test-UnhelpfulDelegateAnswer $retryParsed.answer)) {
+                        $result = $retryResult
+                        $parsed = $retryParsed
+                    }
                 }
             }
             $lastCandidate = $candidate

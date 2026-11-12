@@ -21,7 +21,6 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from .base import ProviderResult, ProviderUsage
 from .gemini_web import QUOTA_COOLDOWN_SEC, UNAVAILABLE_COOLDOWN_SEC, _config_payload, model_ladder
@@ -106,31 +105,15 @@ def shipped_extension_version(delegate_cmd: str) -> str:
         return ""
 
 
-def is_foreign_request(host: str, origin: str, fetch_site: str, scheme: str = "http") -> bool:
+def is_foreign_request(host: str, origin: str, fetch_site: str) -> bool:
     """True for a request that did not come from this machine's own runtime, GUI or extension.
 
     The queues hold the user's prompts on a loopback port any page in any browser can reach. A page's
     `fetch` would empty them, and DNS rebinding would read them."""
-    try:
-        target = urlsplit(scheme + "://" + host)
-        if (target.hostname not in ("127.0.0.1", "localhost", "::1", "testserver")
-                or target.username is not None or target.password is not None
-                or target.path or target.query or target.fragment):
-            return True
-        target_port = target.port or (443 if scheme == "https" else 80)
-        if origin:
-            source = urlsplit(origin)
-            if source.scheme == "chrome-extension" and source.netloc and not source.username:
-                return False
-            if (source.scheme != scheme or source.hostname != target.hostname
-                    or source.username is not None or source.password is not None
-                    or source.path or source.query or source.fragment):
-                return True
-            source_port = source.port or (443 if source.scheme == "https" else 80)
-            if source_port != target_port:
-                return True
-    except (ValueError, TypeError):
+    if (host or "").split(":")[0].lower() not in ("127.0.0.1", "localhost", "testserver"):
         return True
+    if (origin or "").startswith("chrome-extension://"):
+        return False
     return (fetch_site or "").lower() in ("cross-site", "same-site")
 
 

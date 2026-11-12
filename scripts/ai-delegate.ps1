@@ -1232,15 +1232,11 @@ function Invoke-DelegateWithRetry {
 
     $currentBackend = $ChosenBackend
     $currentModel = $ChosenModel
-    $triedModels = @()
     $attempt = 0
 
     while ($attempt -le $MaxRetries) {
-        $triedModels += $currentModel
         $result = Invoke-Delegate -ChosenBackend $currentBackend -Text $Text -ChosenModel $currentModel -EffectiveComplexity $EffectiveComplexity
-        $result | Add-Member -NotePropertyName backend -NotePropertyValue $currentBackend -Force
-        $result | Add-Member -NotePropertyName model -NotePropertyValue $currentModel -Force
-
+        
         # Check exit code and quality
         $outStr = (($result.output | ForEach-Object { [string]$_ }) -join "`n").Trim()
         $quality = Test-ResponseQuality -Response $outStr -OriginalPrompt $Text
@@ -1249,22 +1245,14 @@ function Invoke-DelegateWithRetry {
             return $result
         }
 
-        # The strength floor is an automatic pick, not an explicit -Model pin.
-        # Missing model-rankings.json must not prevent trying the GUI allowlist.
-        $nextModel = ""
-        if ([string]::IsNullOrWhiteSpace($Model) -and $currentBackend -eq "opencode" -and $result.exitCode -ne 2 -and $attempt -lt $MaxRetries) {
-            $nextModel = Get-StrongEnabledModel -Exclude $triedModels
-        }
         $isRetryable = Test-RetryableError -Output $outStr -ExitCode $result.exitCode
-        if ($attempt -lt $MaxRetries -and ($isRetryable -or -not [string]::IsNullOrWhiteSpace($nextModel) -or $quality -in @("empty", "truncated", "refusal", "too-short"))) {
+        if ($attempt -lt $MaxRetries -and ($isRetryable -or $quality -in @("empty", "truncated", "refusal", "too-short"))) {
             $attempt++
             $backoffMs = [int]([Math]::Pow(2, $attempt) * 1000)
             Write-DelegateMetric -Stage "retry" -Status $quality -Extra "attempt=$attempt,backoff=$backoffMs,backend=$currentBackend,model=$currentModel"
             
             # Switch model/backend on retry
-            if ([string]::IsNullOrWhiteSpace($nextModel) -and [string]::IsNullOrWhiteSpace($Model) -and $currentBackend -ne "opencode") {
-                $nextModel = Get-NextRankedModel -CurrentModel $currentModel
-            }
+            $nextModel = Get-NextRankedModel -CurrentModel $currentModel
             if (-not [string]::IsNullOrWhiteSpace($nextModel)) {
                 $currentModel = $nextModel
                 $currentBackend = if ($currentModel -like "gemini-*") { "gemini" } else { "opencode" }
@@ -3994,10 +3982,8 @@ function Run-Ask {
     $solveSw = [System.Diagnostics.Stopwatch]::StartNew()
     $firstResult = Invoke-DelegateWithRetry -ChosenBackend $first -Text $executionPrompt -ChosenModel $chosenModel -EffectiveComplexity $plannedComplexity
     if ($firstResult.exitCode -eq 0) {
-        $effectiveModel = [string]$firstResult.model
-        $first = [string]$firstResult.backend
         if (-not [string]::IsNullOrWhiteSpace($effectiveModel)) {
-            $script:FinalModel = $effectiveModel
+            $script:FinalModel = [string]$effectiveModel
             $script:FinalProvider = Get-UsageProviderName $first
         }
         $final = Filter-ConversationalNoise $firstResult.output

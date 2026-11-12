@@ -140,10 +140,3 @@ Test-Case "a benchmark run is flagged so the counter can drop it" {
         -ElapsedMs 10 -Ok $true -AccountId $null
     Assert-False (Get-LastSandboxUsageRecord).bench
 }
-
-Test-Case "DNS failures never masquerade as a missing model" {
-    Assert-Equal "network" (Get-OpenCodeErrorClass -ExitCode 1 -Output "getaddrinfo ENOTFOUND provider.example")
-    Assert-Equal "network" (Get-OpenCodeErrorClass -ExitCode 1 -Output "EAI_AGAIN provider.example")
-    Assert-Equal "not_found" (Get-OpenCodeErrorClass -ExitCode 1 -Output "Model not found")
-    Assert-Equal "not_found" (Get-OpenCodeErrorClass -ExitCode 1 -Output "HTTP (404)")
-}

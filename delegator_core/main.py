@@ -8,6 +8,7 @@ import mimetypes
 import hashlib
 import json
 import re
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -18,7 +19,6 @@ import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.formparsers import MultiPartException
 
 from . import __version__
 from .config import CoreConfig, load_config
@@ -60,10 +60,6 @@ from .session_store import SessionStore
 from .usage import build_usage_report
 
 
-MAX_UPLOAD_BYTES = 64 * 1024 * 1024
-UPLOAD_MULTIPART_OVERHEAD = 64 * 1024
-
-
 class TaskEventBus:
     def __init__(self) -> None:
         self._subscribers: dict[str, list[asyncio.Queue[ChatTaskEvent]]] = {}
@@ -94,69 +90,19 @@ class LocalCallersOnly:
     """Plain ASGI, not `@app.middleware`: that wrapper buffers `receive`, which the long polls and
     `request.is_disconnected()` depend on."""
 
+    PATHS = ("/api/web", "/api/gemini-web", "/api/route")
+
     def __init__(self, app) -> None:
         self.app = app
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] == "http":
+        if scope["type"] == "http" and scope["path"].startswith(self.PATHS):
             headers = {key.decode("latin-1"): value.decode("latin-1") for key, value in scope["headers"]}
-            if is_foreign_request(
-                headers.get("host", ""), headers.get("origin", ""),
-                headers.get("sec-fetch-site", ""), scope.get("scheme", "http"),
-            ):
+            if is_foreign_request(headers.get("host", ""), headers.get("origin", ""), headers.get("sec-fetch-site", "")):
                 await send({"type": "http.response.start", "status": 403, "headers": []})
                 await send({"type": "http.response.body", "body": b""})
                 return
-            if scope["path"] == "/api/uploads" and scope.get("method") == "POST":
-                await self._upload(scope, receive, send, headers)
-                return
         await self.app(scope, receive, send)
-
-    async def _upload(self, scope, receive, send, headers) -> None:
-        limit = MAX_UPLOAD_BYTES + UPLOAD_MULTIPART_OVERHEAD
-        exceeded = False
-        rejected = False
-        received = 0
-
-        async def reject():
-            nonlocal rejected
-            if not rejected:
-                rejected = True
-                await send({"type": "http.response.start", "status": 413, "headers": []})
-                await send({"type": "http.response.body", "body": b"Upload exceeds the allowed size."})
-
-        try:
-            declared = int(headers.get("content-length", "0"))
-        except ValueError:
-            declared = limit + 1
-        if declared < 0 or declared > limit:
-            await reject()
-            return
-
-        async def bounded_receive():
-            nonlocal received, exceeded
-            message = await receive()
-            if message["type"] == "http.request":
-                received += len(message.get("body", b""))
-                if received > limit:
-                    exceeded = True
-                    # Starlette closes already-spooled files on this exception.
-                    raise MultiPartException("Upload exceeds the allowed size.")
-            return message
-
-        async def bounded_send(message):
-            if exceeded:
-                # Request.form maps a multipart error to 400; size errors are 413.
-                await reject()
-            else:
-                await send(message)
-
-        try:
-            await self.app(scope, bounded_receive, bounded_send)
-        except MultiPartException:
-            if not exceeded:
-                raise
-            await reject()
 
 
 class AppState:
@@ -932,12 +878,8 @@ def _build_upload_record(core: AppState, stored_name: str, original_name: str, m
 
 
 def _find_upload_file(core: AppState, upload_id: str) -> Path | None:
-    if not re.fullmatch(r"[a-f0-9]{32}", upload_id):
-        return None
-    for target in core.upload_dir.glob(f"{upload_id}_*"):
-        if target.is_file() and not target.is_symlink():
-            return target
-    return None
+    matches = list(core.upload_dir.glob(f"{upload_id}_*"))
+    return matches[0] if matches else None
 
 
 async def _emit_task_event(
@@ -1332,22 +1274,8 @@ def create_app() -> FastAPI:
         upload_id = uuid.uuid4().hex
         stored_name = f"{upload_id}_{Path(filename).stem}{suffix}"
         target = core.upload_dir / stored_name
-        created = False
-        try:
-            size = 0
-            with target.open("xb") as handle:
-                created = True
-                while chunk := await file.read(1024 * 1024):
-                    size += len(chunk)
-                    if size > MAX_UPLOAD_BYTES:
-                        raise HTTPException(status_code=413, detail="Upload exceeds the 64 MiB limit.")
-                    handle.write(chunk)
-        except BaseException:
-            if created:
-                target.unlink(missing_ok=True)
-            raise
-        finally:
-            await file.close()
+        with target.open("wb") as handle:
+            shutil.copyfileobj(file.file, handle)
         return _build_upload_record(core, stored_name, filename, file.content_type)
 
     @app.get("/api/uploads/{upload_id}/content")

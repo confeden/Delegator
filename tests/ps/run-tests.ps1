@@ -44,7 +44,6 @@ if (-not $env:TEMP) { $env:TEMP = [IO.Path]::GetTempPath() }
 $Suites = @(
     @{ Tests = "improve-verdict.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "model-health.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
-    @{ Tests = "delegate-retry.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "caller-strength.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "ping-report.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
     @{ Tests = "web-route.tests.ps1"; Script = "scripts\ai-delegate.ps1" }
