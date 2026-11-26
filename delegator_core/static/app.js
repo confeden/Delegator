@@ -15,6 +15,10 @@ const MODEL_GROUPS = [
   {
     label: "Gemini Web (Chrome)",
     options: [
+      { value: "gemini-web/best", label: "Самая новая (авто) · Web" },
+      { value: "gemini-web/carbon", label: "Gemini 4 Carbon · Web" },
+      { value: "gemini-web/neon", label: "Gemini 4 Neon · Web" },
+      { value: "gemini-web/hydrogen", label: "Gemini 4 Hydrogen · Web" },
       { value: "gemini-web/argon", label: "Gemini 4 Argon · Web" },
       { value: "gemini-web/3.1-pro", label: "Gemini 3.1 Pro · Web" },
       { value: "gemini-web/3.8-flash", label: "Gemini 3.8 Flash · Web" },
@@ -95,6 +99,8 @@ const REASONING_OPTIONS = {
     { value: "low", label: "низкий" },
     { value: "medium", label: "средний" },
     { value: "high", label: "высокий" },
+    { value: "xhigh", label: "очень высокий" },
+    { value: "best", label: "максимальный" },
   ],
 };
 
@@ -2169,7 +2175,7 @@ els.navNew.addEventListener("click", () => switchNav("new"));
 function selectGeminiWebModel() {
   const selected = state.selectedModel?.startsWith("gemini-web/")
     ? state.selectedModel
-    : "gemini-web/argon";
+    : "gemini-web/best";
   state.selectedModel = selected;
   els.modelSelect.value = selected;
   saveUiPref(MODEL_KEY, selected);

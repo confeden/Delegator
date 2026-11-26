@@ -89,18 +89,11 @@
     },
   };
 
+  const MODELS = globalThis.__delegatorModels;
   const LOGIN_TEXT = /^(log ?in|sign ?in|sign ?up|войти|вход|登录|注册)$/i;
   const LIMIT_TEXT = /(rate limit|too many|limit (reached|exceeded)|reached your|usage limit|try again later|upgrade to|лимит|слишком много|次数|频繁|额度|上限)/i;
   const STOP_LABEL = /^(stop|стоп|停止|останов)/i;
   const FENCE = "`".repeat(3);
-  // AI Studio's rows carry the model's id. Same choices as the Gemini page, by the shared setting.
-  const STUDIO_MODELS = {
-    argon: /gemini-\d[\w.]*-argon/i,
-    "3.1-pro": /gemini-3\.1-pro(?!-image)/i,
-    "3.8-flash": /gemini-3\.8-flash(?![\w-])/i,
-    "3.5-flash-lite": /gemini-3\.5-flash-lite(?![\w-])/i,
-  };
-  const STUDIO_LEVELS = { best: /^high/i, high: /^high/i, medium: /^medium/i, low: /^low/i };
   const STABLE_MS = 7000;
   const BUSY_CEILING_MS = 30000;
   // Measured on AI Studio: a page's "Thinking" label stood for 12 s and went back as the whole answer.
@@ -449,7 +442,7 @@
   // Model and thinking level by the choice shared with Gemini. A model the page does not offer is the
   // core's business (next rung); a level it does not offer is not worth failing a turn for.
   async function chooseStudioModel(site, task) {
-    const pattern = STUDIO_MODELS[task.model];
+    const pattern = MODELS?.STUDIO_MODELS?.[task.model];
     if (!pattern) return "";
     const cardOf = () => query(site.modelOpener)[0];
     const card = cardOf();
@@ -460,8 +453,12 @@
       const rows = query("ms-model-carousel-row");
       const row = rows.find((element) => pattern.test(element.innerText || ""));
       if (!row) {
+        const available = rows
+          .map((element) => ((element.innerText || "").match(/gemini-[\w.-]+/i) || [""])[0])
+          .filter(Boolean)
+          .join(", ") || "ничего";
         await trusted("key", { key: "Escape" }).catch(() => {});
-        throw new Error(`UNAVAILABLE: в AI Studio нет модели ${task.model}.`);
+        throw new Error(`UNAVAILABLE: в AI Studio нет модели ${task.model}. Сейчас доступно: ${available}`);
       }
       (row.querySelector("button") || row).click();
       await sleep(600);
@@ -473,18 +470,24 @@
         throw new Error(`UNAVAILABLE: AI Studio не переключился на модель ${task.model}.`);
       }
     }
-    const level = STUDIO_LEVELS[task.reasoning];
-    const select = query("mat-select[aria-label='Thinking Level'],ms-thinking-level-setting mat-select")[0];
-    if (level && select && !level.test((select.innerText || "").trim())) {
+    const levels = MODELS?.STUDIO_LEVELS?.[task.reasoning] || [];
+    const levelSelect = "mat-select[aria-label*='hinking' i],ms-thinking-level-setting mat-select";
+    const select = query(levelSelect)[0];
+    if (levels.length && select && !levels[0].test((select.innerText || "").trim())) {
       openMenu(select);
       await sleep(400);
-      const option = query("mat-option,[role='option']").find((element) => level.test((element.innerText || "").trim()));
+      const options = query("mat-option,[role='option']");
+      let option = null;
+      for (const pat of levels) {
+        option = options.find((element) => pat.test((element.innerText || "").trim()));
+        if (option) break;
+      }
       if (option) option.click();
       else await trusted("key", { key: "Escape" }).catch(() => {});
       await sleep(300);
     }
     const name = (cardOf()?.innerText || "").split("\n")[0].trim();
-    const shown = (query("mat-select[aria-label='Thinking Level'],ms-thinking-level-setting mat-select")[0]?.innerText || "").trim();
+    const shown = (query(levelSelect)[0]?.innerText || "").trim();
     return [name, shown].filter(Boolean).join(" · ");
   }
 

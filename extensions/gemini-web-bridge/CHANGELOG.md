@@ -1,5 +1,15 @@
 # Delegator Gemini Bridge changes
 
+## 0.24.1
+
+- Track Gemini bridge tabs by `sessionStorage` (`delegatorBridge`) and tab id (matching `findDoorTab`) and support `/u/<n>/app` paths so redirects/query stripping cannot lose the tab.
+
+## 0.24.0
+
+- Shared `models.js` module with Gemini 4 family ranking (`Carbon > Neon > Argon > Hydrogen`) and `xhigh` reasoning level (`Очень высокая` / `Extra high`).
+- `chooseBestModel` verifies that clicking a row actually switches the picker and skips upsell/ignored rows; `modelIsSelected` strips plan descriptions (`Google AI Pro/Ultra/Plus`).
+- AI Studio `chooseStudioModel` supports `gemini-4-{carbon,neon,hydrogen}` ids, `Extra High` thinking level, and lists available models when one is missing.
+
 ## 0.23.0
 
 - Puter removed. New web doors with one generic driver (`door.js`): AI Studio, Kimi, Z.ai, Qwen, DeepSeek, Tencent Hy, Rudder.

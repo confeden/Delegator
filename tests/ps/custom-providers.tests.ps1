@@ -17,6 +17,23 @@
 #>
 
 # ── Get-CustomProviderForModel ────────────────────────────────────────────────
+Test-Case "planning uses the enabled fast pool without pinning a model" {
+    $planDir = Join-Path $script:Sandbox "plan-test"
+    New-Item -ItemType Directory -Force -Path $planDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $script:RepoRoot "scripts\ai-delegate-plan.ps1") -Destination $planDir
+    @'
+param($Command, $Prompt, $Complexity, $TimeoutSec, $Model)
+if ($Model -or $Command -ne "ask" -or $Complexity -ne "fast" -or $Prompt -notmatch "TASK:") { exit 1 }
+'{"mode":"parallel","prompts":["one","two"],"reason":"enabled pool"}'
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $planDir "opencode-delegate.ps1") -Encoding UTF8
+    $result = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $planDir "ai-delegate-plan.ps1") -Prompt "a test task"
+    Assert-Equal 0 $LASTEXITCODE
+    $plan = ($result -join "`n") | ConvertFrom-Json
+    Assert-Equal "parallel" $plan.mode
+    Assert-Equal 2 @($plan.prompts).Count
+}
+
 # The registry is injected instead of read: Get-DelegatorCustomProviders parses
 # the owner's real config.json, and a test must never depend on which providers
 # they happen to have configured today.

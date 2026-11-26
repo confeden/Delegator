@@ -4,6 +4,7 @@ let pollRunning = false;
 const GROUP_TITLE = "Delegator";
 const BRIDGE_URL = "https://gemini.google.com/app?delegator_bridge=1";
 const activatingTabs = new Set();
+const bridgeTabIds = new Set();
 const debuggerTabs = new Set();
 // The other web doors share one mechanism: see the section at the end of this file.
 const DOORS = {
@@ -27,7 +28,7 @@ function isBridgeTab(tab) {
   try {
     const url = new URL(tab.url);
     return url.origin === "https://gemini.google.com"
-      && url.pathname.startsWith("/app")
+      && (url.pathname.startsWith("/app") || /^\/u\/\d+\/app/.test(url.pathname))
       && url.searchParams.get("delegator_bridge") === "1";
   } catch {
     return false;
@@ -41,7 +42,7 @@ async function activateBridgeTab(tabId) {
   try {
     try {
       // Re-inject on worker restarts and missed static injection; content.js guards duplicates.
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["models.js", "content.js"] });
       startPolling();
     } catch (error) {
       console.warn("Не удалось подключить вкладку Gemini к Delegator:", error);
@@ -67,7 +68,19 @@ async function coreWantsBridge() {
 
 async function findBridgeTab() {
   const tabs = await chrome.tabs.query({ url: "https://gemini.google.com/*" });
-  return tabs.find(isBridgeTab) || null;
+  const direct = tabs.find((tab) => isBridgeTab(tab) || bridgeTabIds.has(tab.id));
+  if (direct) return direct;
+  for (const tab of tabs) {
+    const [probe] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => sessionStorage.getItem("delegatorBridge"),
+    }).catch(() => [null]);
+    if (probe?.result === "1") {
+      bridgeTabIds.add(tab.id);
+      return tab;
+    }
+  }
+  return null;
 }
 
 // Puts the tab into the "Delegator" tab group of its window (created on demand).
@@ -89,10 +102,10 @@ async function openBridgeTab() {
   let tab;
   if (host) {
     tab = await chrome.tabs.create({ url: BRIDGE_URL, active: false, windowId: host.id });
+    if (tab?.id != null) bridgeTabIds.add(tab.id);
   } else {
-    // No browser window at all: open a minimized one just for the task.
-    const created = await chrome.windows.create({ url: BRIDGE_URL, focused: false, state: "minimized" });
-    tab = created.tabs?.[0];
+    // A preloaded worker in an unused Chrome profile must never open that profile.
+    return;
   }
   if (tab?.id != null) await groupBridgeTab(tab);
 }
@@ -111,6 +124,7 @@ async function syncBridge() {
       else startPolling();
     } else if (!wanted && tab?.id != null) {
       geminiTabId = null;
+      bridgeTabIds.delete(tab.id);
       await chrome.tabs.remove(tab.id);
     }
   } catch (error) {
@@ -126,6 +140,11 @@ async function watchDemand() {
   let known = false;
   for (;;) {
     try {
+      if (!await hasBrowserWindow()) {
+        known = false;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        continue;
+      }
       const response = await fetch(`${CORE}/api/gemini-web/wait?known=${known ? 1 : 0}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const wanted = Boolean((await response.json()).wanted);
@@ -175,7 +194,7 @@ async function setBridgeWindowVisible(visible, focus = false) {
 
 async function handleDebuggerInput(message, sender, door = false) {
   const tabId = sender.tab?.id;
-  const allowed = door ? [...doorTabs.values()].includes(tabId) : isBridgeTab(sender.tab);
+  const allowed = door ? [...doorTabs.values()].includes(tabId) : (tabId === geminiTabId || bridgeTabIds.has(tabId) || isBridgeTab(sender.tab));
   if (tabId == null || !allowed) {
     throw new Error("Отладочный ввод разрешён только во вкладках Delegator.");
   }
@@ -303,12 +322,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (isBridgeTab(tab) && (changeInfo.status === "complete" || changeInfo.url)) {
+  if ((isBridgeTab(tab) || bridgeTabIds.has(tabId)) && (changeInfo.status === "complete" || changeInfo.url)) {
     void activateBridgeTab(tabId);
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  bridgeTabIds.delete(tabId);
   if (tabId === geminiTabId) {
     geminiTabId = null;
     void syncBridge();
@@ -365,7 +385,7 @@ async function pollQueue() {
           await chrome.tabs.update(tabId, { url: BRIDGE_URL });
           await new Promise((resolve) => setTimeout(resolve, 500));
           await waitTabLoaded(tabId);
-          await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+          await chrome.scripting.executeScript({ target: { tabId }, files: ["models.js", "content.js"] }).catch(() => {});
           result = await send();
         }
       } finally {
@@ -508,6 +528,7 @@ function reportDoorPhase(door, phase) {
 // The loop's long poll outlives a closed tab: a turn can arrive just after the linger closed it, and
 // that turn must get a new tab rather than an error.
 async function ensureDoorTab(door) {
+  if (!await hasBrowserWindow()) throw new Error("Нет открытого окна Chrome в этом профиле.");
   const known = await findDoorTab(door);
   if (known?.id != null) {
     doorTabs.set(door, known.id);
@@ -526,7 +547,7 @@ async function runDoorTurn(door, task) {
   await new Promise((resolve) => setTimeout(resolve, 500));
   await waitTabLoaded(tabId);
   reportDoorPhase(door, "подключение драйвера");
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["door.js"] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["models.js", "door.js"] });
   // Another door may win while this one still thinks: tell the page to stop rather than let a dead
   // turn hold the tab and spend the site's quota.
   const liveness = setInterval(() => {
@@ -556,7 +577,7 @@ async function runDoorTurn(door, task) {
         reportDoorPhase(door, "страница перезагрузилась");
         await new Promise((resolve) => setTimeout(resolve, 1500));
         await waitTabLoaded(tabId);
-        await chrome.scripting.executeScript({ target: { tabId }, files: ["door.js"] });
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["models.js", "door.js"] });
       }
     }
   } finally {
@@ -634,7 +655,8 @@ function probeSignIn(door) {
   const account = door === "gemini"
     ? (document.querySelector("a[aria-label*='@']")?.getAttribute("aria-label") || "")
     : "";
-  return { state: "signed_in", label: account.replace(/\s+/g, " ").trim() };
+  const email = account.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+/i)?.[0];
+  return { state: "signed_in", label: email?.toLowerCase() || account.replace(/\s+/g, " ").trim() };
 }
 
 function showSignedInToast(label) {
@@ -733,10 +755,21 @@ async function watchDoors() {
   let known = [];
   for (;;) {
     try {
+      if (!await hasBrowserWindow()) {
+        known = [];
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        continue;
+      }
       const ack = encodeURIComponent(unconfirmedTurns.join(","));
       const response = await fetch(`${CORE}/api/web-door/wait?known=${encodeURIComponent(known.join(","))}&ack=${ack}`, { cache: "no-store" });
       unconfirmedTurns = [];
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // The last window may close during the long poll. Leave new turns unacknowledged
+      // so the core can hand them to a profile that still has a window.
+      if (!await hasBrowserWindow()) {
+        known = [];
+        continue;
+      }
       const { wanted = [], login = [], turns = [], extension_version: shipped = "" } = await response.json();
       for (const door of login) void openLogin(door);
       for (const { door, ...task } of turns) {
@@ -758,4 +791,8 @@ async function watchDoors() {
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
   }
+}
+
+async function hasBrowserWindow() {
+  return (await chrome.windows.getAll({ windowTypes: ["normal"] })).length > 0;
 }

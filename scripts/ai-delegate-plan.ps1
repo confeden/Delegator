@@ -13,8 +13,7 @@ $ErrorActionPreference = "Stop"
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = $Utf8NoBom
 [Console]::OutputEncoding = $Utf8NoBom
-$MicroDelegate = Join-Path $PSScriptRoot "ai-delegate-micro.ps1"
-$PlanModel = "opencode/deepseek-v4-flash-free"
+$PlanDelegate = Join-Path $PSScriptRoot "opencode-delegate.ps1"
 
 if (-not [string]::IsNullOrWhiteSpace($PromptFile)) {
     if (-not (Test-Path -LiteralPath $PromptFile)) { throw "Prompt file not found: $PromptFile" }
@@ -37,7 +36,8 @@ $Prompt
 "@
 
 try {
-    $result = & $MicroDelegate -Prompt $PlanPrompt -TimeoutSec $TimeoutSec -Model $PlanModel -Json 2>&1 | Out-String
+    $result = & $PlanDelegate ask $PlanPrompt -Complexity fast -TimeoutSec $TimeoutSec | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "Planning delegate exited with code $LASTEXITCODE" }
     $clean = $result.Trim()
     $start = $clean.IndexOf("{")
     $end = $clean.LastIndexOf("}")
@@ -45,7 +45,9 @@ try {
         Write-Output $clean.Substring($start, $end - $start + 1)
         exit 0
     }
-} catch {}
+} catch {
+    [Console]::Error.WriteLine("[Delegator] Planning unavailable: " + $_.Exception.Message)
+}
 
 @{
     mode = "single"

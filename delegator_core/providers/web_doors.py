@@ -40,7 +40,7 @@ GEMINI = Door("gemini", "Gemini", "https://gemini.google.com/app", "gemini_web_e
 DOORS: tuple[Door, ...] = (
     GEMINI,
     # The same Google account as Gemini with quotas of its own, so it can answer when Gemini is spent.
-    # Its default was Gemini 4 Argon when checked, Gemini's own top model, so it shares Gemini's tier.
+    # Its default tracks Gemini's top line (Gemini 4), so it shares Gemini's tier.
     Door("aistudio", "AI Studio", "https://aistudio.google.com/prompts/new_chat", "aistudio_web_enabled", 156),
     Door("zai", "Z.ai", "https://chat.z.ai/", "zai_web_enabled", 150),
     Door("qwen", "Qwen", "https://chat.qwen.ai/", "qwen_web_enabled", 144),
@@ -357,16 +357,28 @@ class WebDoors:
         turns = [{"door": door_id, **turn} for door_id, bridge in self.bridges.items() for turn in bridge.take_turns()]
         return {"wanted": self.wanted(), "login": login, "turns": turns, "extension_version": self.extension_version}
 
-    def report_auth(self, door_id: str, state: str, label: str = "") -> None:
+    def report_auth(self, door_id: str, state: str, label: str = "") -> bool:
         status = self.status[door_id]
+        old_label = status.auth_label
+
+        def identity(value: str) -> str:
+            email = re.search(r"[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+", value)
+            return email.group().lower() if email else value[:80]
+
+        account_changed = bool(state == "signed_in" and old_label and label and identity(old_label) != identity(label))
         status.auth = state if state in AUTH_STATES else "unknown"
-        status.auth_label = label[:80]
+        # A transient signed-out/unknown probe must not erase the previous identity.
+        if label:
+            status.auth_label = label[:80]
         status.auth_at = time.time()
-        if state == "signed_in" and status.rest_reason == "login":
+        if state == "signed_in" and (status.rest_reason == "login" or account_changed):
             status.clear_rest()
         elif state == "signed_out":
             status.rest("login", LOGIN_REST_SEC)
         self.save()
+        if account_changed and door_id == "aistudio":
+            self.studio_spent.clear()
+        return account_changed
 
     def request_login(self, door_id: str) -> bool:
         """Asks the extension to open the door's page in front. False when nothing is listening."""

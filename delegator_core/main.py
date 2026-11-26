@@ -1472,7 +1472,9 @@ def create_app() -> FastAPI:
         if payload.door not in DOOR_BY_ID:
             raise HTTPException(status_code=404, detail="Unknown web door")
         core.web_doors.touch()
-        core.web_doors.report_auth(payload.door, payload.state, payload.label)
+        account_changed = core.web_doors.report_auth(payload.door, payload.state, payload.label)
+        if account_changed and payload.door == GEMINI.id:
+            core.gemini_web.exhausted.clear()
         return {"ok": True}
 
     @app.get("/api/web-door/wait")

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Delegator Gemini Bridge",
-  "version": "0.23.0",
+  "version": "0.24.1",
   "description": "Sends selected Delegator chat requests to dedicated signed-in web chat tabs: Gemini, AI Studio, Kimi, Z.ai, Qwen, DeepSeek, Tencent Hy, Rudder.",
   "permissions": [
     "alarms",
@@ -29,7 +29,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://gemini.google.com/app*",
+        "https://gemini.google.com/*",
         "https://aistudio.google.com/*",
         "https://www.kimi.ai/*",
         "https://kimi.ai/*",
@@ -47,9 +47,10 @@
     },
     {
       "matches": [
-        "https://gemini.google.com/app*"
+        "https://gemini.google.com/*"
       ],
       "js": [
+        "models.js",
         "content.js"
       ],
       "run_at": "document_idle"

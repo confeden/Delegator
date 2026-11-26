@@ -61,6 +61,9 @@ jobs:
         shell: powershell
         run: .\tests\ps\run-tests.ps1
 
+      - name: Check extension profile isolation
+        run: node --test tests/extension-profile.test.cjs tests/extension-models.test.cjs
+
       - name: Check .ps1 files have UTF-8 BOM
         shell: pwsh
         run: |

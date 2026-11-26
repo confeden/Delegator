@@ -1,5 +1,5 @@
 #define MyAppName "Delegator"
-#define MyAppVersion "0.9.40"
+#define MyAppVersion "0.9.42"
 #define MyAppPublisher "Delegator"
 #define MyAppExeName "delegator.exe"
 
@@ -66,6 +66,7 @@ Source: "..\extensions\gemini-web-bridge\background.js"; DestDir: "{app}\extensi
 Source: "..\extensions\gemini-web-bridge\content.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\door.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\manifest.json"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
+Source: "..\extensions\gemini-web-bridge\models.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\extensions\gemini-web-bridge\visible.js"; DestDir: "{app}\extensions\gemini-web-bridge"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\DELEGATOR.md"; DestDir: "{app}\runtime"; Flags: ignoreversion

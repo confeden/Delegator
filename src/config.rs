@@ -479,12 +479,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub gemini_web_enabled: bool,
     /// Which model of the Gemini web chat answers: `best` (the newest one in
-    /// the page's own menu), or one of `argon`, `3.1-pro`, `3.8-flash`,
-    /// `3.5-flash-lite`. The Core and the Chrome extension read the same word.
+    /// the page's own menu), or one of `carbon`, `neon`, `hydrogen`, `argon`,
+    /// `3.1-pro`, `3.8-flash`, `3.5-flash-lite`. The Core and the Chrome extension read the same word.
     #[serde(default = "default_web_best")]
     pub gemini_web_model: String,
     /// Reasoning level in that chat: `best` (the highest the page offers),
-    /// `high`, `medium`, `low`, or `auto` (leave the page's default).
+    /// `xhigh`, `high`, `medium`, `low`, or `auto` (leave the page's default).
     #[serde(default = "default_web_best")]
     pub gemini_web_reasoning: String,
     /// The other web doors, one per site (`delegator_core/providers/web_doors.py`). The same extension

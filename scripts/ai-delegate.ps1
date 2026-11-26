@@ -604,8 +604,24 @@ function Get-DelegatorEnabledModels {
     if (-not (Test-Path -LiteralPath $script:DelegatorAppConfigFile)) { return @() }
     try {
         $config = Get-Content -LiteralPath $script:DelegatorAppConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not $config.PSObject.Properties[$PropertyName]) { return @() }
-        return @($config.PSObject.Properties[$PropertyName].Value | ForEach-Object {
+        $models = @($config.$PropertyName)
+        if ($PropertyName -eq "enabled_opencode_models") {
+            foreach ($provider in @($config.custom_providers)) {
+                if (-not $provider -or ($null -ne $provider.enabled -and -not [bool]$provider.enabled)) { continue }
+                $id = ([string]$provider.id).Trim().ToLowerInvariant()
+                if (-not $id -or [string]::IsNullOrWhiteSpace([string]$provider.base_url)) { continue }
+                $accounts = @($provider.accounts | Where-Object {
+                    $_ -and ($null -eq $_.enabled -or [bool]$_.enabled) -and
+                    -not [string]::IsNullOrWhiteSpace([string]$_.api_key_enc)
+                })
+                if ($accounts.Count -eq 0) { continue }
+                foreach ($model in @($provider.enabled_models)) {
+                    $name = ([string]$model).Trim()
+                    if ($name) { $models += ($id + "/" + $name) }
+                }
+            }
+        }
+        return @($models | ForEach-Object {
             ([string]$_).Trim()
         } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     } catch {

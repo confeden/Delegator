@@ -943,15 +943,19 @@ impl DelegatorApp {
                 "rudder.chat. Безлимитный чат, модель сайт выбирает сам: запасной вариант.",
             ),
         ];
-        const MODELS: [(&str, &str); 5] = [
+        const MODELS: [(&str, &str); 8] = [
             ("best", "Самая новая (авто)"),
-            ("argon", "Argon"),
+            ("carbon", "Gemini 4 Carbon"),
+            ("neon", "Gemini 4 Neon"),
+            ("hydrogen", "Gemini 4 Hydrogen"),
+            ("argon", "Gemini 4 Argon"),
             ("3.1-pro", "3.1 Pro"),
             ("3.8-flash", "3.8 Flash"),
             ("3.5-flash-lite", "3.5 Flash-Lite"),
         ];
-        const LEVELS: [(&str, &str); 5] = [
+        const LEVELS: [(&str, &str); 6] = [
             ("best", "Максимальный (авто)"),
+            ("xhigh", "Очень высокий"),
             ("high", "Высокий"),
             ("medium", "Средний"),
             ("low", "Низкий"),

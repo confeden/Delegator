@@ -16,6 +16,35 @@ Test-Case "the ratings table really does score Flash near the top" {
     Assert-Equal 156 (Get-DelegatorModelRating "claude-opus-5")
 }
 
+Test-Case "an explicitly unrated Flash caller has no fabricated DPR" {
+    Assert-Equal 0 (Get-CallerDpr "gemini-3.8-flash-high")
+}
+
+Test-Case "v13 providers participate in reviewer and strength selection without legacy models" {
+    $previous = $script:DelegatorAppConfigFile
+    $script:DelegatorAppConfigFile = Join-Path $script:Sandbox "v13-config.json"
+    try {
+        @{
+            enabled_opencode_models = @()
+            custom_providers = @(
+                @{ id = "myapi"; enabled = $true; base_url = "https://example.invalid/v1";
+                   accounts = @(@{ enabled = $true; api_key_enc = "test-ciphertext" });
+                   enabled_models = @("claude-opus-5", "claude-opus-5", " ") }
+                @{ id = "off"; enabled = $false; base_url = "https://example.invalid";
+                   accounts = @(@{ api_key_enc = "test-ciphertext" }); enabled_models = @("gpt-5") }
+                @{ id = "keyless"; base_url = "https://example.invalid";
+                   accounts = @(); enabled_models = @("gpt-5") }
+            )
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $script:DelegatorAppConfigFile -Encoding UTF8
+        Assert-Equal "myapi/claude-opus-5" ((Get-CustomProviderModels) -join ",")
+        Assert-Equal "myapi/claude-opus-5" (Get-StrongestReviewer).model
+        Assert-Equal "myapi/claude-opus-5" (Get-StrongEnabledModel)
+        Assert-Equal 156 (Get-BestAvailableDpr)
+    } finally {
+        $script:DelegatorAppConfigFile = $previous
+    }
+}
+
 Test-Case "an effort suffix is only an effort suffix at the END of the id" {
     Assert-Equal 25 (Get-CallerEffortPenalty "gemini-3.7-flash-low")
     Assert-Equal 12 (Get-CallerEffortPenalty "gemini-3.7-flash-medium")

@@ -625,6 +625,10 @@ name and `gpt-5.3-codex-high` is an effort level. Two rules about where this liv
 
 An id with no row scores **0**, not `unrated_default`. Zero means "no comparison is possible"; 100
 would be a mid score that reads as a weak caller and triggers amplification nobody asked for.
+An explicitly unrated row (for example `gemini-3.8-flash`) also scores 0. In `assist`, a named
+caller with no usable rating keeps its answer rather than entering the API replacement ladder;
+draft review and the web-first attempt remain available. This is a conservative quality guard,
+not evidence that the caller is weak; do not invent a DPR to bypass it.
 
 ### 13.3 Three tiers, one number
 

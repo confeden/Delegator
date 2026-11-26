@@ -21,6 +21,54 @@ def result(door_id: str) -> ProviderResult:
     )
 
 
+def test_account_switch_clears_quota_even_after_a_signed_out_probe():
+    hub = WebDoors()
+    hub.report_auth("gemini", "signed_in", "Google Account: Alice (alice@example.com)")
+    hub.status["gemini"].rest("quota", 10800)
+    assert not hub.report_auth("gemini", "signed_in", "alice@example.com")
+    assert hub.status["gemini"].resting_for() > 10000
+    hub.report_auth("gemini", "signed_out")
+    assert hub.report_auth("gemini", "signed_in", "bob@example.com")
+    assert hub.status["gemini"].resting_for() == 0
+
+
+@pytest.mark.parametrize("label", ["", "alice@example.com"])
+def test_sign_in_alone_does_not_reset_quota(label):
+    hub = WebDoors()
+    hub.report_auth("gemini", "signed_in", "alice@example.com")
+    hub.status["gemini"].rest("quota", 10800)
+    assert not hub.report_auth("gemini", "signed_in", label)
+    assert hub.status["gemini"].resting_for() > 10000
+
+
+def test_studio_account_switch_clears_model_cooldowns():
+    hub = WebDoors()
+    hub.report_auth("aistudio", "signed_in", "alice")
+    hub.studio_spent["argon"] = 99999999999
+    assert hub.report_auth("aistudio", "signed_in", "bob")
+    assert not hub.studio_spent
+
+
+def test_auth_endpoint_clears_gemini_model_cooldowns_on_account_change():
+    from types import SimpleNamespace
+    from delegator_core.main import create_app, WebDoorAuthRequest
+    from delegator_core.providers.gemini_web import GeminiWebBridge
+
+    app = create_app()
+    hub = WebDoors()
+    bridge = GeminiWebBridge()
+    app.state.core = SimpleNamespace(web_doors=hub, gemini_web=bridge)
+    endpoint = next(route.endpoint for route in app.routes if getattr(route, "path", "") == "/api/web/auth")
+    payload = {"door": "gemini", "state": "signed_in", "label": "alice@example.com"}
+    assert endpoint(WebDoorAuthRequest(**payload)) == {"ok": True}
+    bridge._mark("argon", "quota")
+    assert endpoint(WebDoorAuthRequest(**payload)) == {"ok": True}
+    assert bridge.exhausted_now()
+    payload["label"] = "bob@example.com"
+    assert endpoint(WebDoorAuthRequest(**payload)) == {"ok": True}
+    assert not bridge.exhausted_now()
+
+
 def scripted(script: dict[str, tuple[float, str | None]], started: list[str] | None = None):
     """Each door answers after its delay, or fails with the given error text."""
 
@@ -374,30 +422,37 @@ def test_best_on_ai_studio_is_the_top_of_the_ladder_not_a_row_named_best(config)
     config()
     hub, tried = studio_hub({})
     ask_studio(hub)
-    assert tried[0][0] == "argon"
+    assert tried[0][0] == "carbon"
 
 
 def test_a_spent_model_walks_down_and_is_not_asked_again(config):
     config()
-    hub, tried = studio_hub({"argon": "QUOTA: limit"})
-    assert ask_studio(hub).text != "answer from argon"
+    hub, tried = studio_hub({"carbon": "QUOTA: limit"})
+    assert ask_studio(hub).text != "answer from carbon"
     first_round = [model for model, _ in tried]
-    assert first_round[0] == "argon" and len(first_round) == 2
+    assert first_round[0] == "carbon" and len(first_round) == 2
     tried.clear()
     ask_studio(hub)
-    assert "argon" not in [model for model, _ in tried]
+    assert "carbon" not in [model for model, _ in tried]
 
 
 def test_a_missing_model_is_passed_over_too(config):
     config()
-    hub, tried = studio_hub({"argon": "UNAVAILABLE: no such row"})
+    hub, tried = studio_hub({"carbon": "UNAVAILABLE: no such row"})
     ask_studio(hub)
     assert len(tried) == 2
 
 
 def test_with_another_door_ready_ai_studio_stops_short_of_flash_lite(config):
     config()
-    hub, tried = studio_hub({"argon": "QUOTA: x", "3.8-flash": "QUOTA: x", "3.1-pro": "QUOTA: x"})
+    hub, tried = studio_hub({
+        "carbon": "QUOTA: x",
+        "neon": "QUOTA: x",
+        "argon": "QUOTA: x",
+        "hydrogen": "QUOTA: x",
+        "3.8-flash": "QUOTA: x",
+        "3.1-pro": "QUOTA: x",
+    })
     with pytest.raises(RuntimeError, match="^QUOTA"):
         ask_studio(hub, no_lite=True)
     assert "3.5-flash-lite" not in [model for model, _ in tried]
@@ -405,7 +460,7 @@ def test_with_another_door_ready_ai_studio_stops_short_of_flash_lite(config):
 
 def test_any_other_failure_on_ai_studio_is_not_walked_down(config):
     config()
-    hub, tried = studio_hub({"argon": "something broke"})
+    hub, tried = studio_hub({"carbon": "something broke"})
     with pytest.raises(RuntimeError, match="something broke"):
         ask_studio(hub)
     assert len(tried) == 1

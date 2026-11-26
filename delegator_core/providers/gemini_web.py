@@ -38,14 +38,13 @@ def gemini_web_flags() -> tuple[bool, bool]:
 # level; the extension ranks the rows, so a new Gemini release needs no update.
 DEFAULT_WEB_MODEL = "best"
 DEFAULT_WEB_REASONING = "best"
-_MODEL_IDS = {"best", "argon", "3.1-pro", "3.8-flash", "3.5-flash-lite"}
-_REASONING_IDS = {"best", "high", "medium", "low", "auto"}
+_MODEL_IDS = {"best", "carbon", "neon", "argon", "hydrogen", "3.1-pro", "3.8-flash", "3.5-flash-lite"}
+_REASONING_IDS = {"best", "xhigh", "high", "medium", "low", "auto"}
 
 # When a model's quota is spent the bridge moves on to the next one of THIS list.
-# The ladder after "best" is the owner's rule, shared with the API keys
-# (`Get-GeminiModelScore` in scripts/ai-delegate.ps1): Argon, then Flash only while
-# its number is above Pro's, then Pro, then Flash, then Flash-Lite. See web_fallback_order.
-# "best" comes first and stands for whatever the page's own menu ranks highest.
+# The ladder after "best" extends D16 by version number: Carbon, Neon, Argon, Hydrogen,
+# then Flash only while its number is above Pro's, then Pro, then Flash, then Flash-Lite.
+# See web_fallback_order. "best" comes first and stands for whatever the page's own menu ranks highest.
 
 
 def _alias_version(name: str, default: float) -> float:
@@ -58,14 +57,14 @@ def _alias_version(name: str, default: float) -> float:
 
 
 def web_fallback_order() -> tuple[str, ...]:
-    """Argon, then Flash and Pro by number: Flash goes first only while its number is above Pro's,
-    otherwise Pro goes first. Flash-Lite is always last. The numbers come from
+    """Carbon, Neon, Argon, Hydrogen, then Flash and Pro by number: Flash goes first only while its
+    number is above Pro's, otherwise Pro goes first. Flash-Lite is always last. The numbers come from
     `gemini_alias_versions`, so a new release moves the order."""
     flash = _alias_version("flash", 3.8)
     pro = _alias_version("pro", 3.1)
     if flash > pro:
-        return ("argon", "3.8-flash", "3.1-pro", "3.5-flash-lite")
-    return ("argon", "3.1-pro", "3.8-flash", "3.5-flash-lite")
+        return ("carbon", "neon", "argon", "hydrogen", "3.8-flash", "3.1-pro", "3.5-flash-lite")
+    return ("carbon", "neon", "argon", "hydrogen", "3.1-pro", "3.8-flash", "3.5-flash-lite")
 def model_ladder(model: str, *, no_lite: bool = False) -> list[str]:
     """The models to try, in order, for what «Интеграция → Web» says. One list for Gemini and AI Studio."""
     wanted = model.split("/", 1)[1] if model.startswith("gemini-web/") else model
@@ -85,18 +84,23 @@ MAX_ALIVE_WAIT_SEC = 360  # ceiling for a model that keeps showing signs of life
 QUOTA_COOLDOWN_SEC = 3 * 3600  # a spent quota resets on a daily scale; retry the strong model after this
 SLOW_COOLDOWN_SEC = 20 * 60  # a model that stalled on one prompt is not asked again straight away
 UNAVAILABLE_COOLDOWN_SEC = 10 * 60  # a model missing from the menu may come back with the next page load
+_PLAN_TIER_NOISE = re.compile(r"google\s+ai\s+(?:pro|ultra|plus)", re.I)
 _LABEL_TO_ID = (
     ("argon", re.compile(r"argon", re.I)),
+    ("carbon", re.compile(r"carbon", re.I)),
+    ("neon", re.compile(r"neon", re.I)),
+    ("hydrogen", re.compile(r"hydrogen", re.I)),
     ("3.5-flash-lite", re.compile(r"flash[\s-]*lite", re.I)),
     ("3.8-flash", re.compile(r"flash", re.I)),
-    ("3.1-pro", re.compile(r"pro", re.I)),
+    ("3.1-pro", re.compile(r"\bpro\b", re.I)),
 )
 
 
 def model_id_from_label(label: str) -> str:
-    """`Argon · Высокая` -> `argon`; `` when the label names none of ours."""
+    """`Carbon · Высокая` -> `carbon`; `` when the label names none of ours."""
+    cleaned = _PLAN_TIER_NOISE.sub(" ", label or "")
     for model_id, pattern in _LABEL_TO_ID:
-        if pattern.search(label or ""):
+        if pattern.search(cleaned):
             return model_id
     return ""
 
@@ -190,7 +194,7 @@ class GeminiWebBridge:
         """One turn, with a way down the model ladder when a model's quota is spent.
 
         `no_lite`: another door can take this turn, so Gemini stops short of Flash-Lite. The door is in the
-        race on the strength of Argon; quietly answering from its weakest model would pass that off as this.
+        race on the strength of its top model; quietly answering from its weakest model would pass that off as this.
 
         The requested model goes first; when the page reports its quota (or the model
         is not offered any more) the next one of web_fallback_order() is tried, and the

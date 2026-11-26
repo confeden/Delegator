@@ -1,9 +1,14 @@
 (() => {
-  if (new URL(location.href).searchParams.get("delegator_bridge") !== "1") return;
+  const isBridgeParam = new URL(location.href).searchParams.get("delegator_bridge") === "1";
+  if (isBridgeParam) {
+    try { sessionStorage.setItem("delegatorBridge", "1"); } catch {}
+  }
+  if (!isBridgeParam && (() => { try { return sessionStorage.getItem("delegatorBridge") !== "1"; } catch { return true; } })()) return;
 
   if (window.__delegatorGeminiBridgeLoaded) return;
   window.__delegatorGeminiBridgeLoaded = true;
 
+  const MODELS = globalThis.__delegatorModels;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const visible = (element) => Boolean(element && element.getClientRects().length);
   const normalizedText = (element) => (element?.innerText || element?.textContent || "").replace(/\s+/g, " ").trim();
@@ -28,38 +33,6 @@
   function announceReady() {
     if (busy) return;
     chrome.runtime.sendMessage({ type: "DELEGATOR_GEMINI_READY" }).catch(() => {});
-  }
-
-  // Gemini renames and reorders its models, so everything is matched by the
-  // visible text of the menu rows, never by their position or hashed ids.
-  const MODEL_MATCHERS = {
-    "gemini-web/3.5-flash-lite": (text) => /flash[\s-]*lite/i.test(text),
-    "gemini-web/3.8-flash": (text) => /flash/i.test(text) && !/lite/i.test(text),
-    "gemini-web/3.1-pro": (text) => /pro/i.test(text),
-    "gemini-web/argon": (text) => /argon/i.test(text),
-  };
-  const REASONING_MATCHERS = {
-    low: /^(низк|low)/i,
-    medium: /^(средн|medium)/i,
-    high: /^(высок|high)/i,
-  };
-  // "best" walks this list from the top: the highest level the page offers.
-  const REASONING_BEST_ORDER = [
-    /^(максим|extra|ultra|very high|очень высок)/i,
-    REASONING_MATCHERS.high,
-    REASONING_MATCHERS.medium,
-    REASONING_MATCHERS.low,
-  ];
-  const REASONING_ROW = /^(уровень рассуждений|reasoning level)/i;
-
-  // "best" = the newest, strongest row of the page's own model menu. Rows are
-  // ranked by the first version number in their name, then by tier, so the next
-  // Gemini release (or a model with a name we have never seen) wins by itself.
-  function modelRank(text) {
-    const version = parseFloat((text.match(/\d+(?:[.,]\d+)?/) || ["0"])[0].replace(",", "."));
-    if (!version && !/argon|ultra|pro|flash/i.test(text)) return -1;
-    const tier = /lite/i.test(text) ? 1 : /flash/i.test(text) && !/pro|ultra|argon/i.test(text) ? 2 : 3;
-    return version * 10 + tier;
   }
 
   // A spent quota. Gemini words it differently in every language and release, so
@@ -96,14 +69,15 @@
     return "";
   }
 
-  function bestModelRow() {
+  function bestModelRow(skipped = new Set()) {
     let best = null;
     let bestRank = -1;
     for (const row of menuRows()) {
       const text = normalizedText(row);
-      if (REASONING_ROW.test(text)) continue;
+      if (skipped.has(text)) continue;
+      if (MODELS.REASONING_ROW.test(text)) continue;
       if (isLimitedRow(row)) continue; // a spent model is not "the best one" any more
-      const rank = modelRank(text);
+      const rank = MODELS.modelRank(text);
       if (rank > bestRank) {
         best = row;
         bestRank = rank;
@@ -114,8 +88,8 @@
 
   let usedReasoning = "";
 
-  function modelIsSelected(model, label) {
-    return Boolean(MODEL_MATCHERS[model]?.(label));
+  function modelIsSelected(model) {
+    return Boolean(MODELS?.GEMINI_MATCHERS[model]?.(pickerLabel()));
   }
 
   // A guest gets a working Gemini with a weak model: a chat that answers does not prove a session.
@@ -214,7 +188,7 @@
     // The composer is on screen before AND after the switch, so it proves
     // nothing: wait until the page really is an empty chat at /app.
     await waitFor(
-      () => findComposer() && !getAnswerNodes().length && /^\/app\/?$/.test(location.pathname),
+      () => findComposer() && !getAnswerNodes().length && /^\/(?:u\/\d+\/)?app\/?$/.test(location.pathname),
       10000,
       "Gemini не открыл новый чат.",
     );
@@ -236,34 +210,49 @@
   }
 
   async function chooseBestModel() {
-    await openModelMenu();
-    const row = bestModelRow();
-    if (!row) {
-      const seen = menuRows().map(normalizedText).join(" | ");
+    if (!MODELS) throw new Error("Модуль models.js не загружен: перезагрузите расширение.");
+    const skipped = new Set();
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      await openModelMenu();
+      const row = bestModelRow(skipped);
+      if (!row) {
+        const seen = menuRows().map(normalizedText).join(" | ");
+        await pressMenuKey("Escape");
+        const skippedInfo = skipped.size ? ` (пропущено: ${[...skipped].join(" | ")})` : "";
+        throw new Error(`В меню Gemini не нашлось модели. Сейчас доступно: ${seen || "ничего"}${skippedInfo}.`);
+      }
+      const wanted = normalizedText(row);
+      const fam = MODELS.familyOf(wanted);
+      const currentMatches = () => {
+        const current = pickerLabel();
+        if (!current) return false;
+        if (fam) return MODELS.familyOf(current) === fam;
+        return wanted.toLowerCase().includes(current.toLowerCase());
+      };
+      if (currentMatches()) {
+        await pressMenuKey("Escape");
+        return;
+      }
+      await trustedClick(row);
+      const switched = await waitFor(currentMatches, 3000, "switch").then(() => true, () => false);
+      if (switched) return;
       await pressMenuKey("Escape");
-      throw new Error(`В меню Gemini не нашлось модели. Сейчас доступно: ${seen || "ничего"}.`);
+      await sleep(200);
+      skipped.add(wanted);
     }
-    const wanted = normalizedText(row);
-    const picker = findModelPicker();
-    const current = picker ? (picker.getAttribute("aria-label") || normalizedText(picker)) : "";
-    // The picker's label names the model; the row may add a description to it.
-    if (current && wanted.toLowerCase().includes(current.replace(/^.*?:\s*/, "").trim().toLowerCase())) {
-      await pressMenuKey("Escape");
-      return;
-    }
-    await trustedClick(row);
-    await sleep(300);
+    throw new Error(`Gemini не выбрал модель best: ${[...skipped].join(" | ").slice(0, 200)}`);
   }
 
   async function chooseModel(model) {
+    if (!MODELS) throw new Error("Модуль models.js не загружен: перезагрузите расширение.");
     if (model === "gemini-web/best") return chooseBestModel();
-    const matches = MODEL_MATCHERS[model];
+    const matches = MODELS.GEMINI_MATCHERS[model];
     if (!matches) throw new Error(`Неизвестная модель Gemini Web: ${model}`);
-    const picker = await requirePicker();
-    if (modelIsSelected(model, picker.getAttribute("aria-label") || normalizedText(picker))) return;
+    await requirePicker();
+    if (modelIsSelected(model)) return;
 
     await openModelMenu();
-    const row = findMenuRow((text) => !/^(уровень рассуждений|reasoning level)/i.test(text) && matches(text));
+    const row = findMenuRow((text) => !MODELS.REASONING_ROW.test(text) && matches(text));
     if (!row) {
       const seen = menuRows().map(normalizedText).join(" | ");
       await pressMenuKey("Escape");
@@ -276,7 +265,7 @@
     }
     await trustedClick(row);
     await waitFor(
-      () => modelIsSelected(model, findModelPicker()?.getAttribute("aria-label") || ""),
+      () => modelIsSelected(model),
       5000,
       `Gemini не выбрал модель ${model}.`,
     );
@@ -285,11 +274,12 @@
   async function chooseReasoning(reasoning) {
     usedReasoning = "";
     if (!reasoning || reasoning === "auto") return;
-    const wanted = reasoning === "best" ? null : REASONING_MATCHERS[reasoning];
-    if (reasoning !== "best" && !wanted) throw new Error(`Неизвестный уровень рассуждений: ${reasoning}`);
+    const order = MODELS?.REASONING_ORDER[reasoning];
+    if (!order) throw new Error(`Неизвестный уровень рассуждений: ${reasoning}`);
 
     await openModelMenu();
-    const parent = findMenuRow((text) => /уровень рассуждений|reasoning level/i.test(text));
+    const rowPattern = new RegExp(MODELS.REASONING_ROW.source.slice(1), "i");
+    const parent = findMenuRow((text) => rowPattern.test(text));
     if (!parent) {
       // The picked model has no levels; the default is the only choice.
       await pressMenuKey("Escape");
@@ -297,16 +287,27 @@
     }
     await trustedClick(parent);
     const levelRow = () => {
-      if (wanted) return findMenuRow((text) => wanted.test(text));
-      for (const pattern of REASONING_BEST_ORDER) {
+      for (const pattern of order) {
         const row = findMenuRow((text) => pattern.test(text));
         if (row) return row;
       }
       return null;
     };
-    await waitFor(() => levelRow(), 4000, "Gemini не показал уровни рассуждений.");
+    const found = await waitFor(() => levelRow(), 4000, "Gemini не показал уровни рассуждений.")
+      .then(() => true, () => false);
+    if (!found) {
+      if (reasoning !== "best") {
+        await pressMenuKey("Escape");
+        usedReasoning = "";
+        return;
+      }
+      throw new Error("Gemini не показал уровни рассуждений.");
+    }
     const level = levelRow();
-    usedReasoning = normalizedText(level).split(" ")[0];
+    const words = normalizedText(level).split(" ");
+    usedReasoning = /^(очень|extra|very)$/i.test(words[0] || "") && words[1]
+      ? `${words[0]} ${words[1]}`
+      : (words[0] || "");
     await trustedClick(level);
     await sleep(150);
     await pressMenuKey("Escape");
